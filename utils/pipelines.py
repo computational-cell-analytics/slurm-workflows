@@ -16,6 +16,9 @@ TEMPLATE_DIR = os.path.join(REPOSITORY_DIR, "templates")
 
 TEMPLATE_SUFFIX = ".template"
 
+# Steps of a pipeline, in the order in which they are submitted.
+STEPS_KEY = "steps"
+
 # Steps of a pipeline which export the result to MoBIE. They need a MoBIE project to write into.
 MOBIE_STEPS_KEY = "mobie_steps"
 
@@ -72,7 +75,14 @@ def load_pipeline(
         except json.JSONDecodeError as exc:
             raise ValueError(f"Pipeline file {pipeline_file} is not valid JSON: {exc}") from exc
 
-    steps = pipeline.get("steps")
+    # The type is checked first. A non-empty string passes the check below and then breaks the
+    # concatenation with a TypeError, which the caller does not turn into a message.
+    for key in (STEPS_KEY, MOBIE_STEPS_KEY):
+        value = pipeline.get(key)
+        if value is not None and not isinstance(value, list):
+            raise ValueError(f"Pipeline file {pipeline_file} needs a list of steps for '{key}'.")
+
+    steps = pipeline.get(STEPS_KEY)
     if not steps:
         raise ValueError(f"Pipeline file {pipeline_file} has no steps.")
 
@@ -104,7 +114,7 @@ def pipeline_steps(
             list - the steps to submit, in order
             list - the MoBIE steps which are skipped
     """
-    steps = list(definition["steps"])
+    steps = list(definition[STEPS_KEY])
     mobie_steps = list(definition.get(MOBIE_STEPS_KEY, []))
 
     if mobie_project:

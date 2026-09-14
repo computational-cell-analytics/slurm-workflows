@@ -16,9 +16,10 @@ from datetime import date
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.realpath(__file__))))
 
 from utils.inputs import (SEGMENTATION_INPUT, check_external_input, check_job_input,  # noqa: E402
-                          job_variables, path_exists, resolve_input)
+                          check_output_absent, job_variables, path_exists, resolve_input)
 from utils.metadata import METADATA_FILE, read_metadata, write_metadata  # noqa: E402
-from utils.pipelines import load_pipeline, pipeline_names, step_template, steps_from  # noqa: E402
+from utils.pipelines import (GROUP_KEY, load_pipeline, pipeline_names, pipeline_steps,  # noqa: E402
+                             step_template, steps_from)
 from utils.repositories import write_repository_file  # noqa: E402
 from utils.settings import DEFAULT_SETTINGS_FILE, get_model_path, load_settings, settings_to_replacements  # noqa: E402
 from utils.templates import replace_substrings_in_file  # noqa: E402
@@ -176,13 +177,17 @@ def build_replacements(
     settings: dict,
     parameters: dict,
     input_file: str,
+    pipeline_group: str = None,
 ) -> tuple:
     """Build the placeholder replacements of one job.
 
     Args:
         settings: Output of `load_settings()`.
         parameters: Parameter dictionary of the job.
-        input_file: Path of the template. Its name selects the model group and the watershed step.
+        input_file: Path of the template. Its name selects the watershed step, and the model
+            group unless `pipeline_group` supplies it.
+        pipeline_group: Group of the pipeline. It is used for a template which serves more than one
+            group, such as a MoBIE export, and therefore has no group in its name.
 
     Returns:
         tuple of:
@@ -220,6 +225,8 @@ def build_replacements(
     prefix = "".join([animal, person])
     template_name = os.path.basename(input_file)
     group = template_group(input_file)
+    if group is None:
+        group = pipeline_group
 
     if group is None:
         # The MoBIE templates read every stain, so they always need the n5.
@@ -271,14 +278,20 @@ def build_replacements(
     if group is not None:
         replacement_dict["prediction_dir"] = replacement_dict[f"{group.lower()}_prediction"]
 
-    if "marker" in template_name:
-        if "ihc_prediction" not in replacement_dict:
-            raise ValueError(f"The template {template_name} needs the 'ihc_version' parameter, "
-                             "which selects the IHC segmentation the detections are matched to.")
-        replacement_dict["prediction_dir"] = marker_prediction_name(
+    # The folder of the marker step depends on two model versions. It is derived for every template,
+    # so that a later step, such as the MoBIE export, can name the result of the marker step.
+    if "synapses_prediction" in replacement_dict and "ihc_prediction" in replacement_dict:
+        replacement_dict["marker_prediction"] = marker_prediction_name(
             replacement_dict["synapses_prediction"], replacement_dict["ihc_prediction"])
 
-    if "segment" in template_name:
+    if "marker" in template_name:
+        if "marker_prediction" not in replacement_dict:
+            raise ValueError(f"The template {template_name} needs the 'ihc_version' parameter, "
+                             "which selects the IHC segmentation the detections are matched to.")
+        replacement_dict["prediction_dir"] = replacement_dict["marker_prediction"]
+
+    # 'mobie_add_segmentation' also contains 'segment', but it needs no model and no watershed.
+    if template_name.startswith("segment"):
         replacement_dict.update(watershed_parameters(replacement_dict["model"], group))
 
     return replacement_dict, f"{prefix}{number.lstrip('0')}{side}"
@@ -288,20 +301,28 @@ def render_step(
     input_file: str,
     replacement_dict: dict,
     cochlea_short: str,
+    group: str = None,
     allow_missing: bool = False,
 ) -> str:
     """Fill a template and write the sbatch script of one job.
+
+    A template which serves more than one group has no group in its name. The group is added to the
+    file name, so that the runs of two groups do not share an archive folder.
 
     Args:
         input_file: Path of the template.
         replacement_dict: Output of `build_replacements()`.
         cochlea_short: Output of `build_replacements()`.
+        group: Group of the job, or None.
         allow_missing: Print a warning instead of raising for an unresolved placeholder.
 
     Returns:
         str: Name of the generated sbatch script.
     """
     script_str = os.path.basename(input_file).split(".template")[0]
+    if group is not None and template_group(input_file) is None:
+        script_str = f"{script_str}_{group}"
+
     output_file = f"{str(date.today())}_sbatch_{script_str}_{cochlea_short}.sbatch"
 
     replace_substrings_in_file(input_file, output_file, replacement_dict, strict=not allow_missing)
@@ -453,6 +474,7 @@ def main(
     start_at: str = None,
     allow_missing: bool = False,
     force: bool = False,
+    group: str = None,
 ):
     settings = load_settings(settings_file)
 
@@ -463,30 +485,42 @@ def main(
         steps = [input_file]
         pipeline_name = None
         description = None
+        skipped = []
     else:
         definition = load_pipeline(pipeline)
         pipeline_name = definition["name"]
         description = definition.get("description")
-        step_names = definition["steps"]
+        if group is None:
+            group = definition.get(GROUP_KEY)
+        # The steps are resolved before '--start-at', so that a MoBIE step can be resumed.
+        step_names, skipped = pipeline_steps(definition, settings.get("mobie_project"))
         if start_at is not None:
             step_names = steps_from(step_names, start_at)
         steps = [step_template(step) for step in step_names]
 
+    if group is not None and group not in GROUPS:
+        raise ValueError(f"Unknown group '{group}'. Available groups: {sorted(GROUPS)}.")
+
     if description is not None:
         print(f"Pipeline {pipeline_name}: {description}")
+
+    if skipped:
+        print("No 'mobie_project' is set in the settings file. These steps are skipped: "
+              + ", ".join(skipped) + ".")
 
     # Render every step before anything is submitted, so that an unresolved placeholder of a later
     # step cannot leave the earlier steps of the chain queued.
     output_files = []
     for step_file in steps:
-        replacement_dict, cochlea_short = build_replacements(settings, parameters, step_file)
-        output_files.append(render_step(step_file, replacement_dict, cochlea_short, allow_missing))
+        replacement_dict, cochlea_short = build_replacements(settings, parameters, step_file, group)
+        output_files.append(render_step(step_file, replacement_dict, cochlea_short, group, allow_missing))
 
     # Only the first step can be checked here. The input of a later step is produced by its
     # predecessor, so it is verified by the guard inside the job script.
     warnings = check_job_input(output_files[0])
     for step_file, output_file in zip(steps, output_files):
         warnings += check_external_input(output_file)
+        warnings += check_output_absent(output_file)
         warnings += check_prediction_absent(step_file, output_file)
 
     for message in warnings:
@@ -556,8 +590,12 @@ if __name__ == "__main__":
     parser.add_argument("--start-at", dest="start_at", type=str, default=None,
                         help="Start a pipeline at this step, to resume a chain after a failure.")
     parser.add_argument("--force", action="store_true",
-                        help="Deploy the job even if the input data does not exist "
-                             "or a previous prediction would be overwritten.")
+                        help="Deploy the job even if the input data does not exist, if a previous "
+                             "prediction would be overwritten, or if a MoBIE table would be rebuilt.")
+    parser.add_argument("--group", type=str, default=None,
+                        help="Group of a template which serves more than one group, such as a MoBIE "
+                             "export. It overrides the group of the pipeline. "
+                             f"Available: {sorted(GROUPS)}")
 
     args = parser.parse_args()
 
@@ -566,6 +604,6 @@ if __name__ == "__main__":
 
     try:
         main(args.json, args.settings, args.archive_dir, args.repository_file, args.deploy,
-             args.input, args.pipeline, args.start_at, args.allow_missing, args.force)
+             args.input, args.pipeline, args.start_at, args.allow_missing, args.force, args.group)
     except (FileNotFoundError, ValueError) as exc:
         sys.exit(str(exc))

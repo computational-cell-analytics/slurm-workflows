@@ -1,8 +1,13 @@
 {
     "description": "Compute the normalization, apply the SGN model and segment the prediction.",
+    "group": "SGN",
     "steps": [
         "mean_std_SGN",
         "apply_SGN",
         "segment_SGN"
+    ],
+    "mobie_steps": [
+        "mobie_add_segmentation",
+        "mobie_transfer_segmentation"
     ]
 }

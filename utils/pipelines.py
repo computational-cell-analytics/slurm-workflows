@@ -99,15 +99,18 @@ def load_pipeline(
 def pipeline_steps(
     definition: dict,
     mobie_project: str,
+    skip_mobie: bool = False,
 ) -> tuple:
     """Return the steps to submit, and the MoBIE steps which are skipped.
 
     The MoBIE steps need a project to write into. Without one they are dropped instead of failing,
-    so a pipeline runs on an account which uses no MoBIE project.
+    so a pipeline runs on an account which uses no MoBIE project. `skip_mobie` drops them for a
+    single run, because the processing of a cochlea does not depend on the export.
 
     Args:
         definition: Output of `load_pipeline()`.
         mobie_project: Value of 'mobie_project' of the settings file, or None.
+        skip_mobie: Leave the MoBIE steps out even if a project is set.
 
     Returns:
         tuple of:
@@ -117,7 +120,7 @@ def pipeline_steps(
     steps = list(definition[STEPS_KEY])
     mobie_steps = list(definition.get(MOBIE_STEPS_KEY, []))
 
-    if mobie_project:
+    if mobie_project and not skip_mobie:
         return steps + mobie_steps, []
 
     return steps, mobie_steps

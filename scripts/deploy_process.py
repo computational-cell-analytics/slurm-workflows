@@ -475,6 +475,7 @@ def main(
     allow_missing: bool = False,
     force: bool = False,
     group: str = None,
+    no_mobie: bool = False,
 ):
     settings = load_settings(settings_file)
 
@@ -493,7 +494,7 @@ def main(
         if group is None:
             group = definition.get(GROUP_KEY)
         # The steps are resolved before '--start-at', so that a MoBIE step can be resumed.
-        step_names, skipped = pipeline_steps(definition, settings.get("mobie_project"))
+        step_names, skipped = pipeline_steps(definition, settings.get("mobie_project"), no_mobie)
         if start_at is not None:
             step_names = steps_from(step_names, start_at)
         steps = [step_template(step) for step in step_names]
@@ -505,8 +506,9 @@ def main(
         print(f"Pipeline {pipeline_name}: {description}")
 
     if skipped:
-        print("No 'mobie_project' is set in the settings file. These steps are skipped: "
-              + ", ".join(skipped) + ".")
+        reason = ("--no-mobie was given" if no_mobie
+                  else "the settings file names no 'mobie_project'")
+        print(f"The MoBIE steps are skipped, because {reason}: " + ", ".join(skipped) + ".")
 
     # Render every step before anything is submitted, so that an unresolved placeholder of a later
     # step cannot leave the earlier steps of the chain queued.
@@ -592,6 +594,9 @@ if __name__ == "__main__":
     parser.add_argument("--force", action="store_true",
                         help="Deploy the job even if the input data does not exist, if a previous "
                              "prediction would be overwritten, or if a MoBIE table would be rebuilt.")
+    parser.add_argument("--no-mobie", dest="no_mobie", action="store_true",
+                        help="Leave the MoBIE steps of a pipeline out, to process a cochlea without "
+                             "exporting the result. Needs -p.")
     parser.add_argument("--group", type=str, default=None,
                         help="Group of a template which serves more than one group, such as a MoBIE "
                              "export. It overrides the group of the pipeline. "
@@ -604,6 +609,7 @@ if __name__ == "__main__":
 
     try:
         main(args.json, args.settings, args.archive_dir, args.repository_file, args.deploy,
-             args.input, args.pipeline, args.start_at, args.allow_missing, args.force, args.group)
+             args.input, args.pipeline, args.start_at, args.allow_missing, args.force, args.group,
+             args.no_mobie)
     except (FileNotFoundError, ValueError) as exc:
         sys.exit(str(exc))

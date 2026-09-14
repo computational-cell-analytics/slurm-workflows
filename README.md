@@ -96,6 +96,8 @@ Only the new source is transferred, so the step is short.
 
 These steps run only if the settings file names a `mobie_project`.
 Remove that key, or set it to an empty string, to end the chain with the last processing step.
+Use the option `--no-mobie` to leave the steps out for a single run, without touching the settings
+file, because the processing of a cochlea does not depend on the export.
 The skipped steps are named when the pipeline is deployed.
 
 The two segmentation templates serve both groups.

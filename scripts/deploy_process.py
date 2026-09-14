@@ -15,7 +15,8 @@ from datetime import date
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.realpath(__file__))))
 
-from utils.inputs import SEGMENTATION_INPUT, check_job_input, job_variables, path_exists, resolve_input  # noqa: E402
+from utils.inputs import (SEGMENTATION_INPUT, check_external_input, check_job_input,  # noqa: E402
+                          job_variables, path_exists, resolve_input)
 from utils.metadata import METADATA_FILE, read_metadata, write_metadata  # noqa: E402
 from utils.pipelines import load_pipeline, pipeline_names, step_template, steps_from  # noqa: E402
 from utils.repositories import write_repository_file  # noqa: E402
@@ -151,6 +152,26 @@ def prediction_name(
     return f"{stain}_{version}"
 
 
+def marker_prediction_name(
+    synapses_prediction: str,
+    ihc_prediction: str,
+) -> str:
+    """Return the name of the prediction folder of the synapse marker step.
+
+    The step matches the detections of 'synapse_detect' to one IHC segmentation, so its result
+    depends on two model versions. Its own folder keeps it from overwriting the detection of the
+    step before it, and keeps a run against another IHC segmentation from overwriting an earlier one.
+
+    Args:
+        synapses_prediction: Prediction folder of the synapse detection.
+        ihc_prediction: Prediction folder of the IHC segmentation.
+
+    Returns:
+        str: Name of the prediction folder.
+    """
+    return f"{synapses_prediction}_{ihc_prediction}"
+
+
 def build_replacements(
     settings: dict,
     parameters: dict,
@@ -249,6 +270,13 @@ def build_replacements(
 
     if group is not None:
         replacement_dict["prediction_dir"] = replacement_dict[f"{group.lower()}_prediction"]
+
+    if "marker" in template_name:
+        if "ihc_prediction" not in replacement_dict:
+            raise ValueError(f"The template {template_name} needs the 'ihc_version' parameter, "
+                             "which selects the IHC segmentation the detections are matched to.")
+        replacement_dict["prediction_dir"] = marker_prediction_name(
+            replacement_dict["synapses_prediction"], replacement_dict["ihc_prediction"])
 
     if "segment" in template_name:
         replacement_dict.update(watershed_parameters(replacement_dict["model"], group))
@@ -458,6 +486,7 @@ def main(
     # predecessor, so it is verified by the guard inside the job script.
     warnings = check_job_input(output_files[0])
     for step_file, output_file in zip(steps, output_files):
+        warnings += check_external_input(output_file)
         warnings += check_prediction_absent(step_file, output_file)
 
     for message in warnings:

@@ -67,10 +67,11 @@ The stain does not change the model, which is selected by the model version alon
 
 Several processing steps can be submitted as a chain of Slurm jobs:
 
-```
-python scripts/deploy_process.py -p mobie -j <params.json> --deploy   # add to MoBIE, transfer to S3
-python scripts/deploy_process.py -p sgn -j <params.json> --deploy     # mean_std, apply, segment SGN
-python scripts/deploy_process.py -p ihc -j <params.json> --deploy     # mean_std, apply, segment IHC
+```bash
+python scripts/deploy_process.py -p mobie -j <params.json> --deploy      # add to MoBIE, transfer to S3
+python scripts/deploy_process.py -p sgn -j <params.json> --deploy        # mean_std, apply, segment SGN
+python scripts/deploy_process.py -p ihc -j <params.json> --deploy        # mean_std, apply, segment IHC
+python scripts/deploy_process.py -p synapses -j <params.json> --deploy   # detect synapses, match to IHCs
 ```
 
 The whole chain is submitted at once.
@@ -83,6 +84,10 @@ A missing input makes the job fail, so the remaining steps of the chain are canc
 
 A pipeline is defined by a JSON file in `pipelines`, which lists the templates in order.
 Use the option `--start-at` to resume a chain after a failed step.
+
+A step can also need an input which no step of the chain produces.
+The second step of the `synapses` pipeline matches the detections to an IHC segmentation, which the `ihc` pipeline produced earlier.
+Such a prerequisite is checked before the submission, for every step of the chain.
 
 ## Example
 

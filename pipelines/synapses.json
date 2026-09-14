@@ -1,0 +1,7 @@
+{
+    "description": "Detect ribbon synapses and match them to an existing IHC segmentation.",
+    "steps": [
+        "synapse_detect",
+        "synapse_marker"
+    ]
+}

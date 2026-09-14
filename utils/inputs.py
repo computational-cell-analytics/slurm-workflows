@@ -16,7 +16,8 @@ SEGMENTATION_INPUT = "predictions.zarr"
 OME_ZARR_KEY = "s0"
 
 # Matches 'INPUT=<path>' and 'export OUTPUT_FOLDER=<path>' in a rendered sbatch script.
-ASSIGNMENT_PATTERN = re.compile(r"^\s*(?:export\s+)?(INPUT|OUTPUT_FOLDER)=(\S+)")
+# 'EXTERNAL_INPUT' names an input which no step of the pipeline produces, see 'check_external_input()'.
+ASSIGNMENT_PATTERN = re.compile(r"^\s*(?:export\s+)?(INPUT|OUTPUT_FOLDER|EXTERNAL_INPUT)=(\S+)")
 
 WILDCARD_CHARACTERS = "*?["
 
@@ -24,7 +25,7 @@ WILDCARD_CHARACTERS = "*?["
 def job_variables(
     sbatch_file: str,
 ) -> dict:
-    """Read the INPUT and OUTPUT_FOLDER assignments of an sbatch script.
+    """Read the INPUT, OUTPUT_FOLDER and EXTERNAL_INPUT assignments of an sbatch script.
 
     A variable which is assigned more than once keeps the value of the last assignment.
 
@@ -129,3 +130,29 @@ def check_job_input(
             messages.append(f"the prediction of the apply step does not exist: {prediction}")
 
     return messages
+
+
+def check_external_input(
+    sbatch_file: str,
+) -> list:
+    """Return a message if the external input of a job does not exist.
+
+    An external input is not produced by any step of the pipeline, so it is checked for every step
+    and not only for the first one. A value which is no absolute path is skipped, as in
+    `check_job_input()`.
+
+    Args:
+        sbatch_file: Path to an sbatch script with all placeholders filled in.
+
+    Returns:
+        list: Warning messages. The list is empty if the external input of the job exists.
+    """
+    external_input = job_variables(sbatch_file).get("EXTERNAL_INPUT")
+
+    if external_input is None or not os.path.isabs(external_input):
+        return []
+
+    if path_exists(external_input):
+        return []
+
+    return [f"the external input of the job does not exist: {external_input}"]

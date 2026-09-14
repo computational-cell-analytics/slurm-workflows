@@ -4,10 +4,9 @@
 #SBATCH --mail-user=<user_address> # change this to your mailaddress
 #SBATCH --mail-type=FAIL        # send mail when job begins and ends
 
-#SBATCH -p grete:shared         # the partition
-#SBATCH -G A100:1               # For requesting 1 A100 GPU.
+#SBATCH -p standard96s:shared         # the partition
 #SBATCH -A <account_name>
-#SBATCH -c 1
+#SBATCH -c 8
 #SBATCH --mem 300G
 #SBATCH --constraint=inet
 
@@ -32,6 +31,16 @@ export INPUT=<cochlea>/images/ome-zarr/<stain_synapses>.ome.zarr
 export MASK_PATH=<cochlea>/images/ome-zarr/<ihc_prediction>.ome.zarr
 export OUTPUT_FOLDER=<data_dir>/predictions/<cochlea>/<prediction_dir>
 
+# Result of 'synapse_detect', which this job reuses instead of running the inference again.
+DETECTION_FOLDER=<data_dir>/predictions/<cochlea>/<synapses_prediction>
+DETECTION_FILE=synapse_detection.tsv
+
+# The job reads the IHC segmentation of MASK_PATH from the S3 bucket. The table of the MoBIE
+# project is the local proxy for it, because this repository has no S3 client. It is checked
+# before the submission and not here, so a pruned MoBIE project cannot fail a job whose data is
+# in the bucket.
+export EXTERNAL_INPUT=<mobie_project>/<cochlea>/tables/<ihc_prediction>/default.tsv
+
 export INPUT_KEY="s0"
 export MODEL=<model>
 export MAX_DISTANCE=3
@@ -39,8 +48,24 @@ export MAX_DISTANCE=3
 echo "OUTPUT_FOLDER $OUTPUT_FOLDER"
 echo "MODEL $MODEL"
 
+# Verify the input of the job. A missing input stops the rest of the pipeline.
+for path in "$DETECTION_FOLDER"/"$DETECTION_FILE" ; do
+	if [ ! -e "$path" ] ; then
+		echo "Missing input of the job: $path"
+		exit 1
+	fi
+done
+
 if [ ! -d "$OUTPUT_FOLDER" ] ; then
 	mkdir -p "$OUTPUT_FOLDER"
+fi
+
+# 'marker_detection' reruns the inference unless the detection is in its output folder. This job
+# has no GPU, so a failed copy must stop it instead of starting a prediction on the CPU.
+cp "$DETECTION_FOLDER"/"$DETECTION_FILE" "$OUTPUT_FOLDER"/"$DETECTION_FILE" || exit 1
+if [ ! -e "$OUTPUT_FOLDER"/"$DETECTION_FILE" ] ; then
+	echo "The detection was not copied to: $OUTPUT_FOLDER/$DETECTION_FILE"
+	exit 1
 fi
 
 python "$SCRIPT_REPO"/scripts/synapse_marker_detection/marker_detection.py \
@@ -50,5 +75,5 @@ python "$SCRIPT_REPO"/scripts/synapse_marker_detection/marker_detection.py \
     --mask $MASK_PATH \
     --model $MODEL \
     --max_distance $MAX_DISTANCE \
-    --s3
-
+    --s3_input \
+    --s3_mask

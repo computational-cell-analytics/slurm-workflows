@@ -1,0 +1,47 @@
+#!/bin/bash
+#SBATCH --job-name=mobie-transfer-segmentation_<cochlea_job_name>
+#SBATCH -t 01:00:00             # estimated time, adapt to your needs
+#SBATCH --mail-user=<user_address> # change this to your mailaddress
+#SBATCH --mail-type=FAIL        # send mail when job begins and ends
+
+#SBATCH -p standard96s:shared         # the partition
+#SBATCH -A <account_name>
+#SBATCH -c 1
+#SBATCH --mem 4G
+#SBATCH --constraint=inet
+
+source ~/.bashrc
+micromamba activate <mobie_environment>
+
+# Run the script
+
+MOBIE_PROJECT=<mobie_project>
+
+INPUT=<mobie_project>/<cochlea>/images/ome-zarr/<prediction_dir>.ome.zarr
+DATASET_FILE=<mobie_project>/<cochlea>/dataset.json
+TABLE_FILE=<mobie_project>/<cochlea>/tables/<prediction_dir>/default.tsv
+
+# The settings hold the rclone remote in the form remote:bucket. Only the bucket name is needed here.
+S3_REMOTE=<s3_remote>
+BUCKET_NAME="${S3_REMOTE#*:}"
+
+echo "Transfer of the segmentation <prediction_dir> of <cochlea> from ""$MOBIE_PROJECT"" to S3"
+
+# Verify the input of the job. A missing input stops the rest of the pipeline.
+for path in "$INPUT" "$DATASET_FILE" "$TABLE_FILE" ; do
+	if [ ! -e "$path" ] ; then
+		echo "Missing input of the job: $path"
+		exit 1
+	fi
+done
+
+# The remote metadata points the sources of the project at the bucket. It rewrites dataset.json,
+# so it runs before the transfer.
+mobie.add_remote_metadata -s <service_endpoint> -b "$BUCKET_NAME" -i "$MOBIE_PROJECT"
+
+# Only the new segmentation is transferred. The image data is handled by 'mobie_transfer_dataset'.
+# A table of the bucket which was enriched after the last transfer is overwritten here.
+module load rclone
+rclone --progress copyto "$DATASET_FILE" <s3_remote>/<cochlea>/dataset.json
+rclone --progress copyto "$INPUT" <s3_remote>/<cochlea>/images/ome-zarr/<prediction_dir>.ome.zarr
+rclone --progress copyto "$TABLE_FILE" <s3_remote>/<cochlea>/tables/<prediction_dir>/default.tsv

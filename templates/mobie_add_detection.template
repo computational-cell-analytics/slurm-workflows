@@ -1,0 +1,45 @@
+#!/bin/bash
+#SBATCH --job-name=mobie-detection_<cochlea_job_name>
+#SBATCH -t 00:30:00             # estimated time, adapt to your needs
+#SBATCH --mail-user=<user_address> # change this to your mailaddress
+#SBATCH --mail-type=FAIL        # send mail when job begins and ends
+
+#SBATCH -p standard96s:shared         # the partition
+#SBATCH -A <account_name>
+#SBATCH -c 4
+#SBATCH --mem 16G
+
+source ~/.bashrc
+micromamba activate <mobie_environment>
+
+# Run the script
+
+MOBIE_PROJECT=<mobie_project>
+
+COCHLEA=<cochlea>
+
+# Result of 'synapse_marker': the detections which were matched to an IHC.
+INPUT=<data_dir>/predictions/<cochlea>/<marker_prediction>/synapse_detection_filtered.tsv
+
+# Result of 'synapse_detect': every detection of the cochlea, before the matching.
+DETECTION_TABLE=<data_dir>/predictions/<cochlea>/<synapses_prediction>/synapse_detection.tsv
+
+# A spot source holds no image data, so 'mobie.add_spots' cannot create the dataset and fails with
+# an assertion if it is absent. The image data of the cochlea has to be in MoBIE already.
+export EXTERNAL_INPUT=<mobie_project>/<cochlea>/dataset.json
+
+# Verify the input of the job. A missing input stops the rest of the pipeline.
+for path in "$INPUT" "$DETECTION_TABLE" ; do
+	if [ ! -e "$path" ] ; then
+		echo "Missing input of the job: $path"
+		exit 1
+	fi
+done
+
+echo "Adding the detections of <cochlea> to MoBIE project ""$MOBIE_PROJECT"
+
+mobie.add_spots --input_table "$DETECTION_TABLE" --root "$MOBIE_PROJECT" \
+	--dataset_name "$COCHLEA" --name "<synapses_prediction>"
+
+mobie.add_spots --input_table "$INPUT" --root "$MOBIE_PROJECT" \
+	--dataset_name "$COCHLEA" --name "<marker_prediction>"

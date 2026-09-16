@@ -37,11 +37,6 @@ CHUNKS="[64,64,64]"
 # The default of --max_jobs is the core count of the whole node, not the count of the allocation.
 MAX_JOBS=${SLURM_CPUS_PER_TASK:-1}
 
-# The default temporary folder is created in the submit directory, which is this repository.
-# 'mobie.add_segmentation' resumes from the folder, so a rerun needs a new one. A requeued job keeps
-# its JobID and therefore resumes, a manual rerun starts from scratch.
-TMP_FOLDER=<data_dir>/predictions/<cochlea>/<prediction_dir>/tmp_mobie_$SLURM_JOB_ID
-
 # Verify the input of the job. A missing input stops the rest of the pipeline.
 for path in "$INPUT" ; do
 	if [ ! -e "$path" ] ; then
@@ -55,4 +50,4 @@ echo "Adding the segmentation ""$INPUT"" to MoBIE project ""$MOBIE_PROJECT"" as 
 mobie.add_segmentation --input_path "$INPUT" --input_key "$INPUT_KEY" --root "$MOBIE_PROJECT" \
 	--dataset_name "$COCHLEA" --name "$SOURCE_NAME" --resolution "$RESOLUTION" \
 	--scale_factors "$SCALE_FACTORS" --chunks "$CHUNKS" \
-	--max_jobs "$MAX_JOBS" --tmp_folder "$TMP_FOLDER"
+	--max_jobs "$MAX_JOBS"

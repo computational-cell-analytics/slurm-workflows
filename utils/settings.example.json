@@ -1,6 +1,8 @@
 {
     "user_address": "yourmail@gwdg.de",
     "account_name": "your_account",
+    "academic_id": "",
+    "hpc_user": "",
 
     "cochlea-net_environment": "cochlea-net",
     "mobie_environment": "mobie",

@@ -16,7 +16,8 @@ Copy the example file once and adapt the values to your account:
 cp utils/settings.example.json utils/settings.json
 ```
 
-The file contains the mail address and the Slurm account for the sbatch header, the directories of the data and of the job archive, the names of the micromamba environments, the local paths of the git repositories, and the paths of the trained models.
+The file contains the mail address and the Slurm account for the sbatch header, the identifiers of the HPC user, the directories of the data and of the job archive, the names of the micromamba environments, the local paths of the git repositories, and the paths of the trained models.
+The keys `academic_id` and `hpc_user` name the person who runs a job, so that the archive records who spent the computing time of the HPC project. Both may stay blank.
 `scripts/deploy_process.py` reads the file and fills the values into the templates.
 Use the option `-s` to select a different settings file.
 

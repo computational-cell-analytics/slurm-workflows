@@ -1,6 +1,8 @@
 {
 	"date": "YYYY-MM-DD",
 	"task": "example",
+	"academic_id": "your_academic_id",
+	"hpc_user": "your_hpc_user",
 	"job-name": "train-nn-gpu",
 	"runtime": "05:00:00",
 	"mail-user": "yourmail@gwdg.de",

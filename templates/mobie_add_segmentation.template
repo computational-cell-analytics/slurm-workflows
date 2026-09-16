@@ -1,0 +1,53 @@
+#!/bin/bash
+#SBATCH --job-name=mobie-segmentation_<cochlea_job_name>
+#SBATCH -t 02:00:00             # estimated time, adapt to your needs
+#SBATCH --mail-user=<user_address> # change this to your mailaddress
+#SBATCH --mail-type=FAIL        # send mail when job begins and ends
+
+#SBATCH -p standard96s:shared         # the partition
+#SBATCH -A <account_name>
+#SBATCH -c 12
+#SBATCH --mem 180G
+
+source ~/.bashrc
+micromamba activate <mobie_environment>
+
+# Run the script
+
+MOBIE_PROJECT=<mobie_project>
+
+COCHLEA=<cochlea>
+INPUT=<data_dir>/predictions/<cochlea>/<prediction_dir>/segmentation.zarr
+
+# 'run_unet_segmentation_slurm' of flamingo-tools writes the labels under this key.
+INPUT_KEY=segmentation
+
+# The prediction folder names the source in MoBIE, so the source carries the stain and the model
+# version. 'synapse_marker' addresses the IHC segmentation under this name.
+SOURCE_NAME=<prediction_dir>
+
+# 'mobie.add_segmentation' builds the table of the source from scratch. An entry which was added to
+# the table afterwards, such as a tonotopic mapping, is lost. Use --force to rebuild it anyway.
+EXISTING_OUTPUT=<mobie_project>/<cochlea>/tables/<prediction_dir>/default.tsv
+
+RESOLUTION="[0.38,0.38,0.38]"
+SCALE_FACTORS="[[2,2,2],[2,2,2],[2,2,2],[2,2,2],[2,2,2],[2,2,2]]"
+CHUNKS="[64,64,64]"
+
+# The default of --max_jobs is the core count of the whole node, not the count of the allocation.
+MAX_JOBS=${SLURM_CPUS_PER_TASK:-1}
+
+# Verify the input of the job. A missing input stops the rest of the pipeline.
+for path in "$INPUT" ; do
+	if [ ! -e "$path" ] ; then
+		echo "Missing input of the job: $path"
+		exit 1
+	fi
+done
+
+echo "Adding the segmentation ""$INPUT"" to MoBIE project ""$MOBIE_PROJECT"" as ""$SOURCE_NAME"
+
+mobie.add_segmentation --input_path "$INPUT" --input_key "$INPUT_KEY" --root "$MOBIE_PROJECT" \
+	--dataset_name "$COCHLEA" --name "$SOURCE_NAME" --resolution "$RESOLUTION" \
+	--scale_factors "$SCALE_FACTORS" --chunks "$CHUNKS" \
+	--max_jobs "$MAX_JOBS"

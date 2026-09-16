@@ -26,6 +26,9 @@ RESOLUTION="[0.38,0.38,0.38]"
 SCALE_FACTORS="[[2,2,2],[2,2,2],[2,2,2],[2,2,2],[2,2,2],[2,2,2]]"
 CHUNKS="[64,64,64]"
 
+# The default of --max_jobs is the core count of the whole node, not the count of the allocation.
+MAX_JOBS=${SLURM_CPUS_PER_TASK:-1}
+
 # Verify the input of the job. A missing input stops the rest of the pipeline.
 for path in "$INPUT" ; do
 	if [ ! -e "$path" ] ; then
@@ -51,6 +54,7 @@ for (( i=0; i<${arraylength}; i++ )); do
 
 	mobie.add_image --input_path "$INPUT" --input_key "$INPUT_KEY" --root "$MOBIE_PROJECT" \
 		--dataset_name "$COCHLEA" --name "$CHANNEL_NAME" --resolution "$RESOLUTION" \
-		--scale_factors "$SCALE_FACTORS" --chunks "$CHUNKS"
+		--scale_factors "$SCALE_FACTORS" --chunks "$CHUNKS" \
+		--max_jobs "$MAX_JOBS"
 
 done

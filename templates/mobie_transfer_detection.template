@@ -1,0 +1,39 @@
+#!/bin/bash
+#SBATCH --job-name=mobie-transfer-detection_<cochlea_job_name>
+#SBATCH -t 01:00:00             # estimated time, adapt to your needs
+#SBATCH --mail-user=<user_address> # change this to your mailaddress
+#SBATCH --mail-type=FAIL        # send mail when job begins and ends
+
+#SBATCH -p standard96s:shared         # the partition
+#SBATCH -A <account_name>
+#SBATCH -c 1
+#SBATCH --mem 4G
+#SBATCH --constraint=inet
+
+source ~/.bashrc
+micromamba activate <mobie_environment>
+
+# Run the script
+
+MOBIE_PROJECT=<mobie_project>
+
+INPUT=<mobie_project>/<cochlea>/tables/<marker_prediction>/default.tsv
+DATASET_FILE=<mobie_project>/<cochlea>/dataset.json
+DETECTION_TABLE=<mobie_project>/<cochlea>/tables/<synapses_prediction>/default.tsv
+
+echo "Transfer of the detections of <cochlea> from ""$MOBIE_PROJECT"" to S3"
+
+# Verify the input of the job. A missing input stops the rest of the pipeline.
+for path in "$INPUT" "$DATASET_FILE" "$DETECTION_TABLE" ; do
+	if [ ! -e "$path" ] ; then
+		echo "Missing input of the job: $path"
+		exit 1
+	fi
+done
+
+# A spot source holds no image data in the bucket, so it needs no remote metadata. Adding it would
+# rewrite the dataset.json of every dataset of the project.
+module load rclone
+rclone --progress copyto "$DATASET_FILE" <s3_remote>/<cochlea>/dataset.json
+rclone --progress copyto "$DETECTION_TABLE" <s3_remote>/<cochlea>/tables/<synapses_prediction>/default.tsv
+rclone --progress copyto "$INPUT" <s3_remote>/<cochlea>/tables/<marker_prediction>/default.tsv

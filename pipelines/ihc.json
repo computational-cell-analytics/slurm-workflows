@@ -1,8 +1,13 @@
 {
     "description": "Compute the normalization, apply the IHC model and segment the prediction.",
+    "group": "IHC",
     "steps": [
         "mean_std_IHC",
         "apply_IHC",
         "segment_IHC"
+    ],
+    "mobie_steps": [
+        "mobie_add_segmentation",
+        "mobie_transfer_segmentation"
     ]
 }

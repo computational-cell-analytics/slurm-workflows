@@ -2,7 +2,8 @@
 # -- coding: utf-8 --
 """author: Martin Schilling (martin.schilling@med.uni-goettingen.de), 2025
 
-Check that the input data of a job exists before the job is submitted.
+Check the data of a job before the job is submitted: every input exists, and no result which the
+job would rebuild exists already.
 """
 import glob
 import os
@@ -17,7 +18,9 @@ OME_ZARR_KEY = "s0"
 
 # Matches 'INPUT=<path>' and 'export OUTPUT_FOLDER=<path>' in a rendered sbatch script.
 # 'EXTERNAL_INPUT' names an input which no step of the pipeline produces, see 'check_external_input()'.
-ASSIGNMENT_PATTERN = re.compile(r"^\s*(?:export\s+)?(INPUT|OUTPUT_FOLDER|EXTERNAL_INPUT)=(\S+)")
+# 'EXISTING_OUTPUT' names a result which the job would rebuild, see 'check_output_absent()'.
+ASSIGNMENT_PATTERN = re.compile(
+    r"^\s*(?:export\s+)?(INPUT|OUTPUT_FOLDER|EXTERNAL_INPUT|EXISTING_OUTPUT)=(\S+)")
 
 WILDCARD_CHARACTERS = "*?["
 
@@ -25,7 +28,7 @@ WILDCARD_CHARACTERS = "*?["
 def job_variables(
     sbatch_file: str,
 ) -> dict:
-    """Read the INPUT, OUTPUT_FOLDER and EXTERNAL_INPUT assignments of an sbatch script.
+    """Read the INPUT, OUTPUT_FOLDER, EXTERNAL_INPUT and EXISTING_OUTPUT assignments of an sbatch script.
 
     A variable which is assigned more than once keeps the value of the last assignment.
 
@@ -156,3 +159,29 @@ def check_external_input(
         return []
 
     return [f"the external input of the job does not exist: {external_input}"]
+
+
+def check_output_absent(
+    sbatch_file: str,
+) -> list:
+    """Return a message if the job would rebuild a result which already exists.
+
+    A MoBIE source is built from scratch, so a second run drops every entry which was added to its
+    table afterwards, such as a tonotopic mapping or a marker label. The check runs before the
+    submission and not in the job, so that `--force` can relax it.
+
+    Args:
+        sbatch_file: Path to an sbatch script with all placeholders filled in.
+
+    Returns:
+        list: Warning messages. The list is empty if the job rebuilds no existing result.
+    """
+    existing_output = job_variables(sbatch_file).get("EXISTING_OUTPUT")
+
+    if existing_output is None or not os.path.isabs(existing_output):
+        return []
+
+    if not path_exists(existing_output):
+        return []
+
+    return [f"the result of the job exists and would be rebuilt: {existing_output}"]

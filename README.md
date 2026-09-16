@@ -43,6 +43,7 @@ This information, among other pieces of information from the sbatch script, are 
 ## Template concept
 Multiple templates for common sbatch scripts are located in `templates`.
 This includes the application of trained neural networks for the segmentation of IHCs and SGNs, the detection of synapses, and the transformation of data into MoBIE format and its transfer to the S3 bucket.
+The MoBIE templates cover the image data of a cochlea, a segmentation of SGNs or IHCs, and the ribbon synapse detections.
 Using `scripts/deploy_process.py` a JSON dictionary with parameters can be given as an input to fill blanks in the templates and use the resulting scripts for job submission.
 The templates contain no absolute path.
 A blank which is specific to a cluster account is filled from `utils/settings.json`, a blank which is specific to a job is filled from the parameter dictionary.
@@ -68,7 +69,7 @@ The stain does not change the model, which is selected by the model version alon
 Several processing steps can be submitted as a chain of Slurm jobs:
 
 ```bash
-python scripts/deploy_process.py -p mobie -j <params.json> --deploy      # add to MoBIE, transfer to S3
+python scripts/deploy_process.py -p mobie -j <params.json> --deploy      # add image data to MoBIE, transfer to S3
 python scripts/deploy_process.py -p sgn -j <params.json> --deploy        # mean_std, apply, segment SGN
 python scripts/deploy_process.py -p ihc -j <params.json> --deploy        # mean_std, apply, segment IHC
 python scripts/deploy_process.py -p synapses -j <params.json> --deploy   # detect synapses, match to IHCs
@@ -85,8 +86,32 @@ A missing input makes the job fail, so the remaining steps of the chain are canc
 A pipeline is defined by a JSON file in `pipelines`, which lists the templates in order.
 Use the option `--start-at` to resume a chain after a failed step.
 
+## The result in MoBIE and in the S3 bucket
+
+The `sgn`, `ihc` and `synapses` pipelines end with two more steps, which add the result to the MoBIE
+project and transfer the new source to the S3 bucket.
+The `sgn` and the `ihc` pipeline add the segmentation, the `synapses` pipeline adds the detections
+before and after the matching to the IHCs.
+Only the new source is transferred, so the step is short.
+
+These steps run only if the settings file names a `mobie_project`.
+Remove that key, or set it to an empty string, to end the chain with the last processing step.
+Use the option `--no-mobie` to leave the steps out for a single run, without touching the settings
+file, because the processing of a cochlea does not depend on the export.
+The skipped steps are named when the pipeline is deployed.
+
+The two segmentation templates serve both groups.
+The pipeline declares its group with the key `group`, which also enters the file name of the
+generated script, so an `sgn` run and an `ihc` run of one cochlea keep separate archive folders.
+Use the option `--group` to deploy such a template on its own with `-i`.
+
+A MoBIE source is built from scratch, so a second run drops every entry which was added to its table
+afterwards, such as a tonotopic mapping.
+The deploy step refuses to rebuild an existing table, unless `--force` is given.
+
 A step can also need an input which no step of the chain produces.
 The second step of the `synapses` pipeline matches the detections to an IHC segmentation, which the `ihc` pipeline produced earlier.
+The MoBIE step of the same pipeline needs the cochlea to be a dataset of the MoBIE project already, because a detection carries no image data which could create it.
 Such a prerequisite is checked before the submission, for every step of the chain.
 
 ## Example

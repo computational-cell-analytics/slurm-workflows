@@ -16,6 +16,15 @@ TEMPLATE_DIR = os.path.join(REPOSITORY_DIR, "templates")
 
 TEMPLATE_SUFFIX = ".template"
 
+# Steps of a pipeline, in the order in which they are submitted.
+STEPS_KEY = "steps"
+
+# Steps of a pipeline which export the result to MoBIE. They need a MoBIE project to write into.
+MOBIE_STEPS_KEY = "mobie_steps"
+
+# Key of the group which a step without a group in its template name belongs to.
+GROUP_KEY = "group"
+
 
 def pipeline_names() -> list:
     """List the names of the available pipelines.
@@ -66,17 +75,55 @@ def load_pipeline(
         except json.JSONDecodeError as exc:
             raise ValueError(f"Pipeline file {pipeline_file} is not valid JSON: {exc}") from exc
 
-    steps = pipeline.get("steps")
+    # The type is checked first. A non-empty string passes the check below and then breaks the
+    # concatenation with a TypeError, which the caller does not turn into a message.
+    for key in (STEPS_KEY, MOBIE_STEPS_KEY):
+        value = pipeline.get(key)
+        if value is not None and not isinstance(value, list):
+            raise ValueError(f"Pipeline file {pipeline_file} needs a list of steps for '{key}'.")
+
+    steps = pipeline.get(STEPS_KEY)
     if not steps:
         raise ValueError(f"Pipeline file {pipeline_file} has no steps.")
 
-    missing = [step for step in steps if not os.path.isfile(step_template(step))]
+    missing = [step for step in steps + pipeline.get(MOBIE_STEPS_KEY, [])
+               if not os.path.isfile(step_template(step))]
     if missing:
         raise ValueError(f"Pipeline file {pipeline_file} refers to steps without a template: {missing}.")
 
     pipeline["name"] = os.path.basename(pipeline_file)[:-len(".json")]
 
     return pipeline
+
+
+def pipeline_steps(
+    definition: dict,
+    mobie_project: str,
+    skip_mobie: bool = False,
+) -> tuple:
+    """Return the steps to submit, and the MoBIE steps which are skipped.
+
+    The MoBIE steps need a project to write into. Without one they are dropped instead of failing,
+    so a pipeline runs on an account which uses no MoBIE project. `skip_mobie` drops them for a
+    single run, because the processing of a cochlea does not depend on the export.
+
+    Args:
+        definition: Output of `load_pipeline()`.
+        mobie_project: Value of 'mobie_project' of the settings file, or None.
+        skip_mobie: Leave the MoBIE steps out even if a project is set.
+
+    Returns:
+        tuple of:
+            list - the steps to submit, in order
+            list - the MoBIE steps which are skipped
+    """
+    steps = list(definition[STEPS_KEY])
+    mobie_steps = list(definition.get(MOBIE_STEPS_KEY, []))
+
+    if mobie_project and not skip_mobie:
+        return steps + mobie_steps, []
+
+    return steps, mobie_steps
 
 
 def steps_from(

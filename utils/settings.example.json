@@ -2,7 +2,7 @@
     "user_address": "yourmail@gwdg.de",
     "account_name": "your_account",
 
-    "cochlea-net_environment": "sam",
+    "cochlea-net_environment": "cochlea-net",
     "mobie_environment": "mobie",
 
     "archive_dir": "/path/to/job_archive",
@@ -12,8 +12,7 @@
     "service_endpoint": "https://s3.fs.gwdg.de",
 
     "repositories": {
-        "flamingo_tools": "/path/to/flamingo-tools",
-        "micro_sam": "/path/to/micro-sam",
+        "cochlea_net": "/path/to/cochlea-net",
         "mobie_utils_python": "/path/to/mobie-utils-python",
         "reproducible_hpc": "/path/to/reproducible_hpc"
     },

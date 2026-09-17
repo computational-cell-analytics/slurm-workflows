@@ -12,7 +12,11 @@ UTILS_DIR = os.path.dirname(os.path.realpath(__file__))
 DEFAULT_SETTINGS_FILE = os.path.join(UTILS_DIR, "settings.json")
 EXAMPLE_SETTINGS_FILE = os.path.join(UTILS_DIR, "settings.example.json")
 
-REQUIRED_SETTINGS = ("data_dir", "repositories", "models")
+# Identifiers of the person who ran a job, recorded in the metadata of the archive.
+# Both keys must be present, and both may be blank.
+USER_SETTINGS = ("academic_id", "hpc_user")
+
+REQUIRED_SETTINGS = ("data_dir", "repositories", "models") + USER_SETTINGS
 
 
 def load_settings(

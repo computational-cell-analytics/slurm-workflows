@@ -14,7 +14,30 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.realpath(__file__))))
 from utils.metadata import LOG_FILE, METADATA_FILE, SBATCH_FILE  # noqa: E402
 from utils.metadata import init_metadict, read_metadata, write_metadata  # noqa: E402
 from utils.repositories import repository_status_to_dict  # noqa: E402
+from utils.settings import DEFAULT_SETTINGS_FILE, USER_SETTINGS, load_settings  # noqa: E402
 from utils.slurm import reportseff_from_jobid, sbatch_parameters_to_dict  # noqa: E402
+
+
+def user_to_metadict(
+    metadict: dict,
+) -> None:
+    """Add the identifiers of the person who ran the job to a dictionary containing metadata.
+
+    A job which finished must still be archived, so an unusable settings file is reported and
+    skipped instead of failing the archiving step.
+
+    Args:
+        metadict: Dictionary containing metadata for a slurm job.
+    """
+    try:
+        settings = load_settings(DEFAULT_SETTINGS_FILE)
+    except (FileNotFoundError, ValueError) as exc:
+        print(f"Warning: the HPC user is not recorded. {exc}")
+        return
+
+    for key in USER_SETTINGS:
+        if settings[key]:
+            metadict[key] = settings[key]
 
 
 def main(
@@ -43,12 +66,14 @@ def main(
 
     if os.path.isfile(output_file) and not overwrite:
         metadict = read_metadata(output_file)
+        user_to_metadict(metadict)
         sbatch_parameters_to_dict(sbatch_file, metadict=metadict)
         reportseff_from_jobid(log_file, metadict=metadict, jobid=jobid)
 
     else:
         metadict = init_metadict(input_dir)
 
+        user_to_metadict(metadict)
         sbatch_parameters_to_dict(sbatch_file, metadict=metadict)
         reportseff_from_jobid(log_file, metadict=metadict, jobid=jobid)
         if repository_file is not None:

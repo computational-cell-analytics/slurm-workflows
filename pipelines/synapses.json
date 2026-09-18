@@ -1,9 +1,10 @@
 {
-    "description": "Detect ribbon synapses and match them to an existing IHC segmentation.",
+    "description": "Detect ribbon synapses around an existing IHC segmentation and match them to it.",
     "group": "synapses",
     "steps": [
-        "synapse_detect",
-        "synapse_marker"
+        "mean_std_synapses",
+        "apply_synapses",
+        "detect_synapses"
     ],
     "mobie_steps": [
         "mobie_add_detection",

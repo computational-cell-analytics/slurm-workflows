@@ -81,7 +81,7 @@ Several processing steps can be submitted as a chain of Slurm jobs:
 python scripts/deploy_process.py -p mobie -j <params.json> --deploy      # add image data to MoBIE, transfer to S3
 python scripts/deploy_process.py -p sgn -j <params.json> --deploy        # mean_std, apply, segment SGN
 python scripts/deploy_process.py -p ihc -j <params.json> --deploy        # mean_std, apply, segment IHC
-python scripts/deploy_process.py -p synapses -j <params.json> --deploy   # detect synapses, match to IHCs
+python scripts/deploy_process.py -p synapses -j <params.json> --deploy   # mean_std, apply, detect synapses
 ```
 
 The whole chain is submitted at once.
@@ -100,7 +100,7 @@ Use the option `--start-at` to resume a chain after a failed step.
 The `sgn`, `ihc` and `synapses` pipelines end with two more steps, which add the result to the MoBIE
 project and transfer the new source to the S3 bucket.
 The `sgn` and the `ihc` pipeline add the segmentation, the `synapses` pipeline adds the detections
-before and after the matching to the IHCs.
+which were matched to the IHCs.
 Only the new source is transferred, so the step is short.
 
 These steps run only if the settings file names a `mobie_project`.
@@ -119,7 +119,7 @@ afterwards, such as a tonotopic mapping.
 The deploy step refuses to rebuild an existing table, unless `--force` is given.
 
 A step can also need an input which no step of the chain produces.
-The second step of the `synapses` pipeline matches the detections to an IHC segmentation, which the `ihc` pipeline produced earlier.
+The `synapses` pipeline needs an IHC segmentation, which the `ihc` pipeline produced earlier: the prediction runs only on the region around the IHCs, and the detections are matched to them.
 The MoBIE step of the same pipeline needs the cochlea to be a dataset of the MoBIE project already, because a detection carries no image data which could create it.
 Such a prerequisite is checked before the submission, for every step of the chain.
 

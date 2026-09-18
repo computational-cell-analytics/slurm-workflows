@@ -19,12 +19,11 @@ MOBIE_PROJECT=<mobie_project>
 
 INPUT=<mobie_project>/<cochlea>/tables/<marker_prediction>/default.tsv
 DATASET_FILE=<mobie_project>/<cochlea>/dataset.json
-DETECTION_TABLE=<mobie_project>/<cochlea>/tables/<synapses_prediction>/default.tsv
 
 echo "Transfer of the detections of <cochlea> from ""$MOBIE_PROJECT"" to S3"
 
 # Verify the input of the job. A missing input stops the rest of the pipeline.
-for path in "$INPUT" "$DATASET_FILE" "$DETECTION_TABLE" ; do
+for path in "$INPUT" "$DATASET_FILE" ; do
 	if [ ! -e "$path" ] ; then
 		echo "Missing input of the job: $path"
 		exit 1
@@ -35,5 +34,4 @@ done
 # rewrite the dataset.json of every dataset of the project.
 module load rclone
 rclone --progress copyto "$DATASET_FILE" <s3_remote>/<cochlea>/dataset.json
-rclone --progress copyto "$DETECTION_TABLE" <s3_remote>/<cochlea>/tables/<synapses_prediction>/default.tsv
 rclone --progress copyto "$INPUT" <s3_remote>/<cochlea>/tables/<marker_prediction>/default.tsv

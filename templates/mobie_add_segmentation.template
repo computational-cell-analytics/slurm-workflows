@@ -23,7 +23,7 @@ INPUT=<data_dir>/predictions/<cochlea>/<prediction_dir>/segmentation.zarr
 INPUT_KEY=segmentation
 
 # The prediction folder names the source in MoBIE, so the source carries the stain and the model
-# version. 'synapse_marker' addresses the IHC segmentation under this name.
+# version. The synapse jobs address the IHC segmentation under this name.
 SOURCE_NAME=<prediction_dir>
 
 # 'mobie.add_segmentation' builds the table of the source from scratch. An entry which was added to

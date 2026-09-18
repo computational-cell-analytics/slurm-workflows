@@ -1,0 +1,74 @@
+#!/bin/bash
+#SBATCH --job-name=detect-synapses_<cochlea_job_name>
+#SBATCH -t 08:00:00             # estimated time, adapt to your needs
+#SBATCH --mail-user=<user_address> # change this to your mailaddress
+#SBATCH --mail-type=FAIL        # send mail when job begins and ends
+
+#SBATCH -p standard96s:shared         # the partition
+#SBATCH -A <account_name>
+# The peak detection is thread-parallel over blocks, so it scales with the cores.
+#SBATCH -c 16
+#SBATCH --mem 200G
+#SBATCH --constraint=inet       # the IHC segmentation is read from the S3 bucket
+
+source ~/.bashrc
+micromamba activate <cochlea-net_environment>
+
+# Print out some info.
+echo "Submitting job with sbatch from directory: ${SLURM_SUBMIT_DIR}"
+echo "Home directory: ${HOME}"
+echo "Working directory: $PWD"
+echo "Current node: ${SLURM_NODELIST}"
+
+# Run the script
+
+SCRIPT_REPO=<cochlea_net>
+cd "$SCRIPT_REPO"/flamingo_tools/segmentation/ || exit
+
+export SCRIPT_DIR=$SCRIPT_REPO/scripts
+
+export OUTPUT_FOLDER=<data_dir>/predictions/<cochlea>/<prediction_dir>
+
+# IHC segmentation on the S3 bucket, used to match the detections and to filter them by
+# MAX_DISTANCE. MASK_KEY is the full resolution, unlike the MASK_INPUT_KEY of 'mean_std_synapses':
+# the matching needs the highest resolution available.
+export MASK_PATH=<cochlea>/images/ome-zarr/<ihc_prediction>.ome.zarr
+export S3_MASK=1
+export MASK_KEY="s0"
+
+export VOXEL_SIZE="0.38 0.38 0.38"
+export THRESHOLD=0.5
+
+# Keep MAX_DISTANCE equal to the one of 'mean_std_synapses', which checks the dilation of the mask
+# against it. A larger distance here matches detections the mask never covered.
+export MAX_DISTANCE=3.0
+
+# See 'mean_std_synapses' for why the MoBIE table is the local proxy of the segmentation.
+export EXTERNAL_INPUT=<mobie_project>/<cochlea>/tables/<ihc_prediction>/default.tsv
+
+echo "Output directory: ${OUTPUT_FOLDER}"
+echo "Mask: ${MASK_PATH}"
+
+# Verify the input of the job. A missing input stops the rest of the pipeline.
+for path in "$OUTPUT_FOLDER"/predictions.zarr ; do
+	if [ ! -e "$path" ] ; then
+		echo "Missing input of the job: $path"
+		exit 1
+	fi
+done
+
+# 'force_overwrite' recomputes the detection even if a table of an earlier run is in the folder.
+# The prediction is always fresh when this step runs in the chain, and a rerun through '--start-at'
+# is a deliberate recomputation. Reusing the table would risk serving the peaks of a truncated
+# volume.
+cmd_array=(	'import sys,os;'
+	'sys.path.insert(0,os.environ["SCRIPT_DIR"]);'
+	'import synapse_detection;'
+	'synapse_detection.run_synapse_detection_slurm(output_folder=os.environ["OUTPUT_FOLDER"],'
+	'voxel_size=os.environ["VOXEL_SIZE"],threshold=os.environ["THRESHOLD"],'
+	'mask_path=os.environ["MASK_PATH"],s3_mask=os.environ["S3_MASK"],'
+	'mask_key=os.environ["MASK_KEY"],'
+	'max_distance=os.environ["MAX_DISTANCE"],'
+	'force_overwrite=True)')
+cmd="${cmd_array[*]}"
+python -c "$cmd"

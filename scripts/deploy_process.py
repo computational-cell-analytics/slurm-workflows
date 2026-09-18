@@ -157,11 +157,11 @@ def marker_prediction_name(
     synapses_prediction: str,
     ihc_prediction: str,
 ) -> str:
-    """Return the name of the prediction folder of the synapse marker step.
+    """Return the name of the prediction folder of the synapse jobs.
 
-    The step matches the detections of 'synapse_detect' to one IHC segmentation, so its result
-    depends on two model versions. Its own folder keeps it from overwriting the detection of the
-    step before it, and keeps a run against another IHC segmentation from overwriting an earlier one.
+    The prediction runs on the dilated IHC segmentation and the detections are matched to it, so the
+    result depends on two model versions. The joined name keeps a run against another IHC
+    segmentation from overwriting an earlier one.
 
     Args:
         synapses_prediction: Prediction folder of the synapse detection.
@@ -199,7 +199,7 @@ def build_replacements(
     replacement_dict.update(parameters)
 
     # The stain of every group is known to a template of any group, because a job can read the
-    # result of another group. The mask of 'synapse_marker' is the IHC segmentation.
+    # result of another group. The mask of the synapse jobs is the IHC segmentation.
     for group_name, group_spec in GROUPS.items():
         replacement_dict.setdefault(f"stain_{group_name}", group_spec["stain"])
 
@@ -278,16 +278,18 @@ def build_replacements(
     if group is not None:
         replacement_dict["prediction_dir"] = replacement_dict[f"{group.lower()}_prediction"]
 
-    # The folder of the marker step depends on two model versions. It is derived for every template,
-    # so that a later step, such as the MoBIE export, can name the result of the marker step.
+    # The folder of the synapse jobs depends on two model versions. It is derived for every template,
+    # so that a later step, such as the MoBIE export, can name their result.
     if "synapses_prediction" in replacement_dict and "ihc_prediction" in replacement_dict:
         replacement_dict["marker_prediction"] = marker_prediction_name(
             replacement_dict["synapses_prediction"], replacement_dict["ihc_prediction"])
 
-    if "marker" in template_name:
+    # The prediction is masked with the IHC segmentation, so every step of the group depends on the
+    # IHC model version as well and writes into the joined folder.
+    if group == "synapses":
         if "marker_prediction" not in replacement_dict:
             raise ValueError(f"The template {template_name} needs the 'ihc_version' parameter, "
-                             "which selects the IHC segmentation the detections are matched to.")
+                             "which selects the IHC segmentation the prediction is masked with.")
         replacement_dict["prediction_dir"] = replacement_dict["marker_prediction"]
 
     # 'mobie_add_segmentation' also contains 'segment', but it needs no model and no watershed.

@@ -1,0 +1,72 @@
+#!/bin/bash
+#SBATCH --job-name=mean-std-synapses_<cochlea_job_name>
+#SBATCH -t 01:00:00             # estimated time, adapt to your needs
+#SBATCH --mail-user=<user_address> # change this to your mailaddress
+#SBATCH --mail-type=FAIL        # send mail when job begins and ends
+
+#SBATCH -p standard96s:shared         # the partition
+#SBATCH -A <account_name>
+#SBATCH -c 3
+#SBATCH --mem 128G
+#SBATCH --constraint=inet       # the IHC segmentation is read from the S3 bucket
+
+source ~/.bashrc
+micromamba activate <cochlea-net_environment>
+
+# Run the script
+
+SCRIPT_REPO=<cochlea_net>
+cd "$SCRIPT_REPO"/flamingo_tools/segmentation/ || exit
+
+export SCRIPT_DIR=$SCRIPT_REPO/scripts
+
+export INPUT=<data_dir>/<cochlea>/<cochlea_data>
+export OUTPUT_FOLDER=<data_dir>/predictions/<cochlea>/<prediction_dir>
+export INPUT_KEY=<input_key>
+
+# IHC segmentation on the S3 bucket. It is dilated into the mask which restricts the prediction to
+# the region around the IHCs. Without it the prediction would cover the whole volume.
+export MASK_PATH=<cochlea>/images/ome-zarr/<ihc_prediction>.ome.zarr
+export S3_MASK=1
+export MASK_INPUT_KEY="s4"
+
+# Dilation of the mask, in voxels of MASK_INPUT_KEY. 4 voxels of 's4' are 24 micrometer, which has
+# to stay above MAX_DISTANCE. MAX_DISTANCE only checks the dilation here; 'detect_synapses' filters
+# with it, so both templates have to name the same value.
+export DILATION_ITERATIONS=4
+export MAX_DISTANCE=3.0
+
+# The job reads the IHC segmentation of MASK_PATH from the S3 bucket. The table of the MoBIE
+# project is the local proxy for it, because this repository has no S3 client. It is checked
+# before the submission and not here, so a pruned MoBIE project cannot fail a job whose data is
+# in the bucket.
+export EXTERNAL_INPUT=<mobie_project>/<cochlea>/tables/<ihc_prediction>/default.tsv
+
+echo "Input directory: ${INPUT}"
+echo "Output directory: ${OUTPUT_FOLDER}"
+echo "Mask: ${MASK_PATH}"
+
+# Verify the input of the job. A missing input stops the rest of the pipeline.
+for path in "$INPUT" ; do
+	if [ ! -e "$path" ] ; then
+		echo "Missing input of the job: $path"
+		exit 1
+	fi
+done
+
+if [ ! -d "$OUTPUT_FOLDER" ] ; then
+	mkdir -p "$OUTPUT_FOLDER"
+fi
+
+cmd_array=(	'import sys,os;'
+	'sys.path.insert(0,os.environ["SCRIPT_DIR"]);'
+	'import synapse_detection;'
+	'synapse_detection.run_synapse_prediction_preprocess_slurm(input_path=os.environ["INPUT"],'
+	'output_folder=os.environ["OUTPUT_FOLDER"],'
+	'input_key=os.environ["INPUT_KEY"],'
+	'mask_path=os.environ["MASK_PATH"],s3_mask=os.environ["S3_MASK"],'
+	'mask_input_key=os.environ["MASK_INPUT_KEY"],'
+	'dilation_iterations=os.environ["DILATION_ITERATIONS"],'
+	'max_distance=os.environ["MAX_DISTANCE"])')
+cmd="${cmd_array[*]}"
+python -c "$cmd"

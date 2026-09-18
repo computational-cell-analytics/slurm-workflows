@@ -91,7 +91,7 @@ The `parameter_file.json`, e.g. `M_AMD_000137_L.json` could contain:
 
 ## Running the processing pipelines
 
-The pipelines are `mobie`, `ihc`, and `sgn`. The synapse pipeline was currently excluded, because it requires a pre-computed IHC segmentation.
+The pipelines are `mobie`, `ihc`, `sgn`, and `synapses`. The `synapses` pipeline needs an IHC segmentation of the same cochlea, so run `ihc` before it and set `ihc_version` in the parameter file.
 When the pipelines are run, the program checks `utils/settings.json` for local variables.
 
 Example commands are:

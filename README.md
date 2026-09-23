@@ -222,3 +222,14 @@ So the mockup is not listed as a project, and its settings file can be tracked b
    python scripts/deploy_process.py -i templates/<project>/<step>.template -j dataset.json --deploy
    python scripts/deploy_process.py -p <project>/<name> -j dataset.json --deploy
    ```
+
+## Tests
+
+The directory `tests` contains unit tests for the transfer of the job files, the log files, the replacement of the placeholders, and the check of missing files.
+Stub commands replace `sbatch` and `reportseff`, so the tests run on every machine and submit nothing.
+The tests use only the standard library, so they also run with the Python 3.6 of the login node.
+Run them from the root of the repository:
+
+```bash
+python -m unittest discover -s tests -t .
+```

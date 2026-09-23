@@ -53,13 +53,14 @@ def sbatch_parameters_to_dict(
     """
     with open(sbatch_file, "rt", encoding="utf8", errors="ignore") as myfile:
         for line in myfile:
-            if "#SBATCH" in line:
-                contents = line.split(" ")
+            # Slurm reads only a line which starts with '#SBATCH'. '##SBATCH' disables a directive.
+            contents = line.split()
+            if len(contents) >= 2 and contents[0] == "#SBATCH":
                 for p in SBATCH_PARAMETERS:
-                    if contents[1] in p["param"]:
-                        metadict[p["descr"]] = contents[2].strip()
-                    elif contents[1].split("=")[0] in p["param"]:
-                        metadict[p["descr"]] = contents[1].split("=")[1].strip()
+                    if contents[1] in p["param"] and len(contents) >= 3:
+                        metadict[p["descr"]] = contents[2]
+                    elif "=" in contents[1] and contents[1].split("=")[0] in p["param"]:
+                        metadict[p["descr"]] = contents[1].split("=", 1)[1]
 
 
 def slurm_output_files(
@@ -143,6 +144,22 @@ def slurm_output_to_dict(
     return job_info
 
 
+def matches_jobid(
+    entry: str,
+    jobid: str,
+) -> bool:
+    """Check if a JobID of `reportseff` belongs to a job.
+
+    Args:
+        entry: JobID of a report line, such as '1234', '1234_0' for an array task, or '1234.batch'.
+        jobid: JobID of the job.
+
+    Returns:
+        bool: True for the job itself, one of its array tasks, or one of its steps.
+    """
+    return entry == jobid or entry.startswith(f"{jobid}_") or entry.startswith(f"{jobid}.")
+
+
 def reportseff_from_jobid(
     log_file: str,
     metadict: dict,
@@ -165,12 +182,18 @@ def reportseff_from_jobid(
                                     f"No JobID was found in {log_file}.")
         jobid = jobids[-1]
     else:
+        jobid = str(jobid)
         print(f"Using manually provided JobID {jobid}")
 
     metadict["jobid"] = jobid
     user_id = subprocess.run(['whoami'], stdout=subprocess.PIPE).stdout.decode('utf-8').strip()
 
-    result = subprocess.run(['reportseff', '-u', user_id], stdout=subprocess.PIPE).stdout.decode('utf-8')
+    try:
+        result = subprocess.run(['reportseff', '-u', user_id], stdout=subprocess.PIPE).stdout.decode('utf-8')
+    except OSError as exc:
+        # A finished job must still be archived, so the report is left out instead.
+        print(f"Warning: the efficiency report is not recorded. reportseff could not be run: {exc}")
+        return
 
     lines = result.split("\n")
     reports_eff_list = []
@@ -178,7 +201,7 @@ def reportseff_from_jobid(
 
     for line in lines:
         contents = line.split()
-        if len(contents) > 0 and jobid in contents[0]:
+        if len(contents) >= 6 and matches_jobid(contents[0], jobid):
             job_id_found = True
             reports_eff = {"JobID": contents[0]}
             reports_eff["State"] = contents[1]

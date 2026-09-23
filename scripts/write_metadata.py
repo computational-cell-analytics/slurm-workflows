@@ -74,18 +74,15 @@ def main(
 
     if os.path.isfile(output_file) and not overwrite:
         metadict = read_metadata(output_file)
-        user_to_metadict(metadict, settings_file)
-        sbatch_parameters_to_dict(sbatch_file, metadict=metadict)
-        reportseff_from_jobid(log_file, metadict=metadict, jobid=jobid)
-
     else:
         metadict = init_metadict(input_dir)
 
-        user_to_metadict(metadict, settings_file)
-        sbatch_parameters_to_dict(sbatch_file, metadict=metadict)
-        reportseff_from_jobid(log_file, metadict=metadict, jobid=jobid)
-        if repository_file is not None:
-            repository_status_to_dict(repository_file, metadict=metadict)
+    user_to_metadict(metadict, settings_file)
+    sbatch_parameters_to_dict(sbatch_file, metadict=metadict)
+    reportseff_from_jobid(log_file, metadict=metadict, jobid=jobid)
+    # A resubmission can run on a newer commit, so the hash is refreshed for an existing file too.
+    if repository_file is not None:
+        repository_status_to_dict(repository_file, metadict=metadict)
 
     write_metadata(metadict, output_file)
 

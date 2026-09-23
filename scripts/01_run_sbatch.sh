@@ -103,7 +103,8 @@ fi
 
 echo "SUBMITTED_JOBID=$JOB_ID"
 
-if ! [ -f "$LOG_FILE" ] ; then
+# An empty log file has no last line to append to, so it is written like a new one.
+if ! [ -s "$LOG_FILE" ] ; then
 	printf '%s\n' "$JOB_ID" > "$LOG_FILE"
 else
 	# append to log file

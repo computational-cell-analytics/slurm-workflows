@@ -72,14 +72,21 @@ def submit_step(
     if result.stderr:
         print(result.stderr, end="", file=sys.stderr)
 
-    if result.returncode != 0:
-        raise ValueError(f"Submission of {output_file} failed with exit code {result.returncode}.")
-
+    jobid = None
     for line in result.stdout.splitlines():
         if line.startswith(JOBID_PREFIX):
-            return line[len(JOBID_PREFIX):].strip()
+            jobid = line[len(JOBID_PREFIX):].strip()
 
-    raise ValueError(f"No JobID was reported for {output_file}.")
+    if jobid is None:
+        if result.returncode != 0:
+            raise ValueError(f"Submission of {output_file} failed with exit code {result.returncode}.")
+        raise ValueError(f"No JobID was reported for {output_file}.")
+
+    # The job is queued, so the chain goes on. Only the archive of the job is incomplete.
+    if result.returncode != 0:
+        print(f"Warning: job {jobid} was submitted, but its archiving failed with exit code {result.returncode}.")
+
+    return jobid
 
 
 def write_job_block(

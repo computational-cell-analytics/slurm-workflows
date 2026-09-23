@@ -18,7 +18,7 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.realpath(__file__))))
 
 from utils.metadata import LOG_FILE, METADATA_FILE, SBATCH_FILE  # noqa: E402
 from utils.metadata import as_list, jobids_from_log, read_metadata, write_metadata  # noqa: E402
-from utils.slurm import reportseff_from_jobid, sbatch_parameters_to_dict  # noqa: E402
+from utils.slurm import matches_jobid, reportseff_from_jobid, sbatch_parameters_to_dict  # noqa: E402
 from utils.slurm import slurm_output_files, slurm_output_to_dict  # noqa: E402
 
 # The efficiency report of a job is available for around one week after the submission.
@@ -86,7 +86,7 @@ def update_reporteff(subfolders: List[str]):
             if days_past.days > REPORTSEFF_MAX_DAYS:
                 continue
 
-            reports = as_list(metadict["Reportseff"])
+            reports = as_list(metadict.get("Reportseff", []))
             for report in reports:
                 if report["State"] in UNFINISHED_STATES:
                     update_dir.append(folder)
@@ -139,9 +139,9 @@ def check_metadata(subfolders: List[str]):
                 update_metadata.append(folder)
 
             # check if JobID of efficiency report is identical with JobID of log
-            reports = as_list(metadict["Reportseff"])
+            reports = as_list(metadict.get("Reportseff", []))
             for report in reports:
-                if metadict["jobid"] not in report["JobID"]:
+                if not matches_jobid(report["JobID"], metadict["jobid"]):
                     if metadict["jobid"] not in jobids_from_log(log_file):
                         metadict["Reportseff"] = []
                     reportseff_from_jobid(log_file, metadict, jobid=metadict["jobid"])

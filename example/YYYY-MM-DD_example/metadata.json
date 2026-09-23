@@ -12,11 +12,11 @@
 	"Reportseff": [],
 	"Repositories": [
 		{
-			"repo_name": "cochlea_net",
+			"repo_name": "cochlea-net",
 			"repo_version": "230b80699e90787b9562e27a8662a2842d61b2ee"
 		},
 		{
-			"repo_name": "reproducible_hpc",
+			"repo_name": "slurm-workflows",
 			"repo_version": "84c497e2df51a34e296e2abd5b81d921cf4dfa57"
 		}
 	]

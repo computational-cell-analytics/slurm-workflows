@@ -14,9 +14,9 @@
     "service_endpoint": "https://s3.fs.gwdg.de",
 
     "repositories": {
-        "cochlea_net": "/path/to/cochlea-net",
-        "mobie_utils_python": "/path/to/mobie-utils-python",
-        "reproducible_hpc": "/path/to/reproducible_hpc"
+        "cochlea-net": "/path/to/cochlea-net",
+        "mobie-utils-python": "/path/to/mobie-utils-python",
+        "slurm-workflows": "/path/to/slurm-workflows"
     },
 
     "models": {

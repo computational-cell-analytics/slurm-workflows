@@ -2,21 +2,48 @@
 # -- coding: utf-8 --
 """author: Martin Schilling (martin.schilling@med.uni-goettingen.de), 2025
 
-Access to the paths and names which are specific to a cluster account.
+Access to the settings of a project: the paths and names which are specific to a cluster account.
 """
 import json
 import os
 
-UTILS_DIR = os.path.dirname(os.path.realpath(__file__))
+REPOSITORY_DIR = os.path.dirname(os.path.dirname(os.path.realpath(__file__)))
 
-DEFAULT_SETTINGS_FILE = os.path.join(UTILS_DIR, "settings.json")
-EXAMPLE_SETTINGS_FILE = os.path.join(UTILS_DIR, "settings.example.json")
+SETTINGS_DIR = os.path.join(REPOSITORY_DIR, "project_settings")
 
 # Identifiers of the person who ran a job, recorded in the metadata of the archive.
 # Both keys must be present, and both may be blank.
 USER_SETTINGS = ("academic_id", "hpc_user")
 
-REQUIRED_SETTINGS = ("data_dir", "repositories", "models") + USER_SETTINGS
+REQUIRED_SETTINGS = ("repositories",) + USER_SETTINGS
+
+
+def settings_file(
+    project: str,
+) -> str:
+    """Return the default settings file of a project.
+
+    Args:
+        project: Name of the project.
+
+    Returns:
+        str: Path of the settings file.
+    """
+    return os.path.join(SETTINGS_DIR, f"{project}.json")
+
+
+def example_settings_file(
+    project: str,
+) -> str:
+    """Return the example settings file of a project, which is tracked by git.
+
+    Args:
+        project: Name of the project.
+
+    Returns:
+        str: Path of the example settings file.
+    """
+    return os.path.join(SETTINGS_DIR, f"{project}.example.json")
 
 
 def load_settings(
@@ -31,8 +58,7 @@ def load_settings(
         dict: Content of the settings file.
     """
     if not os.path.isfile(settings_file):
-        raise FileNotFoundError(f"Settings file {settings_file} not found. Copy {EXAMPLE_SETTINGS_FILE} "
-                                f"to {settings_file} and adapt the values to your account.")
+        raise FileNotFoundError(f"Settings file {settings_file} not found.")
 
     with open(settings_file, "r") as myfile:
         try:
@@ -65,31 +91,9 @@ def settings_to_replacements(
     replacements = {key: str(value) for key, value in settings.items()
                     if isinstance(value, (str, int, float))}
 
-    for name, path in settings["repositories"].items():
+    for name, path in settings.get("repositories", {}).items():
         if name in replacements:
             raise ValueError(f"Repository name '{name}' collides with a top-level key of the settings file.")
         replacements[name] = str(path)
 
     return replacements
-
-
-def get_model_path(
-    settings: dict,
-    group: str,
-    version: str,
-) -> str:
-    """Look up the path of a trained model in the settings.
-
-    Args:
-        settings: Output of `load_settings()`.
-        group: Model group, one of the keys of the 'models' entry.
-        version: Model version within the group.
-
-    Returns:
-        str: Path of the trained model.
-    """
-    models = settings["models"].get(group, {})
-    if version not in models:
-        raise ValueError(f"Add missing model path. No match for {group} model: {version}. "
-                         f"Available versions: {sorted(models)}.")
-    return models[version]

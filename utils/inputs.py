@@ -9,13 +9,6 @@ import glob
 import os
 import re
 
-# Written by the apply step. It is the input of the segmentation step.
-SEGMENTATION_INPUT = "predictions.zarr"
-
-# Scale level of an OME-Zarr transferred from the S3 bucket. An n5 of the initial processing uses
-# 'setup<n>/timepoint0/s0' instead, because it holds every stain in one file.
-OME_ZARR_KEY = "s0"
-
 # Matches 'INPUT=<path>' and 'export OUTPUT_FOLDER=<path>' in a rendered sbatch script.
 # 'EXTERNAL_INPUT' names an input which no step of the pipeline produces, see 'check_external_input()'.
 # 'EXISTING_OUTPUT' names a result which the job would rebuild, see 'check_output_absent()'.
@@ -65,74 +58,32 @@ def path_exists(
     return os.path.exists(path)
 
 
-def resolve_input(
-    cochlea_dir: str,
-    n5_name: str,
-    n5_key: str,
-    stain: str,
-) -> tuple:
-    """Return the file name of the job input and the matching input key.
-
-    The n5 of the initial processing wins. The OME-Zarr transferred from the S3 bucket is the
-    fallback, because the n5 is deleted after a cochlea is processed. If neither exists, the n5 is
-    reported, so that `check_job_input()` names the familiar path.
-
-    Args:
-        cochlea_dir: Directory of the cochlea.
-        n5_name: File name of the n5, or None if the stain list is unknown.
-        n5_key: Input key of the n5.
-        stain: Stain of the job. It names the OME-Zarr file.
-
-    Returns:
-        tuple of str: the file name of the input, and its input key.
-    """
-    ome_zarr_name = f"{stain}.ome.zarr"
-
-    if n5_name is None:
-        return ome_zarr_name, OME_ZARR_KEY
-
-    if path_exists(os.path.join(cochlea_dir, n5_name)):
-        return n5_name, n5_key
-
-    if path_exists(os.path.join(cochlea_dir, ome_zarr_name)):
-        return ome_zarr_name, OME_ZARR_KEY
-
-    return n5_name, n5_key
-
-
 def check_job_input(
     sbatch_file: str,
 ) -> list:
-    """Return one message per input of the job which does not exist.
+    """Return a message if the INPUT of the job does not exist.
 
     An INPUT which is not an absolute path is an S3 object key, so it is not checked.
-    A job without an INPUT is a segmentation job. Its input is the prediction of the apply
-    step inside OUTPUT_FOLDER.
 
     Args:
         sbatch_file: Path to an sbatch script with all placeholders filled in.
 
     Returns:
-        list: Warning messages. The list is empty if all inputs of the job exist.
+        list: Warning messages. The list is empty if the input of the job exists.
     """
-    variables = job_variables(sbatch_file)
-    input_path = variables.get("INPUT")
-    output_folder = variables.get("OUTPUT_FOLDER")
+    input_path = job_variables(sbatch_file).get("INPUT")
 
-    messages = []
+    if input_path is None:
+        return []
 
-    if input_path is not None:
-        if not os.path.isabs(input_path):
-            print(f"The input {input_path} is no local path. The check of the input is skipped.")
-        elif not path_exists(input_path):
-            messages.append(f"the input of the job does not exist: {input_path}")
+    if not os.path.isabs(input_path):
+        print(f"The input {input_path} is no local path. The check of the input is skipped.")
+        return []
 
-    elif output_folder is not None:
-        prediction = os.path.join(output_folder, SEGMENTATION_INPUT)
-        if not path_exists(prediction):
-            messages.append(f"the prediction of the apply step does not exist: {prediction}")
+    if not path_exists(input_path):
+        return [f"the input of the job does not exist: {input_path}"]
 
-    return messages
+    return []
 
 
 def check_external_input(
@@ -166,9 +117,9 @@ def check_output_absent(
 ) -> list:
     """Return a message if the job would rebuild a result which already exists.
 
-    A MoBIE source is built from scratch, so a second run drops every entry which was added to its
-    table afterwards, such as a tonotopic mapping or a marker label. The check runs before the
-    submission and not in the job, so that `--force` can relax it.
+    An example is a MoBIE source, which is built from scratch, so a second run drops every entry
+    which was added to its table afterwards. The check runs before the submission and not in the
+    job, so that `--force` can relax it.
 
     Args:
         sbatch_file: Path to an sbatch script with all placeholders filled in.

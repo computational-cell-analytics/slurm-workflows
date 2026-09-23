@@ -1,4 +1,5 @@
-utils/settings.json
+project_settings/*.json
+!project_settings/*.example.json
 __pycache__/
 *.pyc
 .flake8

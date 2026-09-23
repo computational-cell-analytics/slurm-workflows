@@ -65,7 +65,7 @@ To add a project `<project>`, add these four parts:
 - `templates/<project>/` with one `.template` file per step.
 - `pipelines/<project>/` with the pipeline definitions, if the project chains steps.
 - `project_settings/<project>.blueprint.json` with the keys `repositories`, `academic_id`, `hpc_user` and the keys of the project.
-- `utils/<project>_deployment.py` with the logic which is specific to the project.
+- `utils/<project>_deployment.py` with the logic which is specific to the project, if the project needs it.
 
 `scripts/deploy_process.py` calls four functions of the deployment module:
 
@@ -75,6 +75,11 @@ To add a project `<project>`, add these four parts:
 | `select_steps(definition, settings, args)` | Return the steps of a pipeline to submit. |
 | `prepare_step(settings, replacements, template_file, args, definition)` | Add the placeholder values of one job and return them together with the name of the sbatch script. |
 | `check_steps(template_files, sbatch_files)` | Return warnings which stop the deployment unless `--force` is given. |
+
+A project without a deployment module uses `utils/default_deployment.py`.
+It fills the placeholders only from the settings file and the parameter file, and names the sbatch script after the template.
+A placeholder without a value raises an error.
+If all placeholders are filled, a note tells that the default deployment was used.
 
 The deploy step records the project as `Project` in the `metadata.json` of every job.
 
@@ -162,7 +167,7 @@ The sbatch script was adapted from the [GWDG](https://docs.hpc.gwdg.de/how_to_us
 | File | Role |
 |---|---|
 | `project_settings/mockup.json` | Settings of the project: mail address, environment, HPC user, git repositories. |
-| `templates/mockup.template` | Template of the job, with the placeholders `<job_name>`, `<user_address>`, `<environment>`, `<module>` and `<dataset>`. |
+| `templates/mockup/mockup.template` | Template of the job, with the placeholders `<job_name>`, `<user_address>`, `<environment>`, `<module>` and `<dataset>`. |
 | `dataset.json` | Parameters of the job: job name, debug module, dataset name. |
 | `YYYY-MM-DD_sbatch_mockup.sbatch` | The sbatch script which is generated from the template. |
 | `YYYY-MM-DD_log_mockup.txt` | The log file with the fictional JobID 1234567. |
@@ -170,29 +175,21 @@ The sbatch script was adapted from the [GWDG](https://docs.hpc.gwdg.de/how_to_us
 | `YYYY-MM-DD_mockup/` | The archive folder with the sbatch script, the log file and `metadata.json`. |
 
 The mockup files are kept in `mockup_example`, and not in the top-level directories `templates` and `project_settings`.
-Every folder in `templates` is a project, and `scripts/deploy_process.py` requires a deployment module for it.
-The top-level settings files are also not tracked by git.
+So the mockup is not listed as a project, and its settings file can be tracked by git.
 
 ### From the template to the archive
 
 1. The settings file and the parameter file fill the placeholders of the template.
    A parameter overrides a setting with the same key.
-   For a real project, `scripts/deploy_process.py` does this step.
-   The mockup has no deployment module, so fill its template directly:
+   The mockup has no deployment module, so `scripts/deploy_process.py` uses the default deployment:
    ```bash
-   python -c '
-   import json, sys
-   sys.path.insert(0, ".")
-   from utils.settings import load_settings, settings_to_replacements
-   from utils.templates import replace_substrings_in_file
-   replacements = settings_to_replacements(load_settings("mockup_example/project_settings/mockup.json"))
-   replacements.update(json.load(open("mockup_example/dataset.json")))
-   replace_substrings_in_file("mockup_example/templates/mockup.template",
-                              "mockup_example/YYYY-MM-DD_sbatch_mockup.sbatch", replacements)
-   '
+   python scripts/deploy_process.py -i mockup_example/templates/mockup/mockup.template \
+       -j mockup_example/dataset.json -s mockup_example/project_settings/mockup.json
    ```
+   Without `--deploy`, the command writes `<date>_sbatch_mockup.sbatch` with the current date into the working directory and submits nothing.
 2. `scripts/01_run_sbatch.sh` submits the sbatch script and writes the JobID into the log file.
    If the script is submitted again, the new JobID is appended in a new line.
+   If the log file was moved into the archive before, the archive merges the new JobID into the archived log file.
 3. `scripts/02_archive_scripts.sh` copies the script and the log file into the archive folder:
    ```bash
    bash scripts/02_archive_scripts.sh -i mockup_example/ -a mockup_example/ YYYY-MM-DD mockup
@@ -212,7 +209,7 @@ The top-level settings files are also not tracked by git.
 2. Copy the mockup settings to `project_settings/<project>.blueprint.json` and commit it.
    Keep the keys `repositories`, `academic_id` and `hpc_user`, and add a key for every account-specific placeholder.
    Copy the blueprint to `project_settings/<project>.json` and fill in the values of your account.
-3. Add `utils/<project>_deployment.py` with the four functions of the table in [Projects](#projects).
+3. If the settings and the parameters cannot fill every placeholder, add `utils/<project>_deployment.py` with the four functions of the table in [Projects](#projects).
 4. To chain several steps, add `pipelines/<project>/<name>.json` with the ordered template names under the key `steps`:
    ```json
    {

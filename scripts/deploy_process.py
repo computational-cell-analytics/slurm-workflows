@@ -18,7 +18,7 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.realpath(__file__))))
 
 from utils.inputs import check_external_input, check_job_input, check_output_absent  # noqa: E402
 from utils.metadata import METADATA_FILE, read_metadata, write_metadata  # noqa: E402
-from utils.pipelines import (load_pipeline, pipeline_names, project_of_template, projects,  # noqa: E402
+from utils.pipelines import (load_pipeline, pipeline_names, project_of_template,  # noqa: E402
                              resolve_pipeline, step_template, steps_from)
 from utils.repositories import write_repository_file  # noqa: E402
 from utils.settings import blueprint_settings_file, load_settings, settings_file, settings_to_replacements  # noqa: E402
@@ -153,14 +153,11 @@ def project_module(
         project: Name of the project.
 
     Returns:
-        module: `utils/<project>_deployment.py`.
+        module: `utils/<project>_deployment.py`, or `utils/default_deployment.py` if the project has none.
     """
-    if project not in projects():
-        raise ValueError(f"Unknown project '{project}'. Available projects: {projects()}.")
-
     module_file = os.path.join(REPOSITORY_DIR, "utils", f"{project}_deployment.py")
     if not os.path.isfile(module_file):
-        raise ValueError(f"Project '{project}' has no deployment module. Add {module_file}.")
+        return importlib.import_module("utils.default_deployment")
 
     # The module name contains the project name, which may hold a hyphen, so it needs importlib.
     return importlib.import_module(f"utils.{project}_deployment")

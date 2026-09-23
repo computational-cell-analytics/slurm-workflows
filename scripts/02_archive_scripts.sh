@@ -102,9 +102,19 @@ for file in "${JOB_FILES[@]}" ; do
 	temp="${FILE_NAME#"$DATE"_}"
 	middle="${temp%_"$SUFFIX"*}"
 
-	if [ "$TRANSFER_MODE" = "COPY" ] ; then
-		cp "$file" "$ODIR"/"$middle"."$FILE_EXTENSION"
+	target="$ODIR"/"$middle"."$FILE_EXTENSION"
+
+	if [ "$middle" = "log" ] && [ -f "$target" ] ; then
+		# A moved log file holds only the new JobIDs, so merge it into the archived one.
+		# JobIDs are unique, so a JobID which is already archived is dropped.
+		awk '!seen[$0]++' "$target" "$file" > "$target".tmp
+		mv "$target".tmp "$target"
+		if [ "$TRANSFER_MODE" = "MOVE" ] ; then
+			rm "$file"
+		fi
+	elif [ "$TRANSFER_MODE" = "COPY" ] ; then
+		cp "$file" "$target"
 	elif [ "$TRANSFER_MODE" = "MOVE" ] ; then
-		mv "$file" "$ODIR"/"$middle"."$FILE_EXTENSION"
+		mv "$file" "$target"
 	fi
 done

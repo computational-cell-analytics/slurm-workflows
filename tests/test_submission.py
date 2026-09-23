@@ -52,7 +52,6 @@ class RunSbatchTest(unittest.TestCase):
 
         self.assertEqual(read_file(self.log_file), f"{FIRST_JOBID}\n{FIRST_JOBID + 1}\n")
 
-    @unittest.expectedFailure
     def test_empty_log_gets_jobid(self):
         write_file(self.log_file, "")
 

@@ -233,3 +233,5 @@ Run them from the root of the repository:
 ```bash
 python -m unittest discover -s tests -t .
 ```
+
+GitHub Actions runs flake8 and the tests with Python 3.6 and 3.14 for every pull request and every push to `main`.

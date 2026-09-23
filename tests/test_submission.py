@@ -99,7 +99,6 @@ class SubmitStepTest(unittest.TestCase):
                 contextlib.redirect_stdout(io.StringIO()), contextlib.redirect_stderr(io.StringIO()):
             return self.deploy_process.submit_step("job.sbatch", "", "repositories.txt")
 
-    @unittest.expectedFailure
     def test_jobid_is_returned_if_archiving_fails(self):
         # The job is submitted, then the metadata step exits with an error.
         stub = write_file(os.path.join(self.tmp.name, "run_sbatch.sh"),

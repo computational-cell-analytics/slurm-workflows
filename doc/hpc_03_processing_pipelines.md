@@ -9,10 +9,10 @@ The templates of the project `cochlea-net` cover:
 
 ## Default settings per user
 
-The fixed settings should be set per user, specifically per repository. They are located in `project_settings/cochlea-net.example.json`. Copy these settings to `project_settings/cochlea-net.json`:
+The fixed settings should be set per user, specifically per repository. They are located in `project_settings/cochlea-net.blueprint.json`. Copy these settings to `project_settings/cochlea-net.json`:
 
 ```bash
-cp project_settings/cochlea-net.example.json project_settings/cochlea-net.json
+cp project_settings/cochlea-net.blueprint.json project_settings/cochlea-net.json
 ```
 
 The file contains:
@@ -61,7 +61,7 @@ The file contains:
 }
 ```
 
-Compare `project_settings/cochlea-net.json` with `project_settings/cochlea-net.example.json` after every pull. New keys and new model versions arrive in the example file only. An outdated `project_settings/cochlea-net.json` stops a job, either with a missing key or with an unresolved placeholder of a template.
+Compare `project_settings/cochlea-net.json` with `project_settings/cochlea-net.blueprint.json` after every pull. New keys and new model versions arrive in the blueprint file only. An outdated `project_settings/cochlea-net.json` stops a job, either with a missing key or with an unresolved placeholder of a template.
 
 ## Parameter files per cochlea
 

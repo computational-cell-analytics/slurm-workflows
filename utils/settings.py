@@ -32,18 +32,18 @@ def settings_file(
     return os.path.join(SETTINGS_DIR, f"{project}.json")
 
 
-def example_settings_file(
+def blueprint_settings_file(
     project: str,
 ) -> str:
-    """Return the example settings file of a project, which is tracked by git.
+    """Return the blueprint settings file of a project, which is tracked by git.
 
     Args:
         project: Name of the project.
 
     Returns:
-        str: Path of the example settings file.
+        str: Path of the blueprint settings file.
     """
-    return os.path.join(SETTINGS_DIR, f"{project}.example.json")
+    return os.path.join(SETTINGS_DIR, f"{project}.blueprint.json")
 
 
 def load_settings(

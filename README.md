@@ -10,10 +10,10 @@ Feedback is appreciated.
 
 Each project has one settings file, `project_settings/<project>.json`, with the paths and names which are specific to a cluster account.
 This file is not tracked by git, so that no absolute path enters the repository.
-Copy the example file of the project once and adapt the values to your account, e.g. for `cochlea-net`:
+Copy the blueprint file of the project once and adapt the values to your account, e.g. for `cochlea-net`:
 
 ```
-cp project_settings/cochlea-net.example.json project_settings/cochlea-net.json
+cp project_settings/cochlea-net.blueprint.json project_settings/cochlea-net.json
 ```
 
 The settings file of `cochlea-net` contains the mail address and the Slurm account for the sbatch header, the identifiers of the HPC user, the directories of the data and of the job archive, the names of the micromamba environments, the local paths of the git repositories, and the paths of the trained models.
@@ -64,7 +64,7 @@ To add a project `<project>`, add these four parts:
 
 - `templates/<project>/` with one `.template` file per step.
 - `pipelines/<project>/` with the pipeline definitions, if the project chains steps.
-- `project_settings/<project>.example.json` with the keys `repositories`, `academic_id`, `hpc_user` and the keys of the project.
+- `project_settings/<project>.blueprint.json` with the keys `repositories`, `academic_id`, `hpc_user` and the keys of the project.
 - `utils/<project>_deployment.py` with the logic which is specific to the project.
 
 `scripts/deploy_process.py` calls four functions of the deployment module:

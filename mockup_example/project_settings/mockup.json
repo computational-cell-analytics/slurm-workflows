@@ -1,0 +1,12 @@
+{
+    "user_address": "yourmail@gwdg.de",
+    "academic_id": "your_academic_id",
+    "hpc_user": "your_hpc_user",
+
+    "environment": "dl-gpu",
+
+    "repositories": {
+        "cochlea-net": "/path/to/cochlea-net",
+        "slurm-workflows": "/path/to/slurm-workflows"
+    }
+}

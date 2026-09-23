@@ -21,7 +21,7 @@ from utils.metadata import METADATA_FILE, read_metadata, write_metadata  # noqa:
 from utils.pipelines import (load_pipeline, pipeline_names, project_of_template, projects,  # noqa: E402
                              resolve_pipeline, step_template, steps_from)
 from utils.repositories import write_repository_file  # noqa: E402
-from utils.settings import example_settings_file, load_settings, settings_file, settings_to_replacements  # noqa: E402
+from utils.settings import blueprint_settings_file, load_settings, settings_file, settings_to_replacements  # noqa: E402
 from utils.templates import replace_substrings_in_file  # noqa: E402
 
 SCRIPTS_DIR = os.path.dirname(os.path.realpath(__file__))
@@ -188,7 +188,7 @@ def load_project_settings(
         settings_path = settings_file(project)
 
     if not os.path.isfile(settings_path):
-        print(f"Warning: settings file {settings_path} not found. Copy {example_settings_file(project)} "
+        print(f"Warning: settings file {settings_path} not found. Copy {blueprint_settings_file(project)} "
               f"to {settings_path} and adapt the values to your account.")
         return {}, None
 

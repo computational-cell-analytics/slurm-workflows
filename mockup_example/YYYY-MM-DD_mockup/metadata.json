@@ -1,6 +1,6 @@
 {
 	"date": "YYYY-MM-DD",
-	"task": "example",
+	"task": "mockup",
 	"academic_id": "your_academic_id",
 	"hpc_user": "your_hpc_user",
 	"job-name": "train-nn-gpu",
@@ -19,5 +19,6 @@
 			"repo_name": "slurm-workflows",
 			"repo_version": "84c497e2df51a34e296e2abd5b81d921cf4dfa57"
 		}
-	]
+	],
+	"Project": "mockup"
 }

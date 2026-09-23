@@ -77,14 +77,13 @@ class SbatchParameterTest(unittest.TestCase):
     def test_option_with_space(self):
         self.assertEqual(self.parameters("#SBATCH --mem 64G"), {"Memory-per-node": "64G"})
 
-    @unittest.expectedFailure
     def test_tab_and_double_space(self):
         self.assertEqual(self.parameters("#SBATCH\t-c 4", "#SBATCH  -t 01:00:00"),
                          {"cpus-per-task": "4", "runtime": "01:00:00"})
 
-    @unittest.expectedFailure
     def test_disabled_directive_is_ignored(self):
-        self.assertEqual(self.parameters("##SBATCH -t 99:00:00", "#SBATCH -t 01:00:00", "#SBATCH"),
+        self.assertEqual(self.parameters("##SBATCH -t 99:00:00", "#SBATCH -t 01:00:00", "#SBATCH",
+                                         "#SBATCH -c"),
                          {"runtime": "01:00:00"})
 
 

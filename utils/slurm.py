@@ -53,13 +53,14 @@ def sbatch_parameters_to_dict(
     """
     with open(sbatch_file, "rt", encoding="utf8", errors="ignore") as myfile:
         for line in myfile:
-            if "#SBATCH" in line:
-                contents = line.split(" ")
+            # Slurm reads only a line which starts with '#SBATCH'. '##SBATCH' disables a directive.
+            contents = line.split()
+            if len(contents) >= 2 and contents[0] == "#SBATCH":
                 for p in SBATCH_PARAMETERS:
-                    if contents[1] in p["param"]:
-                        metadict[p["descr"]] = contents[2].strip()
-                    elif contents[1].split("=")[0] in p["param"]:
-                        metadict[p["descr"]] = contents[1].split("=")[1].strip()
+                    if contents[1] in p["param"] and len(contents) >= 3:
+                        metadict[p["descr"]] = contents[2]
+                    elif "=" in contents[1] and contents[1].split("=")[0] in p["param"]:
+                        metadict[p["descr"]] = contents[1].split("=", 1)[1]
 
 
 def slurm_output_files(

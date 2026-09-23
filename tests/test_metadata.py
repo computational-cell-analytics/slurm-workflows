@@ -159,7 +159,6 @@ class WriteMetadataTest(unittest.TestCase):
         self.assertEqual(result.returncode, 0, result.stderr)
         return result.stdout.strip()
 
-    @unittest.expectedFailure
     def test_resubmission_refreshes_git_hash(self):
         env = stub_env(self.tmp.name)
         repository = os.path.join(self.tmp.name, "repository")

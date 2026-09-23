@@ -1,0 +1,5 @@
+{
+    "job_name": "train-nn-gpu",
+    "module": "torch.utils.collect_env",
+    "dataset": "cifar10"
+}

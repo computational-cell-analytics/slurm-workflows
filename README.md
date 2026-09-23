@@ -153,27 +153,75 @@ The `synapses` pipeline needs an IHC segmentation, which the `ihc` pipeline prod
 The MoBIE step of the same pipeline needs the cochlea to be a dataset of the MoBIE project already, because a detection carries no image data which could create it.
 Such a prerequisite is checked before the submission, for every step of the chain.
 
-## Example
+## Mockup example
 
-An example for a use case showing an sbatch script, a log file containing the JobID, and the corresponding archived metadata are located in the `example` directory.
-The example script `example/YYYY-MM-DD_sbatch_example.sbatch` has been adapted from the [GWDG](https://docs.hpc.gwdg.de/how_to_use/slurm/gpu_usage/index.html "GPU Usage - Documentation for HPC").
-The text file `example/YYYY-MM-DD_log_example.txt` contains the fictional JobID 1234567, with which the sbatch job has been submitted.
-If the script would be started multiple times, the latest jobid would be appended in a new line, if `scripts/01_run_sbatch.sh` is used for submission.
+The directory `mockup_example` shows every file of one job, from the template to the archived metadata.
+The job is a mockup: it does not run, and its paths and names are placeholders.
+The sbatch script was adapted from the [GWDG](https://docs.hpc.gwdg.de/how_to_use/slurm/gpu_usage/index.html "GPU Usage - Documentation for HPC").
 
-The script and the log file can be archived using the command:
-```
-bash scripts/02_archive_scripts.sh -i example/ -a example/ YYYY-MM-DD example
-```
+| File | Role |
+|---|---|
+| `project_settings/mockup.json` | Settings of the project: mail address, environment, HPC user, git repositories. |
+| `templates/mockup.template` | Template of the job, with the placeholders `<job_name>`, `<user_address>`, `<environment>`, `<module>` and `<dataset>`. |
+| `dataset.json` | Parameters of the job: job name, debug module, dataset name. |
+| `YYYY-MM-DD_sbatch_mockup.sbatch` | The sbatch script which is generated from the template. |
+| `YYYY-MM-DD_log_mockup.txt` | The log file with the fictional JobID 1234567. |
+| `repository_list.txt` | The git repositories whose hash is archived, one per line as `<Repository-name>	<Path-to-repository>`. |
+| `YYYY-MM-DD_mockup/` | The archive folder with the sbatch script, the log file and `metadata.json`. |
 
-A file containing information about git repositories can be given as an optional argument to archive the current git hash of the repository.
-An example for such a file is `example/repository_list.txt`.
-The information about the git repositories should be presented in the format `<Repository-name>	<Path-to-repository>`, where each line corresponds to a new git repository.
+The mockup files are kept in `mockup_example`, and not in the top-level directories `templates` and `project_settings`.
+Every folder in `templates` is a project, and `scripts/deploy_process.py` requires a deployment module for it.
+The top-level settings files are also not tracked by git.
 
-The metadata for the script is created with:
-```
-python scripts/write_metadata.py -r example/repository_list.txt example/YYYY-MM-DD_example/ -o example/YYYY-MM-DD_example/metadata.json
-```
+### From the template to the archive
 
-Add the option `-s project_settings/<project>.json` to record the HPC user of the settings file.
-`scripts/deploy_process.py` passes the settings file on by itself.
+1. The settings file and the parameter file fill the placeholders of the template.
+   A parameter overrides a setting with the same key.
+   For a real project, `scripts/deploy_process.py` does this step.
+   The mockup has no deployment module, so fill its template directly:
+   ```bash
+   python -c '
+   import json, sys
+   sys.path.insert(0, ".")
+   from utils.settings import load_settings, settings_to_replacements
+   from utils.templates import replace_substrings_in_file
+   replacements = settings_to_replacements(load_settings("mockup_example/project_settings/mockup.json"))
+   replacements.update(json.load(open("mockup_example/dataset.json")))
+   replace_substrings_in_file("mockup_example/templates/mockup.template",
+                              "mockup_example/YYYY-MM-DD_sbatch_mockup.sbatch", replacements)
+   '
+   ```
+2. `scripts/01_run_sbatch.sh` submits the sbatch script and writes the JobID into the log file.
+   If the script is submitted again, the new JobID is appended in a new line.
+3. `scripts/02_archive_scripts.sh` copies the script and the log file into the archive folder:
+   ```bash
+   bash scripts/02_archive_scripts.sh -i mockup_example/ -a mockup_example/ YYYY-MM-DD mockup
+   ```
+4. `scripts/write_metadata.py` creates `metadata.json` from the `#SBATCH` parameters, the JobID, the efficiency report of `reportseff`, the HPC user of the settings file, and the git hash of each repository:
+   ```bash
+   python scripts/write_metadata.py -r mockup_example/repository_list.txt -s mockup_example/project_settings/mockup.json \
+       mockup_example/YYYY-MM-DD_mockup/ -o mockup_example/YYYY-MM-DD_mockup/metadata.json
+   ```
+   `reportseff` is available only on the cluster.
+   `scripts/deploy_process.py` passes the settings file on by itself and adds the key `Project`.
 
+### Create your own project
+
+1. Copy the mockup template to `templates/<project>/<step>.template`.
+   Replace every value which is specific to a cluster account or to a job with a placeholder `<key>`.
+2. Copy the mockup settings to `project_settings/<project>.blueprint.json` and commit it.
+   Keep the keys `repositories`, `academic_id` and `hpc_user`, and add a key for every account-specific placeholder.
+   Copy the blueprint to `project_settings/<project>.json` and fill in the values of your account.
+3. Add `utils/<project>_deployment.py` with the four functions of the table in [Projects](#projects).
+4. To chain several steps, add `pipelines/<project>/<name>.json` with the ordered template names under the key `steps`:
+   ```json
+   {
+       "description": "Train and evaluate the network.",
+       "steps": ["train", "evaluate"]
+   }
+   ```
+5. Write the parameters of a job into a JSON file such as `dataset.json`, and deploy:
+   ```bash
+   python scripts/deploy_process.py -i templates/<project>/<step>.template -j dataset.json --deploy
+   python scripts/deploy_process.py -p <project>/<name> -j dataset.json --deploy
+   ```

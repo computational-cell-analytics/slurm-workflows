@@ -14,12 +14,13 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.realpath(__file__))))
 from utils.metadata import LOG_FILE, METADATA_FILE, SBATCH_FILE  # noqa: E402
 from utils.metadata import init_metadict, read_metadata, write_metadata  # noqa: E402
 from utils.repositories import repository_status_to_dict  # noqa: E402
-from utils.settings import DEFAULT_SETTINGS_FILE, USER_SETTINGS, load_settings  # noqa: E402
+from utils.settings import USER_SETTINGS, load_settings  # noqa: E402
 from utils.slurm import reportseff_from_jobid, sbatch_parameters_to_dict  # noqa: E402
 
 
 def user_to_metadict(
     metadict: dict,
+    settings_file: str = None,
 ) -> None:
     """Add the identifiers of the person who ran the job to a dictionary containing metadata.
 
@@ -28,9 +29,14 @@ def user_to_metadict(
 
     Args:
         metadict: Dictionary containing metadata for a slurm job.
+        settings_file: Settings file of the project, or None.
     """
+    if settings_file is None:
+        print("Warning: the HPC user is not recorded. No settings file is given.")
+        return
+
     try:
-        settings = load_settings(DEFAULT_SETTINGS_FILE)
+        settings = load_settings(settings_file)
     except (FileNotFoundError, ValueError) as exc:
         print(f"Warning: the HPC user is not recorded. {exc}")
         return
@@ -46,6 +52,7 @@ def main(
     jobid: int = None,
     repository_file: str = None,
     overwrite: bool = False,
+    settings_file: str = None,
 ):
     """Extract metadata from an sbatch script.
 
@@ -55,6 +62,7 @@ def main(
         jobid: JobID of SBATCH script
         repository_file: Optional file containing repository information
         overwrite: Flag for overwriting metadata information
+        settings_file: Settings file of the project, which names the HPC user.
     """
     if output_file is None:
         output_file = os.path.join(input_dir, METADATA_FILE)
@@ -66,14 +74,14 @@ def main(
 
     if os.path.isfile(output_file) and not overwrite:
         metadict = read_metadata(output_file)
-        user_to_metadict(metadict)
+        user_to_metadict(metadict, settings_file)
         sbatch_parameters_to_dict(sbatch_file, metadict=metadict)
         reportseff_from_jobid(log_file, metadict=metadict, jobid=jobid)
 
     else:
         metadict = init_metadict(input_dir)
 
-        user_to_metadict(metadict)
+        user_to_metadict(metadict, settings_file)
         sbatch_parameters_to_dict(sbatch_file, metadict=metadict)
         reportseff_from_jobid(log_file, metadict=metadict, jobid=jobid)
         if repository_file is not None:
@@ -95,10 +103,12 @@ if __name__ == "__main__":
     parser.add_argument('-r', "--repository_file",
                         type=str, default=None,
                         help="File with information about git repositories in format '<Name>\t<path-to-repository>\n'")
+    parser.add_argument("-s", "--settings", type=str, default=None,
+                        help="Settings file of the project, which names the HPC user.")
     parser.add_argument("--overwrite", action="store_true", help="Overwrite existing JSON file.")
     args = parser.parse_args()
 
     try:
-        main(args.input_dir, args.output, args.jobid, args.repository_file, args.overwrite)
+        main(args.input_dir, args.output, args.jobid, args.repository_file, args.overwrite, args.settings)
     except (FileNotFoundError, ValueError) as exc:
         sys.exit(str(exc))

@@ -1,15 +1,19 @@
 #!/bin/bash
-#SBATCH --job-name=apply-unet-SGN_<cochlea_job_name>
-#SBATCH -t 00:40:00             # estimated time, adapt to your needs
+#SBATCH --job-name=apply-synapses_<cochlea_job_name>
+#SBATCH -t 10:00:00             # estimated time, adapt to your needs
 #SBATCH --mail-user=<user_address> # change this to your mailaddress
 #SBATCH --mail-type=FAIL        # send mail when job begins and ends
 
 #SBATCH -p grete:shared         # the partition
 #SBATCH -A <account_name>
 #SBATCH -G A100:1               # For requesting 1 A100 GPU.
-#SBATCH -c 1
+# The prefetch workers load the next blocks while the GPU predicts, so give the job cores.
+#SBATCH -c 8
 #SBATCH --mem 64G
 #SBATCH -a 0-9
+
+# The size of the array above and PREDICTION_INSTANCES below must match. Otherwise the tasks
+# either leave blocks unpredicted or exceed the number of splits.
 
 source ~/.bashrc
 micromamba activate <cochlea-net_environment>
@@ -22,22 +26,23 @@ echo "Current node: ${SLURM_NODELIST}"
 
 # Run the script
 
-SCRIPT_REPO=<cochlea_net>
+SCRIPT_REPO=<cochlea-net>
 cd "$SCRIPT_REPO"/flamingo_tools/segmentation/ || exit
 
 export SCRIPT_DIR=$SCRIPT_REPO/scripts
-export INPUT=<data_dir>/<cochlea>/<cochlea_data>
 
+export INPUT=<data_dir>/<cochlea>/<cochlea_data>
 export OUTPUT_FOLDER=<data_dir>/predictions/<cochlea>/<prediction_dir>
+export INPUT_KEY=<input_key>
 export MODEL=<model>
 export PREDICTION_INSTANCES=10
-export INPUT_KEY=<input_key>
 
 echo "Input directory: ${INPUT}"
 echo "Output directory: ${OUTPUT_FOLDER}"
 echo "Model: ${MODEL}"
 
 # Verify the input of the job. A missing input stops the rest of the pipeline.
+# The mask of 'mean_std_synapses' is read by the prediction itself, not passed to it.
 for path in "$INPUT" "$OUTPUT_FOLDER"/mean_std.json "$OUTPUT_FOLDER"/mask.zarr ; do
 	if [ ! -e "$path" ] ; then
 		echo "Missing input of the job: $path"
@@ -47,11 +52,10 @@ done
 
 cmd_array=(	'import sys,os;'
 	'sys.path.insert(0,os.environ["SCRIPT_DIR"]);'
-	'import unet_prediction;'
-	'unet_prediction.run_unet_prediction_slurm(input_path=os.environ["INPUT"],'
+	'import synapse_detection;'
+	'synapse_detection.run_synapse_prediction_slurm(input_path=os.environ["INPUT"],'
 	'output_folder=os.environ["OUTPUT_FOLDER"],model_path=os.environ["MODEL"],'
 	'input_key=os.environ["INPUT_KEY"],'
 	'prediction_instances=os.environ["PREDICTION_INSTANCES"])')
 cmd="${cmd_array[*]}"
 python -c "$cmd"
-

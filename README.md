@@ -8,26 +8,27 @@ Feedback is appreciated.
 
 ## Setup
 
-The paths and names which are specific to a cluster account are collected in `utils/settings.json`.
+Each project has one settings file, `project_settings/<project>.json`, with the paths and names which are specific to a cluster account.
 This file is not tracked by git, so that no absolute path enters the repository.
-Copy the example file once and adapt the values to your account:
+Copy the example file of the project once and adapt the values to your account, e.g. for `cochlea-net`:
 
 ```
-cp utils/settings.example.json utils/settings.json
+cp project_settings/cochlea-net.example.json project_settings/cochlea-net.json
 ```
 
-The file contains the mail address and the Slurm account for the sbatch header, the identifiers of the HPC user, the directories of the data and of the job archive, the names of the micromamba environments, the local paths of the git repositories, and the paths of the trained models.
+The settings file of `cochlea-net` contains the mail address and the Slurm account for the sbatch header, the identifiers of the HPC user, the directories of the data and of the job archive, the names of the micromamba environments, the local paths of the git repositories, and the paths of the trained models.
 The keys `academic_id` and `hpc_user` name the person who runs a job, so that the archive records who spent the computing time of the HPC project. Both may stay blank.
-`scripts/deploy_process.py` reads the file and fills the values into the templates.
+Every settings file needs the keys `repositories`, `academic_id` and `hpc_user`. A project can require more keys.
+`scripts/deploy_process.py` reads the settings file of the project and fills the values into the templates.
 Use the option `-s` to select a different settings file.
 
 ## Repository structure
 
 The directory `scripts` contains the entry points which are run from the command line.
-The directory `utils` contains the utility functions which the scripts share, together with the
-settings file.
-The directory `templates` contains one template per processing step, and the directory `pipelines`
-contains the definitions which chain those steps.
+The directory `utils` contains the utility functions which the scripts share, and one deployment module per project.
+The directory `templates` contains one subfolder per project with one template per processing step.
+The directory `pipelines` contains one subfolder per project with the definitions which chain those steps.
+The directory `project_settings` contains the settings file of each project.
 The directory `doc` contains the documentation of the work on the HPC:
 
 - [Getting started](doc/hpc_01_getting_started.md) - the HPC project, the SSH connection, and the
@@ -49,20 +50,48 @@ Further scripts might be connected to this script by using the same date and suf
 The job information of an sbatch script is monitored and can be looked up using `reportseff -u <user_id>` for around one week after the initial submission.
 This information, among other pieces of information from the sbatch script, are extracted using `scripts/write_metadata.py`.
 
+## Projects
+A project is a set of templates, pipelines, settings and deployment logic which share one name.
+The current project is `cochlea-net`.
+The folder of a template, or the first part of a pipeline name, selects the project:
+
+```bash
+python scripts/deploy_process.py -i templates/cochlea-net/apply_SGN.template -j <params.json>
+python scripts/deploy_process.py -p cochlea-net/sgn -j <params.json>
+```
+
+To add a project `<project>`, add these four parts:
+
+- `templates/<project>/` with one `.template` file per step.
+- `pipelines/<project>/` with the pipeline definitions, if the project chains steps.
+- `project_settings/<project>.example.json` with the keys `repositories`, `academic_id`, `hpc_user` and the keys of the project.
+- `utils/<project>_deployment.py` with the logic which is specific to the project.
+
+`scripts/deploy_process.py` calls four functions of the deployment module:
+
+| Function | Purpose |
+|---|---|
+| `add_arguments(parser)` | Add the command line options of the project. |
+| `select_steps(definition, settings, args)` | Return the steps of a pipeline to submit. |
+| `prepare_step(settings, replacements, template_file, args, definition)` | Add the placeholder values of one job and return them together with the name of the sbatch script. |
+| `check_steps(template_files, sbatch_files)` | Return warnings which stop the deployment unless `--force` is given. |
+
+The deploy step records the project as `Project` in the `metadata.json` of every job.
+
 ## Template concept
-Multiple templates for common sbatch scripts are located in `templates`.
-This includes the application of trained neural networks for the segmentation of IHCs and SGNs, the detection of synapses, and the transformation of data into MoBIE format and its transfer to the S3 bucket.
+The templates of `cochlea-net` are located in `templates/cochlea-net`.
+They include the application of trained neural networks for the segmentation of IHCs and SGNs, the detection of synapses, and the transformation of data into MoBIE format and its transfer to the S3 bucket.
 The MoBIE templates cover the image data of a cochlea, a segmentation of SGNs or IHCs, and the ribbon synapse detections.
 Using `scripts/deploy_process.py` a JSON dictionary with parameters can be given as an input to fill blanks in the templates and use the resulting scripts for job submission.
 The templates contain no absolute path.
-A blank which is specific to a cluster account is filled from `utils/settings.json`, a blank which is specific to a job is filled from the parameter dictionary.
+A blank which is specific to a cluster account is filled from the settings file of the project, a blank which is specific to a job is filled from the parameter dictionary.
 A blank without a value raises an error, so that no incomplete sbatch script is written.
 
 The input data of the job is checked before the job is deployed.
 A missing input gives a warning, and the option `--deploy` stops before the submission.
 Use the option `--force` to submit the job for data which does not exist yet.
 
-The deploy step also decides which file the job reads.
+For `cochlea-net`, the deploy step also decides which file the job reads.
 The initial processing writes one n5 which holds every stain, and that n5 is deleted once the cochlea is processed.
 A later job reads the OME-Zarr which was transferred back from the S3 bucket instead.
 The n5 wins if it still exists, and the OME-Zarr `<data_dir>/<cochlea>/<stain>.ome.zarr` is the fallback.
@@ -78,10 +107,10 @@ The stain does not change the model, which is selected by the model version alon
 Several processing steps can be submitted as a chain of Slurm jobs:
 
 ```bash
-python scripts/deploy_process.py -p mobie -j <params.json> --deploy      # add image data to MoBIE, transfer to S3
-python scripts/deploy_process.py -p sgn -j <params.json> --deploy        # mean_std, apply, segment SGN
-python scripts/deploy_process.py -p ihc -j <params.json> --deploy        # mean_std, apply, segment IHC
-python scripts/deploy_process.py -p synapses -j <params.json> --deploy   # mean_std, apply, detect synapses
+python scripts/deploy_process.py -p cochlea-net/mobie -j <params.json> --deploy      # add image data to MoBIE, transfer to S3
+python scripts/deploy_process.py -p cochlea-net/sgn -j <params.json> --deploy        # mean_std, apply, segment SGN
+python scripts/deploy_process.py -p cochlea-net/ihc -j <params.json> --deploy        # mean_std, apply, segment IHC
+python scripts/deploy_process.py -p cochlea-net/synapses -j <params.json> --deploy   # mean_std, apply, detect synapses
 ```
 
 The whole chain is submitted at once.
@@ -92,12 +121,13 @@ A step starts only after its predecessor completed successfully, because it is s
 Each step also verifies its own input when it runs.
 A missing input makes the job fail, so the remaining steps of the chain are cancelled.
 
-A pipeline is defined by a JSON file in `pipelines`, which lists the templates in order.
+A pipeline is defined by a JSON file in `pipelines/<project>`, which lists the templates in order under the key `steps`.
+A project can add its own keys to the definition, such as `mobie_steps` and `group` of `cochlea-net`.
 Use the option `--start-at` to resume a chain after a failed step.
 
 ## The result in MoBIE and in the S3 bucket
 
-The `sgn`, `ihc` and `synapses` pipelines end with two more steps, which add the result to the MoBIE
+The `sgn`, `ihc` and `synapses` pipelines of `cochlea-net` end with two more steps, which add the result to the MoBIE
 project and transfer the new source to the S3 bucket.
 The `sgn` and the `ihc` pipeline add the segmentation, the `synapses` pipeline adds the detections
 which were matched to the IHCs.
@@ -143,4 +173,7 @@ The metadata for the script is created with:
 ```
 python scripts/write_metadata.py -r example/repository_list.txt example/YYYY-MM-DD_example/ -o example/YYYY-MM-DD_example/metadata.json
 ```
+
+Add the option `-s project_settings/<project>.json` to record the HPC user of the settings file.
+`scripts/deploy_process.py` passes the settings file on by itself.
 

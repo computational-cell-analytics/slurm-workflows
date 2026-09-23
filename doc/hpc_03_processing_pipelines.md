@@ -1,7 +1,7 @@
 # Run processing pipelines
 
-Processing pipelines are currently implemented in the extra Git repository [reproducible_hpc](https://github.com/schilling40/reproducible_hpc).
-It uses templates for:
+Processing pipelines are implemented in the extra Git repository [slurm-workflows](https://github.com/computational-cell-analytics/slurm-workflows).
+The templates of the project `cochlea-net` cover:
 1) the transform into MoBIE data format and the transfer to the S3 bucket,
 2) the segmentation of IHCs,
 3) the segmentation of SGNs, and
@@ -9,7 +9,13 @@ It uses templates for:
 
 ## Default settings per user
 
-The fixed settings should be set per user, specifically per repository. They are located in `utils/settings.example.json`. These settings should be copied to `utils/settings.json`.
+The fixed settings should be set per user, specifically per repository. They are located in `project_settings/cochlea-net.example.json`. Copy these settings to `project_settings/cochlea-net.json`:
+
+```bash
+cp project_settings/cochlea-net.example.json project_settings/cochlea-net.json
+```
+
+The file contains:
 
 ```json
 {
@@ -28,9 +34,9 @@ The fixed settings should be set per user, specifically per repository. They are
     "service_endpoint": "https://s3.fs.gwdg.de",
 
     "repositories": {
-        "cochlea_net": "/path/to/cochlea-net",
-        "mobie_utils_python": "/path/to/mobie-utils-python",
-        "reproducible_hpc": "/path/to/reproducible_hpc"
+        "cochlea-net": "/path/to/cochlea-net",
+        "mobie-utils-python": "/path/to/mobie-utils-python",
+        "slurm-workflows": "/path/to/slurm-workflows"
     },
 
     "models": {
@@ -55,7 +61,7 @@ The fixed settings should be set per user, specifically per repository. They are
 }
 ```
 
-Compare `utils/settings.json` with `utils/settings.example.json` after every pull. New keys and new model versions arrive in the example file only. An outdated `utils/settings.json` stops a job, either with a missing key or with an unresolved placeholder of a template.
+Compare `project_settings/cochlea-net.json` with `project_settings/cochlea-net.example.json` after every pull. New keys and new model versions arrive in the example file only. An outdated `project_settings/cochlea-net.json` stops a job, either with a missing key or with an unresolved placeholder of a template.
 
 ## Parameter files per cochlea
 
@@ -91,13 +97,13 @@ The `parameter_file.json`, e.g. `M_AMD_000137_L.json` could contain:
 
 ## Running the processing pipelines
 
-The pipelines are `mobie`, `ihc`, `sgn`, and `synapses`. The `synapses` pipeline needs an IHC segmentation of the same cochlea, so run `ihc` before it and set `ihc_version` in the parameter file.
-When the pipelines are run, the program checks `utils/settings.json` for local variables.
+The pipelines are `cochlea-net/mobie`, `cochlea-net/ihc`, `cochlea-net/sgn`, and `cochlea-net/synapses`. The `synapses` pipeline needs an IHC segmentation of the same cochlea, so run `ihc` before it and set `ihc_version` in the parameter file.
+When the pipelines are run, the program reads the local variables from `project_settings/cochlea-net.json`.
 
 Example commands are:
 ```bash
 # for a dry run
-python reproducible_hpc-repo/scripts/deploy_process.py --pipeline sgn --json parameter_file.json -a /path/to/job_archive_directory
+python slurm-workflows/scripts/deploy_process.py --pipeline cochlea-net/sgn --json parameter_file.json -a /path/to/job_archive_directory
 # for submitting the pipeline as a slurm job
-python reproducible_hpc-repo/scripts/deploy_process.py --pipeline sgn --json parameter_file.json -a /path/to/job_archive_directory --deploy
+python slurm-workflows/scripts/deploy_process.py --pipeline cochlea-net/sgn --json parameter_file.json -a /path/to/job_archive_directory --deploy
 ```

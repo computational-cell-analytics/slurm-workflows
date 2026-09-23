@@ -15,6 +15,7 @@ The sbatch script should follow the format YYYY-MM-DD_sbatch_<suffix>.sbatch.
 -m move	Move the job files into the archive instead of copying them
 -a archive	Directory for archiving sbatch script and log file
 -r repos	File listing the git repositories to snapshot
+-s settings	Settings file which names the HPC user in the metadata
 -d jobid	Start the job only after this JobID completed successfully
 -h help
 
@@ -23,12 +24,13 @@ EOF
 )
 
 REPO_OPTION=()
+SETTINGS_OPTION=()
 MOVE_OPTION=()
 SBATCH_OPTS=()
 
-usage="Usage: $0 [-h] [-m move] [-a archive_dir] [-r repository_file] [-d jobid] <sbatch_file>"
+usage="Usage: $0 [-h] [-m move] [-a archive_dir] [-r repository_file] [-s settings_file] [-d jobid] <sbatch_file>"
 
-while getopts "ma:r:d:h" opt; do
+while getopts "ma:r:s:d:h" opt; do
 	case $opt in
 	m)
 		MOVE_OPTION+=(-m)
@@ -39,6 +41,9 @@ while getopts "ma:r:d:h" opt; do
 	r)
 		REPOSITORY_FILE=$(readlink -f "$OPTARG")
 		REPO_OPTION+=(-r "$REPOSITORY_FILE")
+	;;
+	s)
+		SETTINGS_OPTION+=(-s "$(readlink -f "$OPTARG")")
 	;;
 	d)
 		# Only run after the dependency succeeded, and give up instead of waiting forever.
@@ -108,5 +113,5 @@ fi
 if [ "$ARCHIVE_DIR" ] ; then
 	echo "writing metadata"
 	bash "$SCRIPT_DIR"/02_archive_scripts.sh "${MOVE_OPTION[@]}" -a "$ARCHIVE_DIR" -i "$INPUT_DIR" "$DATE" "$SUFFIX_STR"
-	python "$SCRIPT_DIR"/write_metadata.py "${REPO_OPTION[@]}" "$ARCHIVE_DIR"/"$DATE"_"$SUFFIX_STR"/
+	python "$SCRIPT_DIR"/write_metadata.py "${REPO_OPTION[@]}" "${SETTINGS_OPTION[@]}" "$ARCHIVE_DIR"/"$DATE"_"$SUFFIX_STR"/
 fi

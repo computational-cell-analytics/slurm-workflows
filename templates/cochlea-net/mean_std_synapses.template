@@ -15,7 +15,7 @@ micromamba activate <cochlea-net_environment>
 
 # Run the script
 
-SCRIPT_REPO=<cochlea_net>
+SCRIPT_REPO=<cochlea-net>
 cd "$SCRIPT_REPO"/flamingo_tools/segmentation/ || exit
 
 export SCRIPT_DIR=$SCRIPT_REPO/scripts

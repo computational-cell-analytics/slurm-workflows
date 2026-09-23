@@ -1,6 +1,6 @@
 #!/bin/bash
 #SBATCH --job-name=apply-unet-SGN_<cochlea_job_name>
-#SBATCH -t 01:00:00             # estimated time, adapt to your needs
+#SBATCH -t 00:40:00             # estimated time, adapt to your needs
 #SBATCH --mail-user=<user_address> # change this to your mailaddress
 #SBATCH --mail-type=FAIL        # send mail when job begins and ends
 
@@ -8,7 +8,7 @@
 #SBATCH -A <account_name>
 #SBATCH -G A100:1               # For requesting 1 A100 GPU.
 #SBATCH -c 1
-#SBATCH --mem 32G
+#SBATCH --mem 64G
 #SBATCH -a 0-9
 
 source ~/.bashrc

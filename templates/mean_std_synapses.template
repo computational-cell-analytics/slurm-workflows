@@ -1,13 +1,13 @@
 #!/bin/bash
 #SBATCH --job-name=mean-std-synapses_<cochlea_job_name>
-#SBATCH -t 01:00:00             # estimated time, adapt to your needs
+#SBATCH -t 00:20:00             # estimated time, adapt to your needs
 #SBATCH --mail-user=<user_address> # change this to your mailaddress
 #SBATCH --mail-type=FAIL        # send mail when job begins and ends
 
 #SBATCH -p standard96s:shared         # the partition
 #SBATCH -A <account_name>
 #SBATCH -c 3
-#SBATCH --mem 128G
+#SBATCH --mem 12G
 #SBATCH --constraint=inet       # the IHC segmentation is read from the S3 bucket
 
 source ~/.bashrc

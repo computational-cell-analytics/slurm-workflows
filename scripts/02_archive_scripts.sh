@@ -6,6 +6,8 @@
 # Archive an sbatch script by copying (or moving) it to another directory.
 # The sbatch script should follow the format YYYY-MM-DD_sbatch_<suffiy>.sbatch.
 # If not already present, a new folder with the format 'YYYY-MM-DD_<suffix>' is created in the archive directory.
+# Every file of the job follows the format YYYY-MM-DD_<middle>_<suffix>.<ext>, with a middle part of one word,
+# such as 'sbatch' or 'log'.
 
 set -e
 
@@ -25,7 +27,7 @@ Archiving data connected to a job on the NHR.
 Scripts connected to a job are moved into a separate directory and information about the job is summarized.
 
 -m move		Move files instead of copying them
--i input dir	Input directory containing files connected to the job, starting with the date in format yyyy-mm-dd and ending with a common suffix
+-i input dir	Input directory containing files connected to the job, in the format <yyyy-mm-dd>_<middle>_<suffix>.<ext> with a middle part of one word
 -a archive	Archive directory for archiving the scripts
 -h help
 EOF
@@ -92,8 +94,6 @@ echo "Transfer mode" $TRANSFER_MODE
 
 JOB_FILES=("$INPUT_DIR"/"$DATE"_*_"$SUFFIX".*)
 
-echo "Transferring files" "${JOB_FILES[@]}"
-
 for file in "${JOB_FILES[@]}" ; do
 
 	# extraction of center part of file name
@@ -101,6 +101,16 @@ for file in "${JOB_FILES[@]}" ; do
 	FILE_EXTENSION="${FILE_NAME##*.}"
 	temp="${FILE_NAME#"$DATE"_}"
 	middle="${temp%_"$SUFFIX"*}"
+
+	# The glob also matches the files of a job whose suffix ends with '_<suffix>', such as 'y_x' for 'x'.
+	# Their middle part then holds an underscore.
+	case "$middle" in
+	*_*)
+		continue
+	;;
+	esac
+
+	echo "Transferring file" "$file"
 
 	target="$ODIR"/"$middle"."$FILE_EXTENSION"
 

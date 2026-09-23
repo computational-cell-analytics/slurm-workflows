@@ -89,7 +89,6 @@ class ArchiveTest(unittest.TestCase):
 
         self.assertEqual(read_file(os.path.join(self.archived("x"), "log.txt")), "1\n2\n")
 
-    @unittest.expectedFailure
     def test_other_suffix_is_not_archived(self):
         # 'y_x' ends with '_x', but it is a different job.
         self.submit(1, suffix="x")

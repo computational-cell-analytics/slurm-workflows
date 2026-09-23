@@ -143,6 +143,22 @@ def slurm_output_to_dict(
     return job_info
 
 
+def matches_jobid(
+    entry: str,
+    jobid: str,
+) -> bool:
+    """Check if a JobID of `reportseff` belongs to a job.
+
+    Args:
+        entry: JobID of a report line, such as '1234', '1234_0' for an array task, or '1234.batch'.
+        jobid: JobID of the job.
+
+    Returns:
+        bool: True for the job itself, one of its array tasks, or one of its steps.
+    """
+    return entry == jobid or entry.startswith(f"{jobid}_") or entry.startswith(f"{jobid}.")
+
+
 def reportseff_from_jobid(
     log_file: str,
     metadict: dict,
@@ -165,6 +181,7 @@ def reportseff_from_jobid(
                                     f"No JobID was found in {log_file}.")
         jobid = jobids[-1]
     else:
+        jobid = str(jobid)
         print(f"Using manually provided JobID {jobid}")
 
     metadict["jobid"] = jobid
@@ -178,7 +195,7 @@ def reportseff_from_jobid(
 
     for line in lines:
         contents = line.split()
-        if len(contents) > 0 and jobid in contents[0]:
+        if len(contents) >= 6 and matches_jobid(contents[0], jobid):
             job_id_found = True
             reports_eff = {"JobID": contents[0]}
             reports_eff["State"] = contents[1]

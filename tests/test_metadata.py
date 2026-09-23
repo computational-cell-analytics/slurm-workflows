@@ -105,7 +105,6 @@ class ReportseffTest(unittest.TestCase):
             reportseff_from_jobid(None, metadict, jobid=jobid)
         return metadict
 
-    @unittest.expectedFailure
     def test_jobid_match_is_exact(self):
         # The report of 91234 and 12345 must not be taken for JobID 1234.
         metadict = self.report("1234")

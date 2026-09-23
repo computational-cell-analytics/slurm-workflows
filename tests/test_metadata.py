@@ -143,7 +143,6 @@ class WriteMetadataTest(unittest.TestCase):
         with open(self.metadata_file) as myfile:
             return json.load(myfile)
 
-    @unittest.expectedFailure
     def test_missing_reportseff(self):
         env = stub_env(self.tmp.name, reportseff=False)
 

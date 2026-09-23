@@ -188,7 +188,12 @@ def reportseff_from_jobid(
     metadict["jobid"] = jobid
     user_id = subprocess.run(['whoami'], stdout=subprocess.PIPE).stdout.decode('utf-8').strip()
 
-    result = subprocess.run(['reportseff', '-u', user_id], stdout=subprocess.PIPE).stdout.decode('utf-8')
+    try:
+        result = subprocess.run(['reportseff', '-u', user_id], stdout=subprocess.PIPE).stdout.decode('utf-8')
+    except OSError as exc:
+        # A finished job must still be archived, so the report is left out instead.
+        print(f"Warning: the efficiency report is not recorded. reportseff could not be run: {exc}")
+        return
 
     lines = result.split("\n")
     reports_eff_list = []

@@ -86,7 +86,7 @@ def update_reporteff(subfolders: List[str]):
             if days_past.days > REPORTSEFF_MAX_DAYS:
                 continue
 
-            reports = as_list(metadict["Reportseff"])
+            reports = as_list(metadict.get("Reportseff", []))
             for report in reports:
                 if report["State"] in UNFINISHED_STATES:
                     update_dir.append(folder)
@@ -139,7 +139,7 @@ def check_metadata(subfolders: List[str]):
                 update_metadata.append(folder)
 
             # check if JobID of efficiency report is identical with JobID of log
-            reports = as_list(metadict["Reportseff"])
+            reports = as_list(metadict.get("Reportseff", []))
             for report in reports:
                 if not matches_jobid(report["JobID"], metadict["jobid"]):
                     if metadict["jobid"] not in jobids_from_log(log_file):

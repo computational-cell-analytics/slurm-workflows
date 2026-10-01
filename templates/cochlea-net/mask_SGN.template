@@ -1,5 +1,5 @@
 #!/bin/bash
-#SBATCH --job-name=mean-std-SGN_<cochlea_job_name>
+#SBATCH --job-name=mask-SGN_<cochlea_job_name>
 #SBATCH -t 00:40:00             # estimated time, adapt to your needs
 #SBATCH --mail-user=<user_address> # change this to your mailaddress
 #SBATCH --mail-type=FAIL        # send mail when job begins and ends

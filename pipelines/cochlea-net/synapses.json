@@ -2,7 +2,7 @@
     "description": "Detect ribbon synapses around an existing IHC segmentation and match them to it.",
     "group": "synapses",
     "steps": [
-        "mean_std_synapses",
+        "mask_synapses",
         "apply_synapses",
         "detect_synapses"
     ],

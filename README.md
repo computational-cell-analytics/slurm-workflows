@@ -113,9 +113,9 @@ Several processing steps can be submitted as a chain of Slurm jobs:
 
 ```bash
 python scripts/deploy_process.py -p cochlea-net/mobie -j <params.json> --deploy      # add image data to MoBIE, transfer to S3
-python scripts/deploy_process.py -p cochlea-net/sgn -j <params.json> --deploy        # mean_std, apply, segment SGN
-python scripts/deploy_process.py -p cochlea-net/ihc -j <params.json> --deploy        # mean_std, apply, segment IHC
-python scripts/deploy_process.py -p cochlea-net/synapses -j <params.json> --deploy   # mean_std, apply, detect synapses
+python scripts/deploy_process.py -p cochlea-net/sgn -j <params.json> --deploy        # mask, apply, segment SGN
+python scripts/deploy_process.py -p cochlea-net/ihc -j <params.json> --deploy        # mask, apply, segment IHC
+python scripts/deploy_process.py -p cochlea-net/synapses -j <params.json> --deploy   # mask, apply, detect synapses
 ```
 
 The whole chain is submitted at once.

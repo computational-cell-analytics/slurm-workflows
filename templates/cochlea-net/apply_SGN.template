@@ -38,7 +38,7 @@ echo "Output directory: ${OUTPUT_FOLDER}"
 echo "Model: ${MODEL}"
 
 # Verify the input of the job. A missing input stops the rest of the pipeline.
-for path in "$INPUT" "$OUTPUT_FOLDER"/mean_std.json "$OUTPUT_FOLDER"/mask.zarr ; do
+for path in "$INPUT" "$OUTPUT_FOLDER"/mask.zarr ; do
 	if [ ! -e "$path" ] ; then
 		echo "Missing input of the job: $path"
 		exit 1

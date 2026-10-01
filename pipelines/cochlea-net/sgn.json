@@ -1,8 +1,8 @@
 {
-    "description": "Compute the normalization, apply the SGN model and segment the prediction.",
+    "description": "Mask the volume, apply the SGN model and segment the prediction.",
     "group": "SGN",
     "steps": [
-        "mean_std_SGN",
+        "mask_SGN",
         "apply_SGN",
         "segment_SGN"
     ],

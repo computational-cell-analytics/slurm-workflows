@@ -42,7 +42,7 @@ echo "Output directory: ${OUTPUT_FOLDER}"
 echo "Model: ${MODEL}"
 
 # Verify the input of the job. A missing input stops the rest of the pipeline.
-# The mask of 'mean_std_synapses' is read by the prediction itself, not passed to it.
+# The mask of 'mask_synapses' is read by the prediction itself, not passed to it.
 for path in "$INPUT" "$OUTPUT_FOLDER"/mask.zarr ; do
 	if [ ! -e "$path" ] ; then
 		echo "Missing input of the job: $path"

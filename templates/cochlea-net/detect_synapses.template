@@ -30,7 +30,7 @@ export SCRIPT_DIR=$SCRIPT_REPO/scripts
 export OUTPUT_FOLDER=<data_dir>/predictions/<cochlea>/<prediction_dir>
 
 # IHC segmentation on the S3 bucket, used to match the detections and to filter them by
-# MAX_DISTANCE. MASK_KEY is the full resolution, unlike the MASK_INPUT_KEY of 'mean_std_synapses':
+# MAX_DISTANCE. MASK_KEY is the full resolution, unlike the MASK_INPUT_KEY of 'mask_synapses':
 # the matching needs the highest resolution available.
 export MASK_PATH=<cochlea>/images/ome-zarr/<ihc_prediction>.ome.zarr
 export S3_MASK=1
@@ -39,11 +39,11 @@ export MASK_KEY="s0"
 export VOXEL_SIZE="0.38 0.38 0.38"
 export THRESHOLD=0.5
 
-# Keep MAX_DISTANCE equal to the one of 'mean_std_synapses', which checks the dilation of the mask
+# Keep MAX_DISTANCE equal to the one of 'mask_synapses', which checks the dilation of the mask
 # against it. A larger distance here matches detections the mask never covered.
 export MAX_DISTANCE=3.0
 
-# See 'mean_std_synapses' for why the MoBIE table is the local proxy of the segmentation.
+# See 'mask_synapses' for why the MoBIE table is the local proxy of the segmentation.
 export EXTERNAL_INPUT=<mobie_project>/<cochlea>/tables/<ihc_prediction>/default.tsv
 
 echo "Output directory: ${OUTPUT_FOLDER}"

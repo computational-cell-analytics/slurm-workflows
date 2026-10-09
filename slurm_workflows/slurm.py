@@ -9,8 +9,6 @@ import os
 import re
 import subprocess
 
-from utils.metadata import jobids_from_log
-
 SBATCH_PARAMETERS = [
     {"param": ["-A", "--account"],
      "descr": "account"},
@@ -39,6 +37,29 @@ SBATCH_PARAMETERS = [
     {"param": ["-p", "--partition"],
      "descr": "partition"},
 ]
+
+
+def jobids_from_log(
+    log_file: str,
+) -> list:
+    """Read the JobIDs of a log file, oldest first.
+
+    Args:
+        log_file: Text file with one JobID per line.
+
+    Returns:
+        list: The JobIDs of the log file. The list is empty if the file does not exist.
+    """
+    jobids = []
+
+    if os.path.isfile(log_file):
+        with open(log_file, "rt", encoding="utf8", errors="ignore") as myfile:
+            for line in myfile:
+                content = line.strip()
+                if len(content) != 0:
+                    jobids.append(content.split()[0])
+
+    return jobids
 
 
 def sbatch_parameters_to_dict(

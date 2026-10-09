@@ -2,12 +2,12 @@
 # -- coding: utf-8 --
 """author: Martin Schilling (martin.schilling@med.uni-goettingen.de), 2025
 
-Deployment of a project without its own module `utils/<project>_deployment.py`. The placeholders
-are filled from the settings and the job parameters only.
+Deployment of a project without its own module `slurm_workflows/deployment/<project>_deployment.py`.
+The placeholders are filled from the settings and the job parameters only.
 """
 import os
 
-from utils.pipelines import STEPS_KEY, TEMPLATE_SUFFIX, project_of_template
+from slurm_workflows.pipelines import STEPS_KEY, TEMPLATE_SUFFIX, project_of_template
 
 
 def add_arguments(

@@ -2,24 +2,20 @@
 # -- coding: utf-8 --
 """author: Martin Schilling (martin.schilling@med.uni-goettingen.de), 2025
 
-Script for updating the archived metadata of Slurm jobs.
+Logic of `slurm_wf.update_metadata`: update the archived metadata of Slurm jobs.
 The efficiency report of a running or pending job is refreshed, the information of a slurm output file
 can be added, and the efficiency across the archived jobs can be summarised.
 """
-import argparse
 import glob
 import os
 import statistics
-import sys
 from datetime import date
 from typing import List, Optional
 
-sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.realpath(__file__))))
-
-from utils.metadata import LOG_FILE, METADATA_FILE, SBATCH_FILE  # noqa: E402
-from utils.metadata import as_list, jobids_from_log, read_metadata, write_metadata  # noqa: E402
-from utils.slurm import matches_jobid, reportseff_from_jobid, sbatch_parameters_to_dict  # noqa: E402
-from utils.slurm import slurm_output_files, slurm_output_to_dict  # noqa: E402
+from slurm_workflows.metadata import LOG_FILE, METADATA_FILE, SBATCH_FILE
+from slurm_workflows.metadata import as_list, read_metadata, write_metadata
+from slurm_workflows.slurm import jobids_from_log, matches_jobid, reportseff_from_jobid, sbatch_parameters_to_dict
+from slurm_workflows.slurm import slurm_output_files, slurm_output_to_dict
 
 # The efficiency report of a job is available for around one week after the submission.
 REPORTSEFF_MAX_DAYS = 8
@@ -299,7 +295,7 @@ def average_efficiency(subfolders: List[str], slurm_dir: Optional[str] = None):
         print("  Core Hours:                N/A")
 
 
-def main(
+def update_archive(
         input_dir: str,
         pattern: Optional[str] = None,
         check_general_info: bool = False,
@@ -337,27 +333,3 @@ def main(
 
     if average:
         average_efficiency(subfolders, slurm_dir)
-
-
-if __name__ == "__main__":
-
-    parser = argparse.ArgumentParser(
-        description="Update report of job efficiency, if last status was 'PENDING'.")
-
-    parser.add_argument('input_dir', type=str, help="Input directory containing sbatch script.")
-
-    parser.add_argument('-p', "--pattern", type=str, default=None,
-                        help="Pattern to match folders in job archive. Supports wildcards.")
-    parser.add_argument('-s', "--slurm_dir", type=str, default=None,
-                        help="Directory containing slurm output files (slurm-<job_id>.out or "
-                             "slurm-<job_id>_<array_index>.out) to parse and store in metadata.")
-    parser.add_argument("--general", action="store_true", help="Check general info.")
-    parser.add_argument("--sbatch", action="store_true", help="Check sbatch information.")
-    parser.add_argument("--average", action="store_true",
-                        help="Print average efficiency and core-hour summary across matching jobs.")
-    args = parser.parse_args()
-
-    try:
-        main(args.input_dir, args.pattern, args.general, args.sbatch, args.slurm_dir, args.average)
-    except (FileNotFoundError, ValueError) as exc:
-        sys.exit(str(exc))

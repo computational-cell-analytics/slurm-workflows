@@ -1,7 +1,7 @@
 #!/usr/bin/python
 # -- coding: utf-8 --
-"""Tests of the placeholder replacement: `utils/templates.py`, `utils/settings.py`, and the default
-deployment of `scripts/deploy_process.py` on the mockup."""
+"""Tests of the placeholder replacement: `slurm_workflows/templates.py`, `slurm_workflows/settings.py`,
+and the default deployment of `scripts/deploy_process.py` on the mockup."""
 import contextlib
 import io
 import json
@@ -10,9 +10,9 @@ import sys
 import tempfile
 import unittest
 
-from tests.stubs import MOCKUP_DIR, REPOSITORY_DIR, read_file, run, write_file
-from utils.settings import load_settings, settings_to_replacements
-from utils.templates import extract_substrings, replace_substrings_in_file
+from slurm_workflows.settings import load_settings, settings_to_replacements
+from slurm_workflows.templates import extract_substrings, replace_substrings_in_file
+from stubs import MOCKUP_DIR, REPOSITORY_DIR, read_file, run, write_file
 
 MOCKUP_TEMPLATE = os.path.join(MOCKUP_DIR, "templates", "mockup", "mockup.template")
 MOCKUP_SETTINGS = os.path.join(MOCKUP_DIR, "project_settings", "mockup.json")

@@ -1,8 +1,8 @@
 #!/usr/bin/python
 # -- coding: utf-8 --
-"""Tests of `scripts/01_run_sbatch.sh` and of the submission step of `scripts/deploy_process.py`.
+"""Tests of `scripts/01_run_sbatch.sh` and of the submission step of `slurm_workflows/deploy.py`.
 
-`sbatch` and `reportseff` are stubs, see `tests/stubs.py`.
+`sbatch` and `reportseff` are stubs, see `test/stubs.py`.
 """
 import contextlib
 import io
@@ -12,7 +12,8 @@ import tempfile
 import unittest
 from unittest import mock
 
-from tests.stubs import FIRST_JOBID, RUN_SBATCH, load_script, read_file, run, sbatch_calls, stub_env, write_file
+from slurm_workflows import deploy
+from stubs import FIRST_JOBID, RUN_SBATCH, read_file, run, sbatch_calls, stub_env, write_file
 
 DATE = "2025-01-01"
 SBATCH_NAME = f"{DATE}_sbatch_x.sbatch"
@@ -85,19 +86,18 @@ class RunSbatchTest(unittest.TestCase):
 
 
 class SubmitStepTest(unittest.TestCase):
-    """The chain of `deploy_process.py` continues when only the archiving of a job fails."""
+    """The chain of `slurm_workflows/deploy.py` continues when only the archiving of a job fails."""
 
     def setUp(self):
         self.tmp = tempfile.TemporaryDirectory()
-        self.deploy_process = load_script("deploy_process")
 
     def tearDown(self):
         self.tmp.cleanup()
 
     def submit_step(self, stub):
-        with mock.patch.object(self.deploy_process, "RUN_SBATCH_SCRIPT", stub), \
+        with mock.patch.object(deploy, "RUN_SBATCH_SCRIPT", stub), \
                 contextlib.redirect_stdout(io.StringIO()), contextlib.redirect_stderr(io.StringIO()):
-            return self.deploy_process.submit_step("job.sbatch", "", "repositories.txt")
+            return deploy.submit_step("job.sbatch", "", "repositories.txt")
 
     def test_jobid_is_returned_if_archiving_fails(self):
         # The job is submitted, then the metadata step exits with an error.

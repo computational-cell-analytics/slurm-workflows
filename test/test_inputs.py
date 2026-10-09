@@ -1,14 +1,14 @@
 #!/usr/bin/python
 # -- coding: utf-8 --
-"""Tests of the check of missing files: `utils/inputs.py` and `resolve_input()` of cochlea-net."""
+"""Tests of the check of missing files: `slurm_workflows/inputs.py` and `resolve_input()` of cochlea-net."""
 import contextlib
 import io
 import os
 import tempfile
 import unittest
 
-from tests.stubs import cochlea_net_module, write_file
-from utils.inputs import check_external_input, check_job_input, check_output_absent, job_variables
+from slurm_workflows.inputs import check_external_input, check_job_input, check_output_absent, job_variables
+from stubs import cochlea_net_module, write_file
 
 
 class InputCheckTest(unittest.TestCase):

@@ -5,7 +5,6 @@
 The stubs replace `sbatch` and `reportseff`, so the tests run on any machine.
 """
 import importlib
-import importlib.util
 import os
 import subprocess
 import sys
@@ -147,30 +146,13 @@ def run(
                           universal_newlines=True)
 
 
-def load_script(
-    name: str,
-):
-    """Import a script of `scripts/` as a module.
-
-    Args:
-        name: File name of the script without '.py'.
-
-    Returns:
-        module: The imported script. Its `__main__` block does not run.
-    """
-    spec = importlib.util.spec_from_file_location(name, os.path.join(SCRIPTS_DIR, f"{name}.py"))
-    module = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(module)
-    return module
-
-
 def cochlea_net_module():
     """Import the deployment module of cochlea-net, whose name holds a hyphen.
 
     Returns:
-        module: `utils/cochlea-net_deployment.py`.
+        module: `slurm_workflows/deployment/cochlea-net_deployment.py`.
     """
-    return importlib.import_module("utils.cochlea-net_deployment")
+    return importlib.import_module("slurm_workflows.deployment.cochlea-net_deployment")
 
 
 def write_file(

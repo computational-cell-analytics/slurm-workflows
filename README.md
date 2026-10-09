@@ -12,7 +12,7 @@ Each project has one settings file, `project_settings/<project>.json`, with the 
 This file is not tracked by git, so that no absolute path enters the repository.
 Copy the blueprint file of the project once and adapt the values to your account, e.g. for `cochlea-net`:
 
-```
+```bash
 cp project_settings/cochlea-net.blueprint.json project_settings/cochlea-net.json
 ```
 
@@ -22,10 +22,30 @@ Every settings file needs the keys `repositories`, `academic_id` and `hpc_user`.
 `scripts/deploy_process.py` reads the settings file of the project and fills the values into the templates.
 Use the option `-s` to select a different settings file.
 
+The scripts need no installation.
+To use the commands below, or to import `slurm_workflows` from other code, install the package in editable mode:
+
+```bash
+pip install -e .
+```
+
+A regular install does not work, because the package finds `project_settings`, `templates` and `pipelines` relative to its own folder.
+Each command runs the same code as its script:
+
+| Command | Script |
+|---|---|
+| `slurm_wf.deploy` | `scripts/deploy_process.py` |
+| `slurm_wf.write_metadata` | `scripts/write_metadata.py` |
+| `slurm_wf.update_metadata` | `scripts/update_metadata.py` |
+| `slurm_wf.submit` | `scripts/01_run_sbatch.sh` |
+| `slurm_wf.archive` | `scripts/02_archive_scripts.sh` |
+
 ## Repository structure
 
 The directory `scripts` contains the entry points which are run from the command line.
-The directory `utils` contains the utility functions which the scripts share, and one deployment module per project.
+The package `slurm_workflows` contains the logic of the Python scripts and the utility functions which they share.
+Its module `cli` contains the command line interface of every command.
+Its subpackage `deployment` contains one deployment module per project.
 The directory `templates` contains one subfolder per project with one template per processing step.
 The directory `pipelines` contains one subfolder per project with the definitions which chain those steps.
 The directory `project_settings` contains the settings file of each project.
@@ -65,9 +85,9 @@ To add a project `<project>`, add these four parts:
 - `templates/<project>/` with one `.template` file per step.
 - `pipelines/<project>/` with the pipeline definitions, if the project chains steps.
 - `project_settings/<project>.blueprint.json` with the keys `repositories`, `academic_id`, `hpc_user` and the keys of the project.
-- `utils/<project>_deployment.py` with the logic which is specific to the project, if the project needs it.
+- `slurm_workflows/deployment/<project>_deployment.py` with the logic which is specific to the project, if the project needs it.
 
-`scripts/deploy_process.py` calls four functions of the deployment module:
+`slurm_workflows/deploy.py` calls four functions of the deployment module:
 
 | Function | Purpose |
 |---|---|
@@ -76,7 +96,7 @@ To add a project `<project>`, add these four parts:
 | `prepare_step(settings, replacements, template_file, args, definition)` | Add the placeholder values of one job and return them together with the name of the sbatch script. |
 | `check_steps(template_files, sbatch_files)` | Return warnings which stop the deployment unless `--force` is given. |
 
-A project without a deployment module uses `utils/default_deployment.py`.
+A project without a deployment module uses `slurm_workflows/deployment/default_deployment.py`.
 It fills the placeholders only from the settings file and the parameter file, and names the sbatch script after the template.
 A placeholder without a value raises an error.
 If all placeholders are filled, a note tells that the default deployment was used.
@@ -209,7 +229,7 @@ So the mockup is not listed as a project, and its settings file can be tracked b
 2. Copy the mockup settings to `project_settings/<project>.blueprint.json` and commit it.
    Keep the keys `repositories`, `academic_id` and `hpc_user`, and add a key for every account-specific placeholder.
    Copy the blueprint to `project_settings/<project>.json` and fill in the values of your account.
-3. If the settings and the parameters cannot fill every placeholder, add `utils/<project>_deployment.py` with the four functions of the table in [Projects](#projects).
+3. If the settings and the parameters cannot fill every placeholder, add `slurm_workflows/deployment/<project>_deployment.py` with the four functions of the table in [Projects](#projects).
 4. To chain several steps, add `pipelines/<project>/<name>.json` with the ordered template names under the key `steps`:
    ```json
    {
@@ -225,13 +245,13 @@ So the mockup is not listed as a project, and its settings file can be tracked b
 
 ## Tests
 
-The directory `tests` contains unit tests for the transfer of the job files, the log files, the replacement of the placeholders, and the check of missing files.
+The directory `test` contains unit tests for the transfer of the job files, the log files, the replacement of the placeholders, and the check of missing files.
 Stub commands replace `sbatch` and `reportseff`, so the tests run on every machine and submit nothing.
 The tests use only the standard library, so they also run with the Python 3.6 of the login node.
 Run them from the root of the repository:
 
 ```bash
-python -m unittest discover -s tests -t .
+python -m unittest discover -s test
 ```
 
 GitHub Actions runs flake8 and the tests with Python 3.6 and 3.14 for every pull request and every push to `main`.

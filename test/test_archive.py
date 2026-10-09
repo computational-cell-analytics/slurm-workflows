@@ -2,10 +2,11 @@
 # -- coding: utf-8 --
 """Tests of `scripts/02_archive_scripts.sh`: the transfer of the job files and the log merge."""
 import os
+import sys
 import tempfile
 import unittest
 
-from stubs import ARCHIVE_SCRIPTS, read_file, run, stub_env, write_file
+from stubs import ARCHIVE_SCRIPTS, REPOSITORY_DIR, read_file, run, stub_env, write_file
 
 DATE = "2025-01-01"
 
@@ -108,6 +109,14 @@ class ArchiveTest(unittest.TestCase):
 
         self.assertEqual(result.returncode, 1)
         self.assertIn("does not exist", result.stdout)
+
+    def test_cli_wrapper_runs_script(self):
+        # `slurm_wf.archive` hands its arguments to the bash script.
+        cmd = [sys.executable, "-c", "from slurm_workflows.cli import archive; archive()", "-h"]
+        result = run(cmd, cwd=REPOSITORY_DIR)
+
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn("02_archive_scripts.sh", result.stdout)
 
 
 if __name__ == "__main__":

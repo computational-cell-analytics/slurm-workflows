@@ -1,7 +1,7 @@
 #!/usr/bin/python
 # -- coding: utf-8 --
-"""Tests of the metadata of an archive folder: `utils/metadata.py`, `utils/slurm.py` and
-`scripts/write_metadata.py`. `reportseff` is a stub, see `test/stubs.py`."""
+"""Tests of the metadata of an archive folder: `slurm_workflows/metadata.py`, `slurm_workflows/slurm.py`
+and `scripts/write_metadata.py`. `reportseff` is a stub, see `test/stubs.py`."""
 import contextlib
 import io
 import json
@@ -11,9 +11,9 @@ import tempfile
 import unittest
 from unittest import mock
 
+from slurm_workflows.metadata import init_metadict
+from slurm_workflows.slurm import jobids_from_log, reportseff_from_jobid, sbatch_parameters_to_dict
 from stubs import WRITE_METADATA, run, set_reportseff_output, stub_env, write_file
-from utils.metadata import init_metadict, jobids_from_log
-from utils.slurm import reportseff_from_jobid, sbatch_parameters_to_dict
 
 REPORT_LINES = [
     "JobID State Elapsed TimeEff CPUEff MemEff",

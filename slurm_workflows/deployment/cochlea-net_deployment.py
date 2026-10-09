@@ -8,8 +8,8 @@ ribbon synapses, and the export of the results to MoBIE and the S3 bucket.
 import json
 import os
 
-from utils.inputs import job_variables, path_exists
-from utils.pipelines import missing_templates
+from slurm_workflows.inputs import job_variables, path_exists
+from slurm_workflows.pipelines import missing_templates
 
 PROJECT = "cochlea-net"
 
@@ -55,10 +55,10 @@ DEFAULT_SYNAPSE_VERSION = "synapses_v3"
 def add_arguments(
     parser,
 ) -> None:
-    """Add the options of the project to the parser of `deploy_process.py`.
+    """Add the options of the project to the parser of `slurm_wf.deploy`.
 
     Args:
-        parser: `argparse.ArgumentParser` of `deploy_process.py`.
+        parser: `argparse.ArgumentParser` of `slurm_wf.deploy`.
     """
     parser.add_argument("--no-mobie", dest="no_mobie", action="store_true",
                         help="Leave the MoBIE steps of a pipeline out, to process a cochlea without "

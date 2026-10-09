@@ -12,7 +12,7 @@ Each project has one settings file, `project_settings/<project>.json`, with the 
 This file is not tracked by git, so that no absolute path enters the repository.
 Copy the blueprint file of the project once and adapt the values to your account, e.g. for `cochlea-net`:
 
-```
+```bash
 cp project_settings/cochlea-net.blueprint.json project_settings/cochlea-net.json
 ```
 
@@ -21,6 +21,24 @@ The keys `academic_id` and `hpc_user` name the person who runs a job, so that th
 Every settings file needs the keys `repositories`, `academic_id` and `hpc_user`. A project can require more keys.
 `scripts/deploy_process.py` reads the settings file of the project and fills the values into the templates.
 Use the option `-s` to select a different settings file.
+
+The scripts need no installation.
+To use the commands below, or to import `slurm_workflows` from other code, install the package in editable mode:
+
+```bash
+pip install -e .
+```
+
+A regular install does not work, because the package finds `project_settings`, `templates` and `pipelines` relative to its own folder.
+Each command runs the same code as its script:
+
+| Command | Script |
+|---|---|
+| `slurm_wf.deploy` | `scripts/deploy_process.py` |
+| `slurm_wf.write_metadata` | `scripts/write_metadata.py` |
+| `slurm_wf.update_metadata` | `scripts/update_metadata.py` |
+| `slurm_wf.submit` | `scripts/01_run_sbatch.sh` |
+| `slurm_wf.archive` | `scripts/02_archive_scripts.sh` |
 
 ## Repository structure
 

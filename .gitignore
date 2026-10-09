@@ -2,5 +2,6 @@ project_settings/*.json
 !project_settings/*.blueprint.json
 __pycache__/
 *.pyc
+*.egg-info/
 .flake8
 .claude/

@@ -2,7 +2,7 @@
 # -- coding: utf-8 --
 """Tests of `scripts/01_run_sbatch.sh` and of the submission step of `scripts/deploy_process.py`.
 
-`sbatch` and `reportseff` are stubs, see `tests/stubs.py`.
+`sbatch` and `reportseff` are stubs, see `test/stubs.py`.
 """
 import contextlib
 import io
@@ -12,7 +12,7 @@ import tempfile
 import unittest
 from unittest import mock
 
-from tests.stubs import FIRST_JOBID, RUN_SBATCH, load_script, read_file, run, sbatch_calls, stub_env, write_file
+from stubs import FIRST_JOBID, RUN_SBATCH, load_script, read_file, run, sbatch_calls, stub_env, write_file
 
 DATE = "2025-01-01"
 SBATCH_NAME = f"{DATE}_sbatch_x.sbatch"

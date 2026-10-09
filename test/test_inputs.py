@@ -7,7 +7,7 @@ import os
 import tempfile
 import unittest
 
-from tests.stubs import cochlea_net_module, write_file
+from stubs import cochlea_net_module, write_file
 from utils.inputs import check_external_input, check_job_input, check_output_absent, job_variables
 
 

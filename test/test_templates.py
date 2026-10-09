@@ -10,7 +10,7 @@ import sys
 import tempfile
 import unittest
 
-from tests.stubs import MOCKUP_DIR, REPOSITORY_DIR, read_file, run, write_file
+from stubs import MOCKUP_DIR, REPOSITORY_DIR, read_file, run, write_file
 from utils.settings import load_settings, settings_to_replacements
 from utils.templates import extract_substrings, replace_substrings_in_file
 

@@ -1,7 +1,7 @@
 #!/usr/bin/python
 # -- coding: utf-8 --
 """Tests of the metadata of an archive folder: `utils/metadata.py`, `utils/slurm.py` and
-`scripts/write_metadata.py`. `reportseff` is a stub, see `tests/stubs.py`."""
+`scripts/write_metadata.py`. `reportseff` is a stub, see `test/stubs.py`."""
 import contextlib
 import io
 import json
@@ -11,7 +11,7 @@ import tempfile
 import unittest
 from unittest import mock
 
-from tests.stubs import WRITE_METADATA, run, set_reportseff_output, stub_env, write_file
+from stubs import WRITE_METADATA, run, set_reportseff_output, stub_env, write_file
 from utils.metadata import init_metadict, jobids_from_log
 from utils.slurm import reportseff_from_jobid, sbatch_parameters_to_dict
 

@@ -225,13 +225,13 @@ So the mockup is not listed as a project, and its settings file can be tracked b
 
 ## Tests
 
-The directory `tests` contains unit tests for the transfer of the job files, the log files, the replacement of the placeholders, and the check of missing files.
+The directory `test` contains unit tests for the transfer of the job files, the log files, the replacement of the placeholders, and the check of missing files.
 Stub commands replace `sbatch` and `reportseff`, so the tests run on every machine and submit nothing.
 The tests use only the standard library, so they also run with the Python 3.6 of the login node.
 Run them from the root of the repository:
 
 ```bash
-python -m unittest discover -s tests -t .
+python -m unittest discover -s test
 ```
 
 GitHub Actions runs flake8 and the tests with Python 3.6 and 3.14 for every pull request and every push to `main`.

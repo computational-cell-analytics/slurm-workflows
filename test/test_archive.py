@@ -5,7 +5,7 @@ import os
 import tempfile
 import unittest
 
-from tests.stubs import ARCHIVE_SCRIPTS, read_file, run, stub_env, write_file
+from stubs import ARCHIVE_SCRIPTS, read_file, run, stub_env, write_file
 
 DATE = "2025-01-01"
 

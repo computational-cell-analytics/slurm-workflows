@@ -169,8 +169,8 @@ def n5_name(
     """Return the file name of the n5 written by the initial processing.
 
     Args:
-        prefix: Animal and person of the cochlea name.
-        number: Number of the cochlea, with leading zeros.
+        prefix: Species and experimenter initials.
+        number: Animal index of the cochlea, with leading zeros.
         side: Side of the cochlea.
         stains: Every stain of the n5, in the order of its setups.
         version: Version suffix of the cochlea, or an empty string.
@@ -339,13 +339,13 @@ def prepare_step(
         version = "_" + cochlea_content[4]
         print(f"Processing version {cochlea_content[4]} of cochlea {''.join(cochlea_content[:3])}.")
 
-    animal = cochlea_content[0]
-    person = cochlea_content[1]
+    species = cochlea_content[0]
+    experimenter = cochlea_content[1]
     number = cochlea_content[2]
     side = cochlea_content[3]
     stains = replacement_dict.get("stains")
 
-    prefix = "".join([animal, person])
+    prefix = "".join([species, experimenter])
     template_name = os.path.basename(input_file)
     group = template_group(input_file)
     if group is None:

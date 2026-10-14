@@ -25,7 +25,7 @@ The file contains:
     "hpc_user": "",
 
     "cochlea-net_environment": "cochlea-net",
-    "mobie_environment": "mobie",
+    "mobie_environment": "cochlea-net",
 
     "archive_dir": "/path/to/job_archive",
     "data_dir": "/path/to/cochlea-lightsheet",

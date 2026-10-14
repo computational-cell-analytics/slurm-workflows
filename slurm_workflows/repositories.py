@@ -16,7 +16,7 @@ def write_repository_file(
 
     Args:
         repositories: Dictionary mapping repository names to their local paths.
-        output_file: Path to the output file.
+        output_file: Path of the output file.
     """
     with open(output_file, "w") as myfile:
         for name, path in repositories.items():
@@ -27,14 +27,14 @@ def repository_status_to_dict(
     repository_file: str,
     metadict: dict,
 ) -> None:
-    """Add information about git repositories to a dictionary containing metadata.
+    """Add the git hash and the status of each repository to the metadata.
 
-    Each line of the repository file contains <repository_name> and <repository_path>, separated by a tab.
-    The hash of the git commit and the status of the repository ('clean' or 'dirty') are tracked.
+    Each line of the repository file holds a repository name and a path, separated by a tab. The
+    status is 'clean' or 'dirty'.
 
     Args:
-        repository_file: File containing name and file path of git repositories.
-        metadict: Dictionary containing metadata.
+        repository_file: Path of the repository file.
+        metadict: Metadata of the job.
     """
     repo_list = []
 

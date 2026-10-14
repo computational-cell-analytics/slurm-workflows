@@ -12,13 +12,13 @@ PLACEHOLDER_PATTERN = re.compile(r"<([^>]+)>")
 def extract_substrings(
     input_string: str,
 ) -> list:
-    """Extract all substrings encompassed by < and > from the input string.
+    """Return the placeholder names of a string.
 
     Args:
-        input_string: The input string containing substrings enclosed in < and >.
+        input_string: Text with placeholders in the format `<name>`.
 
     Returns:
-        list: A list of extracted substrings.
+        list: The names without `<` and `>`.
     """
     return PLACEHOLDER_PATTERN.findall(input_string)
 
@@ -27,16 +27,16 @@ def replace_substrings(
     lines: list,
     replacement_dict: dict,
 ) -> tuple:
-    """Replace substrings enclosed in < and > based on a dictionary.
+    """Fill the placeholders of the lines.
 
     Args:
-        lines: Lines of the input file.
-        replacement_dict: Dictionary mapping substrings to their replacements.
+        lines: Lines of the template.
+        replacement_dict: Dictionary mapping placeholder names to their replacements.
 
     Returns:
         tuple of:
-            list — the processed lines
-            set  — the placeholders without a replacement
+            list - the filled lines
+            set  - the placeholders without a replacement
     """
     processed = []
     missing = set()
@@ -64,9 +64,9 @@ def replace_substrings_in_file(
     never reach the disk, because a later call could submit it.
 
     Args:
-        input_filename: Path to the input file.
-        output_filename: Path to the output file.
-        replacement_dict: Dictionary mapping substrings to their replacements.
+        input_filename: Path of the template.
+        output_filename: Path of the sbatch script.
+        replacement_dict: Dictionary mapping placeholder names to their replacements.
         strict: Raise an error instead of a warning if a placeholder has no replacement.
     """
     with open(input_filename, "r") as input_file:

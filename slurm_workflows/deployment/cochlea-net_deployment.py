@@ -120,7 +120,7 @@ def watershed_parameters(
         group: Model group, 'SGN' or 'IHC'.
 
     Returns:
-        dict: Watershed parameters. The defaults of the group are used if the model has no parameter file.
+        dict: Watershed parameters. The defaults of the group are used if the model has no `best_best_params.json`.
     """
     parameter_file = os.path.join(model_path, "best_best_params.json")
 
@@ -304,8 +304,8 @@ def prepare_step(
 
     Returns:
         tuple of:
-            dict — the placeholder replacements
-            str  — the name of the sbatch script, without the date and the extension
+            dict - the placeholder replacements
+            str  - the name of the sbatch script, without the date and the extension
     """
     missing = [key for key in REQUIRED_SETTINGS if key not in settings]
     if missing:

@@ -52,7 +52,7 @@ def load_settings(
     """Read the JSON file with the paths and names which are specific to a cluster account.
 
     Args:
-        settings_file: Path to the settings file.
+        settings_file: Path of the settings file.
 
     Returns:
         dict: Content of the settings file.

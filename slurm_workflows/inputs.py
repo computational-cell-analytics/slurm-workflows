@@ -26,7 +26,7 @@ def job_variables(
     A variable which is assigned more than once keeps the value of the last assignment.
 
     Args:
-        sbatch_file: Path to an sbatch script with all placeholders filled in.
+        sbatch_file: Path of an sbatch script with all placeholders filled in.
 
     Returns:
         dict: Dictionary mapping the variable name to its value.
@@ -66,7 +66,7 @@ def check_job_input(
     An INPUT which is not an absolute path is an S3 object key, so it is not checked.
 
     Args:
-        sbatch_file: Path to an sbatch script with all placeholders filled in.
+        sbatch_file: Path of an sbatch script with all placeholders filled in.
 
     Returns:
         list: Warning messages. The list is empty if the input of the job exists.
@@ -92,11 +92,11 @@ def check_external_input(
     """Return a message if the external input of a job does not exist.
 
     An external input is not produced by any step of the pipeline, so it is checked for every step
-    and not only for the first one. A value which is no absolute path is skipped, as in
+    and not only for the first one. A value which is not an absolute path is skipped, as in
     `check_job_input()`.
 
     Args:
-        sbatch_file: Path to an sbatch script with all placeholders filled in.
+        sbatch_file: Path of an sbatch script with all placeholders filled in.
 
     Returns:
         list: Warning messages. The list is empty if the external input of the job exists.
@@ -122,7 +122,7 @@ def check_output_absent(
     job, so that `--force` can relax it.
 
     Args:
-        sbatch_file: Path to an sbatch script with all placeholders filled in.
+        sbatch_file: Path of an sbatch script with all placeholders filled in.
 
     Returns:
         list: Warning messages. The list is empty if the job rebuilds no existing result.

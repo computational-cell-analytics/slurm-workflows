@@ -133,8 +133,8 @@ def repository_file_of(
 
     Returns:
         tuple of:
-            str — the repository file to use
-            str — the temporary file to remove, or None
+            str - the repository file to use
+            str - the temporary file to remove, or None
     """
     if repository_file is not None:
         return repository_file, None
@@ -181,8 +181,8 @@ def load_project_settings(
 
     Returns:
         tuple of:
-            dict — the settings
-            str  — the settings file, or None if it does not exist
+            dict - the settings
+            str  - the settings file, or None if it does not exist
     """
     if settings_path is None:
         settings_path = settings_file(project)

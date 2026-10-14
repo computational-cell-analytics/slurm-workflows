@@ -120,7 +120,7 @@ def watershed_parameters(
         group: Model group, 'SGN' or 'IHC'.
 
     Returns:
-        dict: Watershed parameters. The defaults of the group are used if the model has no parameter file.
+        dict: Watershed parameters. The defaults of the group are used if the model has no `best_best_params.json`.
     """
     parameter_file = os.path.join(model_path, "best_best_params.json")
 
@@ -169,8 +169,8 @@ def n5_name(
     """Return the file name of the n5 written by the initial processing.
 
     Args:
-        prefix: Animal and person of the cochlea name.
-        number: Number of the cochlea, with leading zeros.
+        prefix: Species and experimenter initials.
+        number: Animal index of the cochlea, with leading zeros.
         side: Side of the cochlea.
         stains: Every stain of the n5, in the order of its setups.
         version: Version suffix of the cochlea, or an empty string.
@@ -304,8 +304,8 @@ def prepare_step(
 
     Returns:
         tuple of:
-            dict — the placeholder replacements
-            str  — the name of the sbatch script, without the date and the extension
+            dict - the placeholder replacements
+            str  - the name of the sbatch script, without the date and the extension
     """
     missing = [key for key in REQUIRED_SETTINGS if key not in settings]
     if missing:
@@ -339,13 +339,13 @@ def prepare_step(
         version = "_" + cochlea_content[4]
         print(f"Processing version {cochlea_content[4]} of cochlea {''.join(cochlea_content[:3])}.")
 
-    animal = cochlea_content[0]
-    person = cochlea_content[1]
+    species = cochlea_content[0]
+    experimenter = cochlea_content[1]
     number = cochlea_content[2]
     side = cochlea_content[3]
     stains = replacement_dict.get("stains")
 
-    prefix = "".join([animal, person])
+    prefix = "".join([species, experimenter])
     template_name = os.path.basename(input_file)
     group = template_group(input_file)
     if group is None:

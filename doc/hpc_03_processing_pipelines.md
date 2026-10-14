@@ -1,15 +1,14 @@
 # Run processing pipelines
 
-Processing pipelines are implemented in the extra Git repository [slurm-workflows](https://github.com/computational-cell-analytics/slurm-workflows).
-The templates of the project `cochlea-net` cover:
-1) the transform into MoBIE data format and the transfer to the S3 bucket,
+The templates of the project `cochlea-net` in the Git repository [slurm-workflows](https://github.com/computational-cell-analytics/slurm-workflows) cover:
+1) the conversion to the MoBIE data format and the transfer to the S3 bucket,
 2) the segmentation of IHCs,
 3) the segmentation of SGNs, and
 4) the detection of ribbon synapses.
 
 ## Default settings per user
 
-The fixed settings should be set per user, specifically per repository. They are located in `project_settings/cochlea-net.blueprint.json`. Copy these settings to `project_settings/cochlea-net.json`:
+Each user keeps the fixed settings in their own clone of the repository. Copy the blueprint `project_settings/cochlea-net.blueprint.json` to `project_settings/cochlea-net.json` and adapt the values:
 
 ```bash
 cp project_settings/cochlea-net.blueprint.json project_settings/cochlea-net.json
@@ -25,7 +24,7 @@ The file contains:
     "hpc_user": "",
 
     "cochlea-net_environment": "cochlea-net",
-    "mobie_environment": "mobie",
+    "mobie_environment": "cochlea-net",
 
     "archive_dir": "/path/to/job_archive",
     "data_dir": "/path/to/cochlea-lightsheet",
@@ -61,24 +60,22 @@ The file contains:
 }
 ```
 
-Compare `project_settings/cochlea-net.json` with `project_settings/cochlea-net.blueprint.json` after every pull. New keys and new model versions arrive in the blueprint file only. An outdated `project_settings/cochlea-net.json` stops a job, either with a missing key or with an unresolved placeholder of a template.
+> [!WARNING]
+> Git does not track `project_settings/cochlea-net.json`. New keys and model versions arrive only in the blueprint file.
+> Compare the two files after every pull. An outdated settings file stops a job with a missing key or an unresolved placeholder.
 
 ## Parameter files per cochlea
 
-The pipelines are based on the use of `params.json` files.
-
-The current standard format for the file name is:
-`<species><annotator-index>_<animal-index><cochlea-side>_<stain1>_<stain2>_<stain3>_fused.n5`,
+The standard format of the image file name is:
+`<species><experimenter-initials>_<animal-index><cochlea-side>_<stain1>_<stain2>_<stain3>_fused.n5`,
 e.g. the file name `MAMD_137L_PV_Vglut3_CTBP2_fused.n5` refers to:
-* animal: `M`
-* annotator: `AMD`
+* species: `M`
+* experimenter initials: `AMD`
 * animal index: `137`
 * cochlea side: `L`
-* stain 1: `PV`
-* stain 2: `Vglut3`
-* stain 3: `CTBP2`
+* stains 1 to 3: `PV`, `Vglut3`, `CTBP2`
 
-The `parameter_file.json`, e.g. `M_AMD_000137_L.json` could contain:
+Each pipeline reads the settings file and one parameter file per cochlea, e.g. `M_AMD_000137_L.json`:
 ```json
 {
     "cochlea": "M_AMD_000137_L",
@@ -91,19 +88,25 @@ The `parameter_file.json`, e.g. `M_AMD_000137_L.json` could contain:
     "sgn_masking_threshold": 150,
     "ihc_version": "IHC_v11",
     "ihc_masking_threshold": 200,
-    "synapse_version": "synapses_v3"
+    "synapse_version": "synapses_v3",
+    "stain_synapses": "CTBP2"
 }
 ```
 
+> [!NOTE]
+> `stain_synapses` selects the stain of the synapse detection. The default is `CTBP2`. A different stain, e.g. `Homer1`, becomes part of the prediction folder, the MoBIE source and the S3 table, e.g. `Homer1_synapses_v3_IHC_v11`.
+
 ## Running the processing pipelines
 
-The pipelines are `cochlea-net/mobie`, `cochlea-net/ihc`, `cochlea-net/sgn`, and `cochlea-net/synapses`. The `synapses` pipeline needs an IHC segmentation of the same cochlea, so run `ihc` before it and set `ihc_version` in the parameter file.
-When the pipelines are run, the program reads the local variables from `project_settings/cochlea-net.json`.
+The pipelines are `cochlea-net/mobie`, `cochlea-net/ihc`, `cochlea-net/sgn`, and `cochlea-net/synapses`.
 
-Example commands are:
+> [!IMPORTANT]
+> The `synapses` pipeline needs the IHC segmentation of the same cochlea. Run `ihc` first and set `ihc_version` in the parameter file.
+
+Example commands:
 ```bash
-# for a dry run
-python slurm-workflows/scripts/deploy_process.py --pipeline cochlea-net/sgn --json parameter_file.json -a /path/to/job_archive_directory
-# for submitting the pipeline as a slurm job
-python slurm-workflows/scripts/deploy_process.py --pipeline cochlea-net/sgn --json parameter_file.json -a /path/to/job_archive_directory --deploy
+# dry run: write the sbatch script, submit nothing
+python slurm-workflows/scripts/deploy_process.py --pipeline cochlea-net/sgn --json parameter_file.json
+# submit the pipeline as a chain of Slurm jobs
+python slurm-workflows/scripts/deploy_process.py --pipeline cochlea-net/sgn --json parameter_file.json --deploy
 ```

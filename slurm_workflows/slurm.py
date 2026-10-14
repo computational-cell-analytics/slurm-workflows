@@ -66,11 +66,11 @@ def sbatch_parameters_to_dict(
     sbatch_file: str,
     metadict: dict,
 ) -> None:
-    """Add the parameters of an sbatch file to a dictionary containing metadata.
+    """Add the #SBATCH parameters of an sbatch script to the metadata.
 
     Args:
-        sbatch_file: A job script for slurm containing #SBATCH options.
-        metadict: Dictionary containing metadata for a slurm job.
+        sbatch_file: Path of the sbatch script.
+        metadict: Metadata of the job.
     """
     with open(sbatch_file, "rt", encoding="utf8", errors="ignore") as myfile:
         for line in myfile:
@@ -88,11 +88,11 @@ def slurm_output_files(
     slurm_dir: str,
     jobid: str,
 ) -> list:
-    """Find the slurm output files of a single job and of an array job.
+    """Find the slurm output files of a job and of its array tasks.
 
     Args:
-        slurm_dir: Directory containing slurm output files.
-        jobid: JobID of the slurm job.
+        slurm_dir: Directory of the slurm output files.
+        jobid: JobID of the job.
 
     Returns:
         list: Sorted paths of the matching slurm output files.
@@ -106,17 +106,14 @@ def slurm_output_files(
 def slurm_output_to_dict(
     slurm_file: str,
 ) -> dict:
-    """Parse the Job Information section from a slurm output file.
-
-    Handles both single-job files (slurm-<job_id>.out) and array-job files
-    (slurm-<job_id>_<array_index>.out).
+    """Read the 'Job Information' section of a slurm output file.
 
     Args:
-        slurm_file: Path to the slurm output file.
+        slurm_file: Path of a file `slurm-<jobid>.out`, or `slurm-<jobid>_<array_index>.out` of an array task.
 
     Returns:
-        Dictionary with parsed fields: file, array_index (if array job), submitted,
-        started, ended, elapsed_min, limit_min, cpus, nodes, core_hours.
+        dict: The keys 'file', 'submitted', 'started', 'ended', 'elapsed_min', 'limit_min', 'cpus',
+            'nodes' and 'core_hours', and 'array_index' for an array task.
     """
     filename = os.path.basename(slurm_file)
     job_info = {"file": filename}
@@ -186,15 +183,15 @@ def reportseff_from_jobid(
     metadict: dict,
     jobid: int = None,
 ) -> None:
-    """Add information about the efficiency of the submitted job to a dictionary containing metadata.
-    The information is obtained through the command 'reportseff -u <user-id>',
-    which is available for seven days after job submission.
-    The dictionary is only updated, if the JobID was found within the output of the shell command.
+    """Add the efficiency report of a job to the metadata.
+
+    The report comes from `reportseff -u <user>`, which knows a job for about one week after the
+    submission. The metadata keeps its old report if `reportseff` does not list the job.
 
     Args:
-        log_file: Text file containing one or multiple lines with JobIDs. Only the last JobID is evaluated.
-        metadict: Dictionary containing metadata for slurm job.
-        jobid: JobID of slurm job.
+        log_file: Log file with one JobID per line. Its last JobID is used if `jobid` is None.
+        metadict: Metadata of the job.
+        jobid: JobID of the job, or None.
     """
     if jobid is None:
         jobids = jobids_from_log(log_file)

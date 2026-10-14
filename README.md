@@ -105,7 +105,7 @@ The deploy step records the project as `Project` in the `metadata.json` of every
 
 ## Template concept
 The templates of `cochlea-net` are located in `templates/cochlea-net`.
-They include the application of trained neural networks for the segmentation of IHCs and SGNs, the detection of synapses, and the transformation of data into MoBIE format and its transfer to the S3 bucket.
+They include the application of trained neural networks for the segmentation of IHCs and SGNs, the detection of synapses, and the conversion of the image data to the MoBIE data format and its transfer to the S3 bucket.
 The MoBIE templates cover the image data of a cochlea, a segmentation of SGNs or IHCs, and the ribbon synapse detections.
 Using `scripts/deploy_process.py` a JSON dictionary with parameters can be given as an input to fill blanks in the templates and use the resulting scripts for job submission.
 The templates contain no absolute path.
@@ -132,7 +132,7 @@ The stain does not change the model, which is selected by the model version alon
 Several processing steps can be submitted as a chain of Slurm jobs:
 
 ```bash
-python scripts/deploy_process.py -p cochlea-net/mobie -j <params.json> --deploy      # add image data to MoBIE, transfer to S3
+python scripts/deploy_process.py -p cochlea-net/mobie -j <params.json> --deploy      # add image data to MoBIE, transfer to the S3 bucket
 python scripts/deploy_process.py -p cochlea-net/sgn -j <params.json> --deploy        # mask, apply, segment SGN
 python scripts/deploy_process.py -p cochlea-net/ihc -j <params.json> --deploy        # mask, apply, segment IHC
 python scripts/deploy_process.py -p cochlea-net/synapses -j <params.json> --deploy   # mask, apply, detect synapses

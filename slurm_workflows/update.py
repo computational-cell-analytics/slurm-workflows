@@ -3,8 +3,8 @@
 """author: Martin Schilling (martin.schilling@med.uni-goettingen.de), 2025
 
 Logic of `slurm_wf.update_metadata`: update the archived metadata of Slurm jobs.
-The efficiency report of a running or pending job is refreshed, the information of a slurm output file
-can be added, and the efficiency across the archived jobs can be summarised.
+Refresh the efficiency report of a running or pending job, add the data of the slurm output files,
+and summarize the efficiency of the archived jobs.
 """
 import glob
 import os
@@ -24,10 +24,10 @@ UNFINISHED_STATES = ("RUNNING", "PENDING")
 
 
 def update_sbatch_data(subfolders: List[str]):
-    """Update sbatch_data.
+    """Copy the #SBATCH parameters into the metadata.
 
     Args:
-        subfolders: List of subfolders containing metadata in the format 'metadata.json'
+        subfolders: Archive folders.
     """
     update_dir = []
 
@@ -63,10 +63,10 @@ def update_sbatch_data(subfolders: List[str]):
 
 
 def update_reporteff(subfolders: List[str]):
-    """Update efficiency report of previously pending or running tasks.
+    """Refresh the efficiency report of a recent job that is pending, running, or has no report.
 
     Args:
-        subfolders: List of subfolders containing metadata in the format 'metadata.json'
+        subfolders: Archive folders.
     """
     update_dir = []
 
@@ -106,12 +106,12 @@ def update_reporteff(subfolders: List[str]):
 
 
 def check_metadata(subfolders: List[str]):
-    """Check metadata of date, task, and JobID.
-    If the JobID the last sbatch job (or a previous sbatch job) is not identical to
-    the jobID of the efficiency report, the report is deleted.
+    """Correct the date and the task from the folder name, and the efficiency report from the JobID.
+
+    A report of another JobID is deleted if `log.txt` does not list the JobID of the metadata.
 
     Args:
-        subfolders: List of subfolders containing metadata in the format 'metadata.json'
+        subfolders: Archive folders.
     """
     update_metadata = []
     for folder in subfolders:
@@ -153,15 +153,14 @@ def check_metadata(subfolders: List[str]):
 
 
 def update_slurm_output(subfolders: List[str], slurm_dir: str):
-    """Update metadata with job information parsed from slurm output files.
+    """Add the data of the slurm output files of each job to its metadata.
 
-    For each subfolder, the jobid stored in metadata.json is used to locate matching
-    slurm-<jobid>.out or slurm-<jobid>_<array_index>.out files in slurm_dir.
-    Matched files are parsed and stored as a list under the 'SlurmOutput' key.
+    Each file `slurm-<jobid>.out` or `slurm-<jobid>_<array_index>.out` gives one entry of the list
+    'SlurmOutput'.
 
     Args:
-        subfolders: List of subfolders containing metadata in the format 'metadata.json'
-        slurm_dir: Directory containing slurm output files.
+        subfolders: Archive folders.
+        slurm_dir: Directory of the slurm output files.
     """
     update_dir = []
 
@@ -218,16 +217,14 @@ def parse_percent(value: str) -> Optional[float]:
 
 
 def average_efficiency(subfolders: List[str], slurm_dir: Optional[str] = None):
-    """Compute and print average efficiency and core-hour consumption across jobs.
+    """Print the average efficiency and the core hours of the jobs.
 
-    Efficiency metrics (CPUEff, MemEff, TimeEff) are read from the 'Reportseff'
-    section of each metadata.json. Core hours are read from the 'SlurmOutput' section
-    if present, otherwise from slurm output files in slurm_dir if provided.
-    Only completed jobs (not RUNNING or PENDING) contribute to efficiency averages.
+    The efficiency comes from the 'Reportseff' entry of each job that is not RUNNING or PENDING.
+    The core hours come from the 'SlurmOutput' entry, or else from the files in `slurm_dir`.
 
     Args:
-        subfolders: List of subfolders containing metadata in the format 'metadata.json'
-        slurm_dir: Optional directory containing slurm output files.
+        subfolders: Archive folders.
+        slurm_dir: Directory of the slurm output files, or None.
     """
     cpu_effs = []
     mem_effs = []
@@ -303,15 +300,17 @@ def update_archive(
         slurm_dir: Optional[str] = None,
         average: bool = False,
 ):
-    """Update report of job efficiency, if last status was 'PENDING'.
+    """Update the metadata of the archive folders in a directory.
+
+    The efficiency report is always refreshed.
 
     Args:
-        input_dir: Input directory containing archived scripts.
-        pattern: Pattern to match folders in job archive.
-        check_general_info: Check and fix general metadata (date, task, jobid).
-        check_sbatch_info: Check and update sbatch parameters.
-        slurm_dir: Optional directory containing slurm output files to parse and store.
-        average: Print average efficiency and core-hour summary across matching jobs.
+        input_dir: Directory of the archive folders.
+        pattern: Part of the name of the archive folders to update, or None for all.
+        check_general_info: Run `check_metadata()`.
+        check_sbatch_info: Run `update_sbatch_data()`.
+        slurm_dir: Directory of the slurm output files, or None.
+        average: Print the efficiency summary.
     """
     if pattern is None:
         subfolders = [f.path for f in os.scandir(input_dir) if f.is_dir()]

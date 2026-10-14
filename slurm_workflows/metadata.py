@@ -22,7 +22,7 @@ def read_metadata(
     """Read a metadata file of an archive folder.
 
     Args:
-        metadata_file: Path to the metadata file.
+        metadata_file: Path of the metadata file.
 
     Returns:
         dict: Content of the metadata file.
@@ -40,8 +40,8 @@ def write_metadata(
     The key order and the tab indentation of the archived files are kept.
 
     Args:
-        metadict: Dictionary containing metadata.
-        metadata_file: Path to the metadata file.
+        metadict: Metadata of the job.
+        metadata_file: Path of the metadata file.
     """
     with open(metadata_file, "w") as myfile:
         json.dump(metadict, myfile, sort_keys=False, indent="\t", separators=(",", ": "))
@@ -64,13 +64,13 @@ def as_list(
 def init_metadict(
     input_dir: str,
 ) -> dict:
-    """Initialise a dictionary with metadata based on the name of the input directory.
+    """Create the metadata of a job from the name of its archive folder.
 
     Args:
-        input_dir: Archive folder, named after the scheme <date>_<suffix> with the date formatted as YYYY-MM-DD.
+        input_dir: Archive folder, named `<date>_<suffix>` with the date as YYYY-MM-DD.
 
     Returns:
-        dict: Dictionary containing date and suffix information.
+        dict: The keys 'date' and 'task'. 'task' holds the suffix.
     """
     folder_name = os.path.basename(os.path.abspath(input_dir))
     contents = folder_name.split("_")
@@ -85,13 +85,13 @@ def user_to_metadict(
     metadict: dict,
     settings_file: str = None,
 ) -> None:
-    """Add the identifiers of the person who ran the job to a dictionary containing metadata.
+    """Add the identifiers of the person who ran the job to the metadata.
 
     A job which finished must still be archived, so an unusable settings file is reported and
     skipped instead of failing the archiving step.
 
     Args:
-        metadict: Dictionary containing metadata for a slurm job.
+        metadict: Metadata of the job.
         settings_file: Settings file of the project, or None.
     """
     if settings_file is None:
@@ -117,14 +117,14 @@ def write_job_metadata(
     overwrite: bool = False,
     settings_file: str = None,
 ):
-    """Extract metadata from an sbatch script.
+    """Create or update the `metadata.json` of an archive folder.
 
     Args:
-        input_dir: Input directory containing sbatch script and log file.
-        output_file: Output file for metadata. Default: <input_dir>/metadata.json
-        jobid: JobID of SBATCH script
-        repository_file: Optional file containing repository information
-        overwrite: Flag for overwriting metadata information
+        input_dir: Archive folder.
+        output_file: Metadata file. Default: `<input_dir>/metadata.json`.
+        jobid: JobID, or None for the last JobID of `log.txt`.
+        repository_file: Git repositories to record, or None.
+        overwrite: Replace an existing `metadata.json`.
         settings_file: Settings file of the project, which names the HPC user.
     """
     if output_file is None:

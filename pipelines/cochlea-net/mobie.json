@@ -1,5 +1,5 @@
 {
-    "description": "Add image data to MoBIE format and transfer the dataset to the S3 bucket.",
+    "description": "Convert the image data to the MoBIE data format and transfer the dataset to the S3 bucket.",
     "steps": [
         "mobie_add_image",
         "mobie_transfer_dataset"

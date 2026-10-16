@@ -110,3 +110,12 @@ python slurm-workflows/scripts/deploy_process.py --pipeline cochlea-net/sgn --js
 # submit the pipeline as a chain of Slurm jobs
 python slurm-workflows/scripts/deploy_process.py --pipeline cochlea-net/sgn --json parameter_file.json --deploy
 ```
+
+> [!NOTE]
+> The last step of each pipeline removes the intermediate data, such as `predictions.zarr` and the local MoBIE copies, after it checks the result. Add `--no-cleanup` to keep it, for example to run a new watershed on the same prediction.
+
+## Next steps
+
+The analysis of a segmentation runs with the console scripts of cochlea-net:
+- [Analysis](https://github.com/computational-cell-analytics/cochlea-net/blob/master/doc/analysis.md): the component labeling, the tonotopic mapping, the object measures, and the upload of the tables to the S3 bucket.
+- [Processing parameter files](https://github.com/computational-cell-analytics/cochlea-net/blob/master/reproducibility/README.md#the-processing-parameter-files): the parameters of these steps for each cochlea.

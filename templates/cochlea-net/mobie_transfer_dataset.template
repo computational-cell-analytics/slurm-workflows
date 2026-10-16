@@ -38,8 +38,12 @@ done
 # replace maximal intensity reference 65535 with the more reasonable value 1400
 sed -i 's/65535/1400/g' "$INPUT"
 
-mobie.add_remote_metadata -s <service_endpoint> -b "$BUCKET_NAME" -i "$MOBIE_PROJECT"
+mobie.add_remote_metadata -s <service_endpoint> -b "$BUCKET_NAME" -i "$MOBIE_PROJECT" || exit 1
 
 module load rclone
-rclone --progress copyto "$INPUT" <s3_remote>/<cochlea>/dataset.json
-rclone --progress copyto "$MOBIE_PROJECT"/<cochlea>/images/ome-zarr <s3_remote>/<cochlea>/images/ome-zarr
+rclone --progress copyto "$INPUT" <s3_remote>/<cochlea>/dataset.json || exit 1
+rclone --progress copyto "$MOBIE_PROJECT"/<cochlea>/images/ome-zarr <s3_remote>/<cochlea>/images/ome-zarr || exit 1
+
+# The project.json of the S3 bucket lists the datasets of every local MoBIE project. The local
+# file must not replace it, so only the name of this cochlea is added.
+python <slurm-workflows>/scripts/add_s3_dataset.py -p "$MOBIE_PROJECT" -r <s3_remote> -d <cochlea>

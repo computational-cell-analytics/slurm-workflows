@@ -9,5 +9,11 @@
     "mobie_steps": [
         "mobie_add_segmentation",
         "mobie_transfer_segmentation"
+    ],
+    "cleanup_steps": [
+        "cleanup_IHC"
+    ],
+    "mobie_cleanup_steps": [
+        "mobie_cleanup_segmentation"
     ]
 }

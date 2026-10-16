@@ -1,0 +1,55 @@
+#!/bin/bash
+#SBATCH --job-name=mobie-cleanup_<cochlea_job_name>
+#SBATCH -t 02:00:00             # estimated time, adapt to your needs
+#SBATCH --mail-user=<user_address> # change this to your mailaddress
+#SBATCH --mail-type=FAIL        # send mail when job begins and ends
+
+#SBATCH -p standard96s:shared         # the partition
+#SBATCH -A <account_name>
+#SBATCH -c 1
+#SBATCH --mem 4G
+#SBATCH --constraint=inet
+
+source ~/.bashrc
+
+# Local copies of the stains in the MoBIE project. 'mobie_transfer_dataset' copied them to the S3
+# bucket. The n5 of the initial processing is removed later, so the bucket then holds the only copy.
+# The sources stay in dataset.json, and 'mobie.add_remote_metadata' only warns about the missing
+# local copies.
+LOCAL_DIR=<mobie_project>/<cochlea>/images/ome-zarr
+REMOTE_DIR=<s3_remote>/<cochlea>/images/ome-zarr
+
+CHANNEL_STR=<channel_multi>
+IFS='_' read -r -a CHANNEL_ARR <<< "$CHANNEL_STR"
+
+# Verify the input of the job. An earlier run of this job can have removed some of the stains, so
+# at least one of them has to exist.
+found=0
+for channel in "${CHANNEL_ARR[@]}" ; do
+	if [ -e "$LOCAL_DIR/$channel.ome.zarr" ] ; then
+		found=1
+	fi
+done
+if [ "$found" -eq 0 ] ; then
+	echo "Missing input of the job: no stain of $CHANNEL_STR in $LOCAL_DIR"
+	exit 1
+fi
+
+module load rclone
+
+# Every local file must be in the bucket with the same size. The transfer compared the hashes.
+for channel in "${CHANNEL_ARR[@]}" ; do
+	path="$LOCAL_DIR/$channel.ome.zarr"
+	if [ ! -e "$path" ] ; then
+		echo "Skipping $path, which does not exist."
+		continue
+	fi
+
+	if ! rclone check --one-way --size-only "$path" "$REMOTE_DIR/$channel.ome.zarr" ; then
+		echo "The S3 bucket holds no complete copy of $path. The local copy is kept."
+		exit 1
+	fi
+
+	echo "Removing $path"
+	rm -rf "$path" || exit 1
+done

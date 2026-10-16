@@ -9,5 +9,8 @@
     "mobie_steps": [
         "mobie_add_detection",
         "mobie_transfer_detection"
+    ],
+    "cleanup_steps": [
+        "cleanup_synapses"
     ]
 }

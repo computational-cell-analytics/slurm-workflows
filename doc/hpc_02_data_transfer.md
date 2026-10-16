@@ -112,11 +112,18 @@ MoBIE lists the datasets of a project in the file `project.json`. A local `proje
 > [!CAUTION]
 > Do not overwrite the `project.json` of the S3 bucket with a local copy. Add your dataset to the S3 version instead.
 
+The job `mobie_transfer_dataset` adds the cochlea to the `project.json` of the S3 bucket. The script copies the file to `<mobie_project>/tmp_<JobID>_project.json`, adds the dataset, and sorts the dataset names. Outside of a Slurm job, the copy is `tmp_project.json`. Before the upload, it reads the S3 file again. If another job changed the S3 file in the meantime, it uploads nothing. Then it removes the copy.
+
+For a dataset which you transfer without the pipeline, run the same script:
 ```bash
-# download the project.json of the S3 bucket
-rclone copyto cochlea-lightsheet:cochlea-lightsheet/project.json project_remote.json
-# add the dataset to project_remote.json, e.g.
-vim project_remote.json
-# upload the edited file
-rclone copyto project_remote.json cochlea-lightsheet:cochlea-lightsheet/project.json
+module load rclone
+python /path/to/slurm-workflows/scripts/add_s3_dataset.py -p /path/to/mobie_project -r cochlea-lightsheet:cochlea-lightsheet -d <dataset>
+```
+
+A `project.json` can miss a dataset, for example after a transfer by hand. `--generate` sets the dataset list to the dataset folders, i.e. the folders which hold a `dataset.json`. It adds each missing name and removes each name without a folder. It prints the added and the removed names. Every other entry stays unchanged.
+```bash
+# set the list of the S3 project.json to the dataset folders of the S3 bucket
+python /path/to/slurm-workflows/scripts/add_s3_dataset.py -p /path/to/mobie_project -r cochlea-lightsheet:cochlea-lightsheet --generate s3
+# set the list of the local project.json to the local dataset folders, without an upload
+python /path/to/slurm-workflows/scripts/add_s3_dataset.py -p /path/to/mobie_project --generate local
 ```

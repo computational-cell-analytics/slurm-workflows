@@ -9,16 +9,14 @@ The `AcademicID` is your ID for all services of the GWDG. The `HPC User` is your
 > Set your `Nationality` before you work in an HPC project. Until you set it, you get a notification when someone adds you to a project.
 > Use the `HPC User` of the project to log in to the cluster for that project.
 
+> [!TIP]
+> The [GWDG HPC Documentation](https://docs.hpc.gwdg.de/index.html) answers questions beyond the first steps of this guide. [HPC 101](hpc_101.md) collects basic commands and tips.
 ## Connecting to the HPC - SSH connection
 Connect to the cluster with SSH. Follow the instructions in the [GWDG HPC docs](https://docs.hpc.gwdg.de/start_here/connecting/index.html).
 
 > [!TIP]
 > On Windows, the file `C:\Users\your_username\.ssh\config` must have no extension. The name `config.txt` does not work.
 > The `IdentityFile` entry of the config must contain the full path to the private key, e.g. `C:\...\id_ed25519`.
-
-## Working on the cluster
-> [!TIP]
-> The [GWDG HPC Documentation](https://docs.hpc.gwdg.de/index.html) answers questions beyond the first steps of this guide. [HPC 101](hpc_101.md) collects basic commands and tips.
 
 ## Install micromamba
 > [!TIP]

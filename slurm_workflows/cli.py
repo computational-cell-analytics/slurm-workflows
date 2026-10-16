@@ -11,6 +11,7 @@ import sys
 
 from slurm_workflows.deploy import RUN_SBATCH_SCRIPT, SCRIPTS_DIR, deploy_jobs, project_module
 from slurm_workflows.metadata import write_job_metadata
+from slurm_workflows.mobie import add_s3_dataset as add_dataset_to_s3, generate_local_project, generate_s3_project
 from slurm_workflows.pipelines import pipeline_names, project_of_template, resolve_pipeline
 from slurm_workflows.update import update_archive
 
@@ -124,6 +125,40 @@ def update_metadata():
 
     try:
         update_archive(args.input_dir, args.pattern, args.general, args.sbatch, args.slurm_dir, args.average)
+    except (FileNotFoundError, ValueError) as exc:
+        sys.exit(str(exc))
+
+
+def add_s3_dataset():
+    parser = argparse.ArgumentParser(
+        description="Add a dataset to the project.json of the MoBIE project in the S3 bucket, or rebuild "
+        "the dataset list of a project.json from the dataset folders. A dataset folder holds a dataset.json. "
+        "The dataset names stay in alphabetical order, and the other entries stay unchanged.")
+
+    parser.add_argument("-p", "--mobie_project", type=str, required=True,
+                        help="Root of the local MoBIE project. It holds the temporary copy "
+                             "tmp_<JobID>_project.json, or tmp_project.json outside of a Slurm job.")
+    parser.add_argument("-r", "--s3_remote", type=str, default=None,
+                        help="rclone remote and bucket, in the form remote:bucket. Not needed for --generate local.")
+
+    mode = parser.add_mutually_exclusive_group(required=True)
+    mode.add_argument("-d", "--dataset", type=str, default=None, help="Name of the dataset to add.")
+    mode.add_argument("--generate", choices=["s3", "local"], default=None,
+                      help="Set the dataset list to the dataset folders. 's3' updates the project.json of the "
+                           "S3 bucket from the bucket. 'local' updates the project.json of the local project "
+                           "from the local folders and uploads nothing.")
+    args = parser.parse_args()
+
+    if args.s3_remote is None and args.generate != "local":
+        parser.error("-r is needed, unless --generate local is given.")
+
+    try:
+        if args.generate == "local":
+            generate_local_project(args.mobie_project)
+        elif args.generate == "s3":
+            generate_s3_project(args.mobie_project, args.s3_remote)
+        else:
+            add_dataset_to_s3(args.mobie_project, args.s3_remote, args.dataset)
     except (FileNotFoundError, ValueError) as exc:
         sys.exit(str(exc))
 

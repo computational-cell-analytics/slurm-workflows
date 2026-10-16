@@ -25,6 +25,11 @@ REQUIRED_SETTINGS = ("data_dir", "models")
 # Steps of a pipeline which export the result to MoBIE. They need a MoBIE project to write into.
 MOBIE_STEPS_KEY = "mobie_steps"
 
+# Steps at the end of a pipeline which check its result and remove the intermediate data. The steps
+# of the second key remove a local MoBIE copy, so they need the MoBIE steps.
+CLEANUP_STEPS_KEY = "cleanup_steps"
+MOBIE_CLEANUP_STEPS_KEY = "mobie_cleanup_steps"
+
 # Key of the group which a step without a group in its template name belongs to.
 GROUP_KEY = "group"
 
@@ -63,6 +68,9 @@ def add_arguments(
     parser.add_argument("--no-mobie", dest="no_mobie", action="store_true",
                         help="Leave the MoBIE steps of a pipeline out, to process a cochlea without "
                              "exporting the result. Needs -p.")
+    parser.add_argument("--no-cleanup", dest="no_cleanup", action="store_true",
+                        help="Leave the cleanup steps of a pipeline out, to keep the intermediate data, "
+                             "such as predictions.zarr. Needs -p.")
     parser.add_argument("--group", type=str, default=None,
                         help="Group of a template which serves more than one group, such as a MoBIE "
                              "export. It overrides the group of the pipeline. "
@@ -80,6 +88,10 @@ def select_steps(
     so a pipeline runs on an account which uses no MoBIE project. '--no-mobie' drops them for a
     single run, because the processing of a cochlea does not depend on the export.
 
+    The cleanup steps come last, so that a failed step of the chain cancels them and its
+    intermediate data stays for a rerun. A MoBIE cleanup step runs only with the MoBIE steps.
+    '--no-cleanup' drops every cleanup step for a single run.
+
     Args:
         definition: Output of `load_pipeline()`.
         settings: Output of `load_settings()`.
@@ -88,23 +100,33 @@ def select_steps(
     Returns:
         list: The steps to submit, in order.
     """
+    for key in (MOBIE_STEPS_KEY, CLEANUP_STEPS_KEY, MOBIE_CLEANUP_STEPS_KEY):
+        if not isinstance(definition.get(key, []), list):
+            raise ValueError(f"Pipeline {definition['name']} needs a list of steps for '{key}'.")
+
+        missing = missing_templates(PROJECT, definition.get(key, []))
+        if missing:
+            raise ValueError(f"Pipeline {definition['name']} refers to steps without a template: {missing}.")
+
     steps = list(definition["steps"])
     mobie_steps = definition.get(MOBIE_STEPS_KEY, [])
-
-    if not isinstance(mobie_steps, list):
-        raise ValueError(f"Pipeline {definition['name']} needs a list of steps for '{MOBIE_STEPS_KEY}'.")
-
-    missing = missing_templates(PROJECT, mobie_steps)
-    if missing:
-        raise ValueError(f"Pipeline {definition['name']} refers to steps without a template: {missing}.")
+    cleanup_steps = list(definition.get(CLEANUP_STEPS_KEY, []))
+    mobie_cleanup_steps = definition.get(MOBIE_CLEANUP_STEPS_KEY, [])
 
     if settings.get("mobie_project") and not args.no_mobie:
-        return steps + mobie_steps
-
-    if mobie_steps:
+        steps += mobie_steps
+        cleanup_steps += mobie_cleanup_steps
+    elif mobie_steps or mobie_cleanup_steps:
         reason = ("--no-mobie was given" if args.no_mobie
                   else "the settings file names no 'mobie_project'")
-        print(f"The MoBIE steps are skipped, because {reason}: " + ", ".join(mobie_steps) + ".")
+        print(f"The MoBIE steps are skipped, because {reason}: " +
+              ", ".join(mobie_steps + mobie_cleanup_steps) + ".")
+
+    if not args.no_cleanup:
+        return steps + cleanup_steps
+
+    if cleanup_steps:
+        print("The cleanup steps are skipped, because --no-cleanup was given: " + ", ".join(cleanup_steps) + ".")
 
     return steps
 

@@ -1,0 +1,35 @@
+#!/bin/bash
+#SBATCH --job-name=cleanup-SGN_<cochlea_job_name>
+#SBATCH -t 01:00:00             # estimated time, adapt to your needs
+#SBATCH --mail-user=<user_address> # change this to your mailaddress
+#SBATCH --mail-type=FAIL        # send mail when job begins and ends
+
+#SBATCH -p standard96s:shared         # the partition
+#SBATCH -A <account_name>
+#SBATCH -c 1
+#SBATCH --mem 2G
+
+# Remove the intermediate data of the segmentation. A zarr holds one file per chunk, so it takes up
+# many inodes. segmentation.zarr stays.
+
+PREDICTION_FOLDER=<data_dir>/predictions/<cochlea>/<prediction_dir>
+
+# Result of 'segment_SGN'. The intermediate data is removed only if it exists.
+INPUT=<data_dir>/predictions/<cochlea>/<prediction_dir>/segmentation.zarr
+
+echo "Prediction directory: ${PREDICTION_FOLDER}"
+
+# Verify the input of the job. A missing input stops the rest of the pipeline.
+for path in "$INPUT" ; do
+	if [ ! -e "$path" ] ; then
+		echo "Missing input of the job: $path"
+		exit 1
+	fi
+done
+
+# A new watershed needs predictions.zarr, which only a new 'apply_SGN' rebuilds. Use --no-cleanup
+# to keep it.
+for path in "$PREDICTION_FOLDER"/mask.zarr "$PREDICTION_FOLDER"/predictions.zarr "$PREDICTION_FOLDER"/seeds.zarr ; do
+	echo "Removing $path"
+	rm -rf "$path" || exit 1
+done

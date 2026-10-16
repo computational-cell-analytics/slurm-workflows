@@ -1,0 +1,35 @@
+#!/bin/bash
+#SBATCH --job-name=cleanup-synapses_<cochlea_job_name>
+#SBATCH -t 01:00:00             # estimated time, adapt to your needs
+#SBATCH --mail-user=<user_address> # change this to your mailaddress
+#SBATCH --mail-type=FAIL        # send mail when job begins and ends
+
+#SBATCH -p standard96s:shared         # the partition
+#SBATCH -A <account_name>
+#SBATCH -c 1
+#SBATCH --mem 2G
+
+# Remove the intermediate data of the detection. A zarr holds one file per chunk, so it takes up
+# many inodes. The tables of the detection stay.
+
+PREDICTION_FOLDER=<data_dir>/predictions/<cochlea>/<prediction_dir>
+
+# Result of 'detect_synapses'. The intermediate data is removed only if it exists.
+INPUT=<data_dir>/predictions/<cochlea>/<prediction_dir>/synapse_detection_filtered.tsv
+
+echo "Prediction directory: ${PREDICTION_FOLDER}"
+
+# Verify the input of the job. A missing input stops the rest of the pipeline.
+for path in "$INPUT" ; do
+	if [ ! -e "$path" ] ; then
+		echo "Missing input of the job: $path"
+		exit 1
+	fi
+done
+
+# A new detection, for example with another threshold, needs predictions.zarr, which only a new
+# 'apply_synapses' rebuilds. Use --no-cleanup to keep it.
+for path in "$PREDICTION_FOLDER"/mask.zarr "$PREDICTION_FOLDER"/predictions.zarr ; do
+	echo "Removing $path"
+	rm -rf "$path" || exit 1
+done

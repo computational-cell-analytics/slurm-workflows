@@ -1,0 +1,38 @@
+#!/bin/bash
+#SBATCH --job-name=mobie-cleanup-segmentation_<cochlea_job_name>
+#SBATCH -t 01:00:00             # estimated time, adapt to your needs
+#SBATCH --mail-user=<user_address> # change this to your mailaddress
+#SBATCH --mail-type=FAIL        # send mail when job begins and ends
+
+#SBATCH -p standard96s:shared         # the partition
+#SBATCH -A <account_name>
+#SBATCH -c 1
+#SBATCH --mem 4G
+#SBATCH --constraint=inet
+
+source ~/.bashrc
+
+# Local copy of the segmentation in the MoBIE project. 'mobie_transfer_segmentation' copied it to
+# the S3 bucket, and 'mobie_add_segmentation' can rebuild it from segmentation.zarr. The source
+# stays in dataset.json, and 'mobie.add_remote_metadata' only warns about the missing local copy.
+INPUT=<mobie_project>/<cochlea>/images/ome-zarr/<prediction_dir>.ome.zarr
+REMOTE=<s3_remote>/<cochlea>/images/ome-zarr/<prediction_dir>.ome.zarr
+
+# Verify the input of the job. A missing input stops the rest of the pipeline.
+for path in "$INPUT" ; do
+	if [ ! -e "$path" ] ; then
+		echo "Missing input of the job: $path"
+		exit 1
+	fi
+done
+
+module load rclone
+
+# Every local file must be in the bucket with the same size. The transfer compared the hashes.
+if ! rclone check --one-way --size-only "$INPUT" "$REMOTE" ; then
+	echo "The S3 bucket holds no complete copy of $INPUT. The local copy is kept."
+	exit 1
+fi
+
+echo "Removing $INPUT"
+rm -rf "$INPUT" || exit 1

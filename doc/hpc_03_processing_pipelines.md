@@ -110,3 +110,6 @@ python slurm-workflows/scripts/deploy_process.py --pipeline cochlea-net/sgn --js
 # submit the pipeline as a chain of Slurm jobs
 python slurm-workflows/scripts/deploy_process.py --pipeline cochlea-net/sgn --json parameter_file.json --deploy
 ```
+
+> [!NOTE]
+> The last step of each pipeline removes the intermediate data, such as `predictions.zarr` and the local MoBIE copies, after it checks the result. Add `--no-cleanup` to keep it, for example to run a new watershed on the same prediction.

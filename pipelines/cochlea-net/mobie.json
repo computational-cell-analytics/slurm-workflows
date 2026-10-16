@@ -3,5 +3,8 @@
     "steps": [
         "mobie_add_image",
         "mobie_transfer_dataset"
+    ],
+    "cleanup_steps": [
+        "mobie_cleanup_dataset"
     ]
 }

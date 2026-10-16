@@ -178,6 +178,23 @@ The `synapses` pipeline needs an IHC segmentation, which the `ihc` pipeline prod
 The MoBIE step of the same pipeline needs the cochlea to be a dataset of the MoBIE project already, because a detection carries no image data which could create it.
 Such a prerequisite is checked before the submission, for every step of the chain.
 
+## Cleanup of the intermediate data
+
+Each pipeline of `cochlea-net` ends with a CPU job, which checks the result of the pipeline and then removes the intermediate data.
+The intermediate data takes up a lot of space and a lot of inodes.
+
+- `sgn`, `ihc`: `mask.zarr`, `predictions.zarr` and `seeds.zarr`, and the local MoBIE copy of the segmentation.
+- `synapses`: `mask.zarr` and `predictions.zarr`.
+- `mobie`: the local MoBIE copy of every stain.
+
+`segmentation.zarr` and the tables stay.
+A local MoBIE copy is removed only if `rclone check` finds every file of it in the S3 bucket.
+The cleanup runs after the MoBIE steps, so a failed step cancels it and the data stays for a rerun.
+
+Use the option `--no-cleanup` to keep the intermediate data for a single run.
+A new watershed or a new detection threshold needs `predictions.zarr`, which only a new apply step rebuilds.
+Use `--start-at` with the cleanup step, e.g. `--start-at cleanup_SGN`, to clean up a cochlea from an earlier run.
+
 ## Mockup example
 
 The directory `mockup_example` shows every file of one job, from the template to the archived metadata.

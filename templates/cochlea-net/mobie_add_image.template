@@ -55,6 +55,6 @@ for (( i=0; i<${arraylength}; i++ )); do
 	mobie.add_image --input_path "$INPUT" --input_key "$INPUT_KEY" --root "$MOBIE_PROJECT" \
 		--dataset_name "$COCHLEA" --name "$CHANNEL_NAME" --resolution "$RESOLUTION" \
 		--scale_factors "$SCALE_FACTORS" --chunks "$CHUNKS" \
-		--max_jobs "$MAX_JOBS"
+		--max_jobs "$MAX_JOBS" || exit 1
 
 done

@@ -14,9 +14,6 @@ micromamba activate <mobie_environment>
 
 # Run the script
 
-SCRIPT_REPO=<mobie-utils-python>
-SCRIPT_DIR=$SCRIPT_REPO/mobie
-
 MOBIE_PROJECT=<mobie_project>
 
 COCHLEA=<cochlea>

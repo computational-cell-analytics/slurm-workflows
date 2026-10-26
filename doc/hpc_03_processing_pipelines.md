@@ -34,7 +34,6 @@ The file contains:
 
     "repositories": {
         "cochlea-net": "/path/to/cochlea-net",
-        "mobie-utils-python": "/path/to/mobie-utils-python",
         "slurm-workflows": "/path/to/slurm-workflows"
     },
 

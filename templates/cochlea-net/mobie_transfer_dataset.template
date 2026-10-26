@@ -19,6 +19,10 @@ MOBIE_PROJECT=<mobie_project>
 
 INPUT=<mobie_project>/<cochlea>/dataset.json
 
+# One entry per stain. mobie lists a source in dataset.json only after its conversion is complete,
+# so a stain without an entry would leave an incomplete dataset in the bucket.
+CHANNEL_ARR=(<channel_multi>)
+
 # The settings hold the rclone remote in the form remote:bucket. Only the bucket name is needed here.
 S3_REMOTE=<s3_remote>
 BUCKET_NAME="${S3_REMOTE#*:}"
@@ -28,6 +32,13 @@ echo "Transfer of <cochlea> from ""$MOBIE_PROJECT"" to S3"
 for path in "$INPUT" ; do
 	if [ ! -e "$path" ] ; then
 		echo "Missing input of the job: $path"
+		exit 1
+	fi
+done
+
+for channel in "${CHANNEL_ARR[@]}" ; do
+	if ! python -c "import json, sys; sys.exit(sys.argv[2] not in json.load(open(sys.argv[1]))['sources'])" "$INPUT" "$channel" ; then
+		echo "Missing input of the job: $channel is no source of $INPUT"
 		exit 1
 	fi
 done

@@ -12,8 +12,9 @@ import re
 # Matches 'INPUT=<path>' and 'export OUTPUT_FOLDER=<path>' in a rendered sbatch script.
 # 'EXTERNAL_INPUT' names an input which no step of the pipeline produces, see 'check_external_input()'.
 # 'EXISTING_OUTPUT' names a result which the job would rebuild, see 'check_output_absent()'.
+# 'S3_REMOTE' names the rclone remote of a transfer job in the form remote:bucket.
 ASSIGNMENT_PATTERN = re.compile(
-    r"^\s*(?:export\s+)?(INPUT|OUTPUT_FOLDER|EXTERNAL_INPUT|EXISTING_OUTPUT)=(\S+)")
+    r"^\s*(?:export\s+)?(INPUT|OUTPUT_FOLDER|EXTERNAL_INPUT|EXISTING_OUTPUT|S3_REMOTE)=(\S+)")
 
 WILDCARD_CHARACTERS = "*?["
 
@@ -21,7 +22,7 @@ WILDCARD_CHARACTERS = "*?["
 def job_variables(
     sbatch_file: str,
 ) -> dict:
-    """Read the INPUT, OUTPUT_FOLDER, EXTERNAL_INPUT and EXISTING_OUTPUT assignments of an sbatch script.
+    """Read the INPUT, OUTPUT_FOLDER, EXTERNAL_INPUT, EXISTING_OUTPUT and S3_REMOTE assignments of an sbatch script.
 
     A variable which is assigned more than once keeps the value of the last assignment.
 

@@ -62,6 +62,9 @@ GROUPS = {
 # Model version which is used if 'synapse_version' is not a parameter of the job.
 DEFAULT_SYNAPSE_VERSION = "synapses_v3"
 
+# rclone reads its remotes from this file, unless the environment variable RCLONE_CONFIG names another one.
+RCLONE_CONFIG = os.path.join("~", ".config", "rclone", "rclone.conf")
+
 
 def add_arguments(
     parser,
@@ -514,6 +517,34 @@ def check_prediction_absent(
     return [message.format(path)]
 
 
+def check_rclone_remotes(
+    output_files: list,
+) -> list:
+    """Return a message for each rclone remote of a transfer job which the rclone config does not hold.
+
+    Without the remote, the transfer fails only after the steps before it have run.
+
+    Args:
+        output_files: Paths of the generated sbatch scripts.
+
+    Returns:
+        list: Warning messages. The list is empty if the rclone config holds every remote.
+    """
+    remotes = {job_variables(output_file).get("S3_REMOTE", "").split(":")[0] for output_file in output_files}
+    remotes.discard("")
+    if not remotes:
+        return []
+
+    config_file = os.environ.get("RCLONE_CONFIG", os.path.expanduser(RCLONE_CONFIG))
+    sections = set()
+    if os.path.isfile(config_file):
+        with open(config_file, "r") as myfile:
+            sections = {line.strip() for line in myfile}
+
+    return [f"the rclone config {config_file} has no remote '{remote}', which the transfer to the S3 bucket "
+            "needs. See doc/hpc_02_data_transfer.md." for remote in sorted(remotes) if f"[{remote}]" not in sections]
+
+
 def check_steps(
     input_files: list,
     output_files: list,
@@ -542,5 +573,7 @@ def check_steps(
 
     for input_file, output_file in zip(input_files, output_files):
         messages += check_prediction_absent(input_file, output_file)
+
+    messages += check_rclone_remotes(output_files)
 
     return messages

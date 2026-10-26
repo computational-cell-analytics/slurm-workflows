@@ -92,6 +92,7 @@ access_key_id = <aws_access_key_id>
 secret_access_key = <aws_secret_access_key>
 endpoint = https://s3.fs.gwdg.de
 ```
+`deploy_process.py` warns if `rclone.conf` has no section for the remote of `s3_remote` in the settings file.
 
 ### Copy data from/to the S3 bucket
 

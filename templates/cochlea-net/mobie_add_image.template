@@ -17,7 +17,15 @@ micromamba activate <mobie_environment>
 MOBIE_PROJECT=<mobie_project>
 
 COCHLEA=<cochlea>
+INPUT_DIR=<data_dir>/<cochlea>
+
+# The n5 of the first stain. Every stain can have its own n5, so the guard below checks all of them.
 INPUT=<data_dir>/<cochlea>/<cochlea_data>
+
+# One entry per stain, in the same order.
+CHANNEL_ARR=(<channel_multi>)
+INPUT_FILE_ARR=(<cochlea_data_multi>)
+INPUT_KEY_ARR=(<input_key_multi>)
 
 RESOLUTION="[0.38,0.38,0.38]"
 SCALE_FACTORS="[[2,2,2],[2,2,2],[2,2,2],[2,2,2],[2,2,2],[2,2,2]]"
@@ -27,18 +35,13 @@ CHUNKS="[64,64,64]"
 MAX_JOBS=${SLURM_CPUS_PER_TASK:-1}
 
 # Verify the input of the job. A missing input stops the rest of the pipeline.
-for path in "$INPUT" ; do
+for file in "${INPUT_FILE_ARR[@]}" ; do
+	path="$INPUT_DIR/$file"
 	if [ ! -e "$path" ] ; then
 		echo "Missing input of the job: $path"
 		exit 1
 	fi
 done
-
-CHANNEL_STR=<channel_multi>
-INPUT_KEY_STR=<input_key_multi>
-
-IFS='_' read -r -a CHANNEL_ARR <<< "$CHANNEL_STR"
-IFS='_' read -r -a INPUT_KEY_ARR <<< "$INPUT_KEY_STR"
 
 arraylength=${#CHANNEL_ARR[@]}
 
@@ -46,10 +49,11 @@ arraylength=${#CHANNEL_ARR[@]}
 for (( i=0; i<${arraylength}; i++ )); do
 
 	CHANNEL_NAME=${CHANNEL_ARR[$i]}
+	INPUT_PATH="$INPUT_DIR/${INPUT_FILE_ARR[$i]}"
 	INPUT_KEY=${INPUT_KEY_ARR[$i]}
-	echo "Adding image data ""$INPUT_KEY"" to MoBIE project""$MOBIE_PROJECT"" as ""$CHANNEL_NAME"
+	echo "Adding image data ""$INPUT_PATH"":""$INPUT_KEY"" to MoBIE project""$MOBIE_PROJECT"" as ""$CHANNEL_NAME"
 
-	mobie.add_image --input_path "$INPUT" --input_key "$INPUT_KEY" --root "$MOBIE_PROJECT" \
+	mobie.add_image --input_path "$INPUT_PATH" --input_key "$INPUT_KEY" --root "$MOBIE_PROJECT" \
 		--dataset_name "$COCHLEA" --name "$CHANNEL_NAME" --resolution "$RESOLUTION" \
 		--scale_factors "$SCALE_FACTORS" --chunks "$CHUNKS" \
 		--max_jobs "$MAX_JOBS" || exit 1

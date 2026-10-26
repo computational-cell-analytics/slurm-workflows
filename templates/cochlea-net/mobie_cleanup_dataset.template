@@ -19,8 +19,7 @@ source ~/.bashrc
 LOCAL_DIR=<mobie_project>/<cochlea>/images/ome-zarr
 REMOTE_DIR=<s3_remote>/<cochlea>/images/ome-zarr
 
-CHANNEL_STR=<channel_multi>
-IFS='_' read -r -a CHANNEL_ARR <<< "$CHANNEL_STR"
+CHANNEL_ARR=(<channel_multi>)
 
 # Verify the input of the job. An earlier run of this job can have removed some of the stains, so
 # at least one of them has to exist.
@@ -31,7 +30,7 @@ for channel in "${CHANNEL_ARR[@]}" ; do
 	fi
 done
 if [ "$found" -eq 0 ] ; then
-	echo "Missing input of the job: no stain of $CHANNEL_STR in $LOCAL_DIR"
+	echo "Missing input of the job: no stain of ${CHANNEL_ARR[*]} in $LOCAL_DIR"
 	exit 1
 fi
 

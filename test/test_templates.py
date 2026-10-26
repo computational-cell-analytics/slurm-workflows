@@ -1,8 +1,9 @@
 #!/usr/bin/python
 # -- coding: utf-8 --
 """Tests of the placeholder replacement: `slurm_workflows/templates.py`, `slurm_workflows/settings.py`,
-and the default deployment of `scripts/deploy_process.py` on the mockup."""
+the default deployment of `scripts/deploy_process.py` on the mockup, and the species templates."""
 import contextlib
+import glob
 import io
 import json
 import os
@@ -10,6 +11,7 @@ import sys
 import tempfile
 import unittest
 
+from slurm_workflows.pipelines import TEMPLATE_ROOT, TEMPLATE_SUFFIX
 from slurm_workflows.settings import load_settings, settings_to_replacements
 from slurm_workflows.templates import extract_substrings, replace_substrings_in_file
 from stubs import MOCKUP_DIR, REPOSITORY_DIR, read_file, run, write_file
@@ -154,6 +156,23 @@ class MockupTest(unittest.TestCase):
         self.assertIn("dataset", result.stderr)
         self.assertNotIn("has no deployment module", result.stdout)
         self.assertEqual(os.listdir(self.tmp.name), ["params.json"])
+
+
+class SpeciesTemplateTest(unittest.TestCase):
+    """A species template is a copy of the default template with other resources."""
+
+    def script_lines(self, template_file):
+        return [line for line in read_file(template_file).splitlines() if not line.startswith("#SBATCH")]
+
+    def test_species_templates_differ_only_in_sbatch_lines(self):
+        species_templates = glob.glob(os.path.join(TEMPLATE_ROOT, "*", "*", f"*{TEMPLATE_SUFFIX}"))
+        self.assertTrue(species_templates)
+
+        for species_template in species_templates:
+            default_template = os.path.join(os.path.dirname(os.path.dirname(species_template)),
+                                            os.path.basename(species_template))
+            with self.subTest(species_template):
+                self.assertEqual(self.script_lines(species_template), self.script_lines(default_template))
 
 
 if __name__ == "__main__":

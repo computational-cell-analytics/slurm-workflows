@@ -47,6 +47,7 @@ The package `slurm_workflows` contains the logic of the Python scripts and the u
 Its module `cli` contains the command line interface of every command.
 Its subpackage `deployment` contains one deployment module per project.
 The directory `templates` contains one subfolder per project with one template per processing step.
+A subfolder named after a species code, such as `templates/cochlea-net/G`, holds the templates with other resources for that species, which a pipeline selects from the cochlea name.
 The directory `pipelines` contains one subfolder per project with the definitions which chain those steps.
 The directory `project_settings` contains the settings file of each project.
 The directory `doc` contains the documentation of the work on the HPC:

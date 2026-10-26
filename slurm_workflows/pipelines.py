@@ -34,7 +34,11 @@ def projects() -> list:
 def project_of_template(
     template_file: str,
 ) -> str:
-    """Return the project of a template, which is the name of its folder.
+    """Return the project of a template.
+
+    A template in `templates/` belongs to the first folder below it, so a template in the species
+    folder `templates/<project>/<species>/` belongs to the project as well. Any other template
+    belongs to the name of its folder.
 
     Args:
         template_file: Path of the template.
@@ -42,7 +46,12 @@ def project_of_template(
     Returns:
         str: Name of the project.
     """
-    return os.path.basename(os.path.dirname(os.path.realpath(template_file)))
+    template_path = os.path.realpath(template_file)
+    relative_path = os.path.relpath(template_path, TEMPLATE_ROOT)
+    if not relative_path.startswith(os.pardir):
+        return relative_path.split(os.sep)[0]
+
+    return os.path.basename(os.path.dirname(template_path))
 
 
 def pipeline_names() -> list:

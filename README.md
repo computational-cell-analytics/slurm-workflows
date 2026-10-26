@@ -37,6 +37,7 @@ Each command runs the same code as its script:
 | `slurm_wf.deploy` | `scripts/deploy_process.py` |
 | `slurm_wf.write_metadata` | `scripts/write_metadata.py` |
 | `slurm_wf.update_metadata` | `scripts/update_metadata.py` |
+| `slurm_wf.summary` | `scripts/summary.py` |
 | `slurm_wf.submit` | `scripts/01_run_sbatch.sh` |
 | `slurm_wf.archive` | `scripts/02_archive_scripts.sh` |
 

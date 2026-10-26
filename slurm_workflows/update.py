@@ -6,14 +6,13 @@ Logic of `slurm_wf.update_metadata`: update the archived metadata of Slurm jobs.
 Refresh the efficiency report of a running or pending job, add the data of the slurm output files,
 and summarize the efficiency of the archived jobs.
 """
-import glob
 import os
 import statistics
 from datetime import date
 from typing import List, Optional
 
 from slurm_workflows.metadata import LOG_FILE, METADATA_FILE, SBATCH_FILE
-from slurm_workflows.metadata import as_list, read_metadata, write_metadata
+from slurm_workflows.metadata import archive_folders, as_list, read_metadata, write_metadata
 from slurm_workflows.slurm import jobids_from_log, matches_jobid, reportseff_from_jobid, sbatch_parameters_to_dict
 from slurm_workflows.slurm import slurm_output_files, slurm_output_to_dict
 
@@ -312,12 +311,7 @@ def update_archive(
         slurm_dir: Directory of the slurm output files, or None.
         average: Print the efficiency summary.
     """
-    if pattern is None:
-        subfolders = [f.path for f in os.scandir(input_dir) if f.is_dir()]
-    else:
-        subfolders = sorted(glob.glob(os.path.join(input_dir, f"*{pattern}*"), recursive=False))
-        if len(subfolders) == 0:
-            raise ValueError(f"No subfolders match pattern {pattern}.")
+    subfolders = archive_folders(input_dir, pattern)
 
     if check_sbatch_info:
         update_sbatch_data(subfolders)

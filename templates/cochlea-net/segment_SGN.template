@@ -26,9 +26,15 @@ cd "$SCRIPT_REPO"/flamingo_tools/segmentation/ || exit
 
 export OUTPUT_FOLDER=<data_dir>/predictions/<cochlea>/<prediction_dir>
 export MIN_SIZE=1000
-export BOUNDARY_DISTANCE_THRESHOLD=0.5
+
+export CENTER_DISTANCE_THRESHOLD=<center_distance_threshold>
+export BOUNDARY_DISTANCE_THRESHOLD=<boundary_distance_threshold>
+export DISTANCE_SMOOTHING=<distance_smoothing>
 
 echo "Output directory: ${OUTPUT_FOLDER}"
+echo "CENTER_DISTANCE_THRESHOLD: ${CENTER_DISTANCE_THRESHOLD}"
+echo "BOUNDARY_DISTANCE_THRESHOLD: ${BOUNDARY_DISTANCE_THRESHOLD}"
+echo "DISTANCE_SMOOTHING: ${DISTANCE_SMOOTHING}"
 
 # Verify the input of the job. A missing input stops the rest of the pipeline.
 for path in "$OUTPUT_FOLDER"/predictions.zarr ; do
@@ -41,6 +47,9 @@ done
 cmd_array=(	'import os;'
 	'import unet_prediction;'
 	'unet_prediction.run_unet_segmentation_slurm(output_folder=os.environ["OUTPUT_FOLDER"],'
+	'center_distance_threshold=os.environ["CENTER_DISTANCE_THRESHOLD"],'
+	'boundary_distance_threshold=os.environ["BOUNDARY_DISTANCE_THRESHOLD"],'
+	'distance_smoothing=os.environ["DISTANCE_SMOOTHING"],'
 	'min_size=os.environ["MIN_SIZE"])')
 cmd="${cmd_array[*]}"
 python -c "$cmd"

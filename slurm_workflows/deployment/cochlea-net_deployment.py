@@ -16,6 +16,9 @@ PROJECT = "cochlea-net"
 # Written by the apply step. It is the input of the segmentation step.
 SEGMENTATION_INPUT = "predictions.zarr"
 
+# Written by the mask step. cochlea-net keeps an existing mask, even an incomplete one.
+MASK = "mask.zarr"
+
 # Scale level of an OME-Zarr transferred from the S3 bucket.
 OME_ZARR_KEY = "s0"
 
@@ -478,10 +481,11 @@ def check_prediction_absent(
     input_file: str,
     output_file: str,
 ) -> list:
-    """Return a message if an apply step would write into an existing prediction.
+    """Return a message if a mask or an apply step finds the result of a previous run.
 
     The blocks of the prediction are split over the tasks of the job array, so a second run over an
-    existing 'predictions.zarr' leaves a mix of two runs which no later step can detect.
+    existing 'predictions.zarr' leaves a mix of two runs which no later step can detect. A mask step
+    keeps an existing 'mask.zarr', so a mask which a timeout left incomplete is never rebuilt.
 
     Args:
         input_file: Path of the template.
@@ -490,18 +494,24 @@ def check_prediction_absent(
     Returns:
         list: Warning messages. The list is empty if the step may run.
     """
-    if "apply" not in os.path.basename(input_file):
+    step = os.path.basename(input_file).split("_")[0]
+    if step == "apply":
+        result, message = SEGMENTATION_INPUT, "the prediction of a previous run exists: {}"
+    elif step == "mask":
+        result, message = MASK, ("the mask of a previous run exists and is reused as it is: {}. "
+                                 "Remove it if its job did not complete.")
+    else:
         return []
 
     output_folder = job_variables(output_file).get("OUTPUT_FOLDER")
     if output_folder is None:
         return []
 
-    prediction = os.path.join(output_folder, SEGMENTATION_INPUT)
-    if not path_exists(prediction):
+    path = os.path.join(output_folder, result)
+    if not path_exists(path):
         return []
 
-    return [f"the prediction of a previous run exists: {prediction}"]
+    return [message.format(path)]
 
 
 def check_steps(

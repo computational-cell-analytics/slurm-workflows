@@ -133,5 +133,25 @@ class ResolveInputTest(unittest.TestCase):
         self.assertEqual(replacements["input_key_multi"], " ".join(["setup0/timepoint0/s0"] * 3))
 
 
+class PreviousRunTest(unittest.TestCase):
+    """A mask step keeps an existing mask, even an incomplete one, so its rerun gives a warning."""
+
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.module = cochlea_net_module()
+        self.sbatch = write_file(os.path.join(self.tmp.name, "job.sbatch"),
+                                 f"#!/bin/bash\nexport OUTPUT_FOLDER={self.tmp.name}\n")
+
+    def tearDown(self):
+        self.tmp.cleanup()
+
+    def test_mask_of_previous_run(self):
+        self.assertEqual(self.module.check_prediction_absent("mask_IHC.template", self.sbatch), [])
+
+        write_file(os.path.join(self.tmp.name, "mask.zarr", ".zgroup"))
+        self.assertEqual(len(self.module.check_prediction_absent("mask_IHC.template", self.sbatch)), 1)
+        self.assertEqual(self.module.check_prediction_absent("apply_IHC.template", self.sbatch), [])
+
+
 if __name__ == "__main__":
     unittest.main()

@@ -1,12 +1,13 @@
 #!/usr/bin/python
 # -- coding: utf-8 --
-"""Tests of the step selection of a pipeline: `select_steps()` of cochlea-net."""
+"""Tests of the step selection of a pipeline: `select_steps()` and `resolve_template()` of cochlea-net."""
 import argparse
 import contextlib
 import io
+import os
 import unittest
 
-from slurm_workflows.pipelines import load_pipeline, resolve_pipeline
+from slurm_workflows.pipelines import load_pipeline, project_of_template, resolve_pipeline, step_template
 from stubs import cochlea_net_module
 
 SETTINGS = {"mobie_project": "/path/to/mobie_project"}
@@ -43,6 +44,29 @@ class SelectStepsTest(unittest.TestCase):
 
         with self.assertRaises(ValueError):
             self.select()
+
+
+class ResolveTemplateTest(unittest.TestCase):
+
+    def setUp(self):
+        self.module = cochlea_net_module()
+
+    def resolve(self, cochlea, step):
+        with contextlib.redirect_stdout(io.StringIO()):
+            return self.module.resolve_template("cochlea-net", step, {"cochlea": cochlea})
+
+    def test_species_template(self):
+        self.assertEqual(self.resolve("G_EK_000071_L", "apply_SGN"),
+                         step_template("cochlea-net", os.path.join("G", "apply_SGN")))
+
+    def test_default_template(self):
+        self.assertEqual(self.resolve("M_AMD_000137_L", "apply_SGN"), step_template("cochlea-net", "apply_SGN"))
+        self.assertEqual(self.resolve("G_EK_000071_L", "apply_IHC"), step_template("cochlea-net", "apply_IHC"))
+
+    def test_project_of_species_template(self):
+        species_template = step_template("cochlea-net", os.path.join("G", "apply_SGN"))
+
+        self.assertEqual(project_of_template(species_template), "cochlea-net")
 
 
 if __name__ == "__main__":

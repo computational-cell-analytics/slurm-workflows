@@ -9,7 +9,7 @@ import json
 import os
 
 from slurm_workflows.inputs import job_variables, path_exists
-from slurm_workflows.pipelines import missing_templates
+from slurm_workflows.pipelines import missing_templates, step_template
 
 PROJECT = "cochlea-net"
 
@@ -138,6 +138,55 @@ def select_steps(
         print("The cleanup steps are skipped, because --no-cleanup was given: " + ", ".join(cleanup_steps) + ".")
 
     return steps
+
+
+def species_template(
+    project: str,
+    step: str,
+    species: str,
+) -> str:
+    """Return the template of a step in the folder of a species.
+
+    Args:
+        project: Name of the project.
+        step: Name of the step.
+        species: Species code of the cochlea, e.g. `G`.
+
+    Returns:
+        str: Path of the template, or None if the species folder has no template for the step.
+    """
+    template = step_template(project, os.path.join(species, step))
+    if species and os.path.isfile(template):
+        return template
+    return None
+
+
+def resolve_template(
+    project: str,
+    step: str,
+    parameters: dict,
+) -> str:
+    """Return the template of a pipeline step for the species of the cochlea.
+
+    The default templates fit mice. A species whose cochleae need other resources has a folder
+    `templates/<project>/<species>/`, named after the species code of the cochlea, e.g. `G`. A step
+    without a template in that folder uses the default template.
+
+    Args:
+        project: Name of the project.
+        step: Name of the step.
+        parameters: Job parameters, which name the cochlea.
+
+    Returns:
+        str: Path of the template.
+    """
+    species = parameters.get("cochlea", "").split("_")[0]
+    template = species_template(project, step, species)
+    if template is None:
+        return step_template(project, step)
+
+    print(f"Step {step} uses the template of species {species}: {template}")
+    return template
 
 
 def watershed_parameters(
@@ -401,6 +450,12 @@ def prepare_step(
 
     prefix = "".join([species, experimenter])
     template_name = os.path.basename(input_file)
+
+    # A single job uses the given template as it is. A pipeline selects the species template.
+    if definition is None:
+        template = species_template(PROJECT, template_name.split(".template")[0], species)
+        if template is not None and os.path.realpath(template) != os.path.realpath(input_file):
+            print(f"Note: {template} fits species {species}. Pass it with -i to use its resources.")
     cochlea_dir = os.path.join(replacement_dict["data_dir"], cochlea)
     group = template_group(input_file)
     if group is None:

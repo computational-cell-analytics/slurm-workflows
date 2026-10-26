@@ -15,7 +15,7 @@ from datetime import date
 
 from slurm_workflows.inputs import check_external_input, check_job_input, check_output_absent
 from slurm_workflows.metadata import METADATA_FILE, read_metadata, write_metadata
-from slurm_workflows.pipelines import REPOSITORY_DIR, load_pipeline, resolve_pipeline, step_template, steps_from
+from slurm_workflows.pipelines import REPOSITORY_DIR, load_pipeline, resolve_pipeline, steps_from
 from slurm_workflows.repositories import write_repository_file
 from slurm_workflows.settings import blueprint_settings_file, load_settings, settings_file, settings_to_replacements
 from slurm_workflows.templates import replace_substrings_in_file
@@ -224,7 +224,7 @@ def deploy_jobs(
         step_names = module.select_steps(definition, settings, args)
         if args.start_at is not None:
             step_names = steps_from(step_names, args.start_at)
-        steps = [step_template(project, step) for step in step_names]
+        steps = [module.resolve_template(project, step, parameters) for step in step_names]
 
     # Render every step before anything is submitted, so that an unresolved placeholder of a later
     # step cannot leave the earlier steps of the chain queued.

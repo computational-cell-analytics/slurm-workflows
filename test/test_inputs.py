@@ -7,6 +7,7 @@ import io
 import os
 import tempfile
 import unittest
+from unittest import mock
 
 from slurm_workflows.inputs import check_external_input, check_job_input, check_output_absent, job_variables
 from stubs import cochlea_net_module, write_file
@@ -131,6 +132,58 @@ class ResolveInputTest(unittest.TestCase):
         self.assertEqual(replacements["cochlea_data"], files[0])
         self.assertEqual(replacements["cochlea_data_multi"], " ".join(files))
         self.assertEqual(replacements["input_key_multi"], " ".join(["setup0/timepoint0/s0"] * 3))
+
+
+class PreviousRunTest(unittest.TestCase):
+    """A mask step keeps an existing mask, even an incomplete one, so its rerun gives a warning."""
+
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.module = cochlea_net_module()
+        self.sbatch = write_file(os.path.join(self.tmp.name, "job.sbatch"),
+                                 f"#!/bin/bash\nexport OUTPUT_FOLDER={self.tmp.name}\n")
+
+    def tearDown(self):
+        self.tmp.cleanup()
+
+    def test_mask_of_previous_run(self):
+        self.assertEqual(self.module.check_prediction_absent("mask_IHC.template", self.sbatch), [])
+
+        write_file(os.path.join(self.tmp.name, "mask.zarr", ".zgroup"))
+        self.assertEqual(len(self.module.check_prediction_absent("mask_IHC.template", self.sbatch)), 1)
+        self.assertEqual(self.module.check_prediction_absent("apply_IHC.template", self.sbatch), [])
+
+
+class RcloneRemoteTest(unittest.TestCase):
+    """A transfer job needs its rclone remote in the rclone config."""
+
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.config = os.path.join(self.tmp.name, "rclone.conf")
+        self.module = cochlea_net_module()
+
+    def tearDown(self):
+        self.tmp.cleanup()
+
+    def check(self, *lines):
+        sbatch = write_file(os.path.join(self.tmp.name, "job.sbatch"), "#!/bin/bash\n" + "\n".join(lines) + "\n")
+        with mock.patch.dict(os.environ, {"RCLONE_CONFIG": self.config}):
+            return self.module.check_rclone_remotes([sbatch, sbatch])
+
+    def test_remote_in_config(self):
+        write_file(self.config, "[other]\ntype = s3\n\n[cochlea-lightsheet]\ntype = s3\n")
+        self.assertEqual(self.check("S3_REMOTE=cochlea-lightsheet:cochlea-lightsheet"), [])
+
+    def test_remote_missing(self):
+        self.assertEqual(len(self.check("S3_REMOTE=cochlea-lightsheet:cochlea-lightsheet")), 1)
+
+        write_file(self.config, "[other]\ntype = s3\n")
+        warnings = self.check("S3_REMOTE=cochlea-lightsheet:cochlea-lightsheet")
+        self.assertEqual(len(warnings), 1)
+        self.assertIn("'cochlea-lightsheet'", warnings[0])
+
+    def test_no_transfer(self):
+        self.assertEqual(self.check("echo hi"), [])
 
 
 if __name__ == "__main__":

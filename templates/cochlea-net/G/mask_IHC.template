@@ -1,0 +1,49 @@
+#!/bin/bash
+#SBATCH --job-name=mask-IHC_<cochlea_job_name>
+#SBATCH -t 01:30:00             # estimated time, adapt to your needs
+#SBATCH --mail-user=<user_address> # change this to your mailaddress
+#SBATCH --mail-type=FAIL        # send mail when job begins and ends
+
+#SBATCH -p standard96s:shared         # the partition
+#SBATCH -A <account_name>
+#SBATCH -c 4
+#SBATCH --mem 32G
+
+source ~/.bashrc
+micromamba activate <cochlea-net_environment>
+
+# Run the script
+
+SCRIPT_REPO=<cochlea-net>
+cd "$SCRIPT_REPO"/flamingo_tools/segmentation/ || exit
+
+export INPUT=<data_dir>/<cochlea>/<cochlea_data>
+export OUTPUT_FOLDER=<data_dir>/predictions/<cochlea>/<prediction_dir>
+export SEG_MASKING=<masking>
+export INPUT_KEY=<input_key>
+export ABSOLUTE_THRESHOLD=<ihc_masking_threshold>
+
+echo "Input directory: ${INPUT}"
+echo "Output directory: ${OUTPUT_FOLDER}"
+
+# Verify the input of the job. A missing input stops the rest of the pipeline.
+for path in "$INPUT" ; do
+	if [ ! -e "$path" ] ; then
+		echo "Missing input of the job: $path"
+		exit 1
+	fi
+done
+
+if [ ! -d "$OUTPUT_FOLDER" ] ; then
+	mkdir -p "$OUTPUT_FOLDER"
+fi
+
+cmd_array=(	'import os;'
+	'import unet_prediction;'
+	'unet_prediction.run_unet_prediction_preprocess_slurm(input_path=os.environ["INPUT"],'
+	'output_folder=os.environ["OUTPUT_FOLDER"],seg_class=os.environ["SEG_MASKING"],'
+	'absolute_threshold=os.environ["ABSOLUTE_THRESHOLD"],'
+	'input_key=os.environ["INPUT_KEY"])')
+cmd="${cmd_array[*]}"
+python -c "$cmd"
+

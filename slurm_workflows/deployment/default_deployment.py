@@ -7,7 +7,7 @@ The placeholders are filled from the settings and the job parameters only.
 """
 import os
 
-from slurm_workflows.pipelines import STEPS_KEY, TEMPLATE_SUFFIX, project_of_template
+from slurm_workflows.pipelines import STEPS_KEY, TEMPLATE_SUFFIX, project_of_template, step_template
 
 
 def add_arguments(
@@ -23,6 +23,15 @@ def select_steps(
 ) -> list:
     """Return all steps of the pipeline definition."""
     return definition[STEPS_KEY]
+
+
+def resolve_template(
+    project: str,
+    step: str,
+    parameters: dict,
+) -> str:
+    """Return the template of the step."""
+    return step_template(project, step)
 
 
 def prepare_step(

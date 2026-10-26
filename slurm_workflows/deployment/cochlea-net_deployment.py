@@ -9,12 +9,15 @@ import json
 import os
 
 from slurm_workflows.inputs import job_variables, path_exists
-from slurm_workflows.pipelines import missing_templates
+from slurm_workflows.pipelines import missing_templates, step_template
 
 PROJECT = "cochlea-net"
 
 # Written by the apply step. It is the input of the segmentation step.
 SEGMENTATION_INPUT = "predictions.zarr"
+
+# Written by the mask step. cochlea-net keeps an existing mask, even an incomplete one.
+MASK = "mask.zarr"
 
 # Scale level of an OME-Zarr transferred from the S3 bucket.
 OME_ZARR_KEY = "s0"
@@ -58,6 +61,9 @@ GROUPS = {
 
 # Model version which is used if 'synapse_version' is not a parameter of the job.
 DEFAULT_SYNAPSE_VERSION = "synapses_v3"
+
+# rclone reads its remotes from this file, unless the environment variable RCLONE_CONFIG names another one.
+RCLONE_CONFIG = os.path.join("~", ".config", "rclone", "rclone.conf")
 
 
 def add_arguments(
@@ -132,6 +138,55 @@ def select_steps(
         print("The cleanup steps are skipped, because --no-cleanup was given: " + ", ".join(cleanup_steps) + ".")
 
     return steps
+
+
+def species_template(
+    project: str,
+    step: str,
+    species: str,
+) -> str:
+    """Return the template of a step in the folder of a species.
+
+    Args:
+        project: Name of the project.
+        step: Name of the step.
+        species: Species code of the cochlea, e.g. `G`.
+
+    Returns:
+        str: Path of the template, or None if the species folder has no template for the step.
+    """
+    template = step_template(project, os.path.join(species, step))
+    if species and os.path.isfile(template):
+        return template
+    return None
+
+
+def resolve_template(
+    project: str,
+    step: str,
+    parameters: dict,
+) -> str:
+    """Return the template of a pipeline step for the species of the cochlea.
+
+    The default templates fit mice. A species whose cochleae need other resources has a folder
+    `templates/<project>/<species>/`, named after the species code of the cochlea, e.g. `G`. A step
+    without a template in that folder uses the default template.
+
+    Args:
+        project: Name of the project.
+        step: Name of the step.
+        parameters: Job parameters, which name the cochlea.
+
+    Returns:
+        str: Path of the template.
+    """
+    species = parameters.get("cochlea", "").split("_")[0]
+    template = species_template(project, step, species)
+    if template is None:
+        return step_template(project, step)
+
+    print(f"Step {step} uses the template of species {species}: {template}")
+    return template
 
 
 def watershed_parameters(
@@ -395,6 +450,12 @@ def prepare_step(
 
     prefix = "".join([species, experimenter])
     template_name = os.path.basename(input_file)
+
+    # A single job uses the given template as it is. A pipeline selects the species template.
+    if definition is None:
+        template = species_template(PROJECT, template_name.split(".template")[0], species)
+        if template is not None and os.path.realpath(template) != os.path.realpath(input_file):
+            print(f"Note: {template} fits species {species}. Pass it with -i to use its resources.")
     cochlea_dir = os.path.join(replacement_dict["data_dir"], cochlea)
     group = template_group(input_file)
     if group is None:
@@ -478,10 +539,11 @@ def check_prediction_absent(
     input_file: str,
     output_file: str,
 ) -> list:
-    """Return a message if an apply step would write into an existing prediction.
+    """Return a message if a mask or an apply step finds the result of a previous run.
 
     The blocks of the prediction are split over the tasks of the job array, so a second run over an
-    existing 'predictions.zarr' leaves a mix of two runs which no later step can detect.
+    existing 'predictions.zarr' leaves a mix of two runs which no later step can detect. A mask step
+    keeps an existing 'mask.zarr', so a mask which a timeout left incomplete is never rebuilt.
 
     Args:
         input_file: Path of the template.
@@ -490,18 +552,52 @@ def check_prediction_absent(
     Returns:
         list: Warning messages. The list is empty if the step may run.
     """
-    if "apply" not in os.path.basename(input_file):
+    step = os.path.basename(input_file).split("_")[0]
+    if step == "apply":
+        result, message = SEGMENTATION_INPUT, "the prediction of a previous run exists: {}"
+    elif step == "mask":
+        result, message = MASK, ("the mask of a previous run exists and is reused as it is: {}. "
+                                 "Remove it if its job did not complete.")
+    else:
         return []
 
     output_folder = job_variables(output_file).get("OUTPUT_FOLDER")
     if output_folder is None:
         return []
 
-    prediction = os.path.join(output_folder, SEGMENTATION_INPUT)
-    if not path_exists(prediction):
+    path = os.path.join(output_folder, result)
+    if not path_exists(path):
         return []
 
-    return [f"the prediction of a previous run exists: {prediction}"]
+    return [message.format(path)]
+
+
+def check_rclone_remotes(
+    output_files: list,
+) -> list:
+    """Return a message for each rclone remote of a transfer job which the rclone config does not hold.
+
+    Without the remote, the transfer fails only after the steps before it have run.
+
+    Args:
+        output_files: Paths of the generated sbatch scripts.
+
+    Returns:
+        list: Warning messages. The list is empty if the rclone config holds every remote.
+    """
+    remotes = {job_variables(output_file).get("S3_REMOTE", "").split(":")[0] for output_file in output_files}
+    remotes.discard("")
+    if not remotes:
+        return []
+
+    config_file = os.environ.get("RCLONE_CONFIG", os.path.expanduser(RCLONE_CONFIG))
+    sections = set()
+    if os.path.isfile(config_file):
+        with open(config_file, "r") as myfile:
+            sections = {line.strip() for line in myfile}
+
+    return [f"the rclone config {config_file} has no remote '{remote}', which the transfer to the S3 bucket "
+            "needs. See doc/hpc_02_data_transfer.md." for remote in sorted(remotes) if f"[{remote}]" not in sections]
 
 
 def check_steps(
@@ -532,5 +628,7 @@ def check_steps(
 
     for input_file, output_file in zip(input_files, output_files):
         messages += check_prediction_absent(input_file, output_file)
+
+    messages += check_rclone_remotes(output_files)
 
     return messages

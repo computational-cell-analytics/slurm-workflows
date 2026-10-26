@@ -20,6 +20,9 @@ MOBIE_PROJECT=<mobie_project>
 INPUT=<mobie_project>/<cochlea>/tables/<marker_prediction>/default.tsv
 DATASET_FILE=<mobie_project>/<cochlea>/dataset.json
 
+# The check before the submission reads the rclone remote from this variable.
+S3_REMOTE=<s3_remote>
+
 echo "Transfer of the detections of <cochlea> from ""$MOBIE_PROJECT"" to S3"
 
 # Verify the input of the job. A missing input stops the rest of the pipeline.
@@ -34,5 +37,5 @@ done
 # rewrite the dataset.json of every dataset of the project.
 # dataset.json comes last, so that the bucket lists the source only after its table is complete.
 module load rclone
-rclone --progress copyto "$INPUT" <s3_remote>/<cochlea>/tables/<marker_prediction>/default.tsv || exit 1
-rclone --progress copyto "$DATASET_FILE" <s3_remote>/<cochlea>/dataset.json || exit 1
+rclone --progress copyto "$INPUT" "$S3_REMOTE"/<cochlea>/tables/<marker_prediction>/default.tsv || exit 1
+rclone --progress copyto "$DATASET_FILE" "$S3_REMOTE"/<cochlea>/dataset.json || exit 1

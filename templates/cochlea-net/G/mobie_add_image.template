@@ -1,0 +1,70 @@
+#!/bin/bash
+#SBATCH --job-name=mobie_<cochlea_job_name>
+#SBATCH -t 08:00:00             # estimated time, adapt to your needs
+#SBATCH --mail-user=<user_address> # change this to your mailaddress
+#SBATCH --mail-type=FAIL        # send mail when job begins and ends
+
+#SBATCH -p standard96s:shared         # the partition
+#SBATCH -A <account_name>
+#SBATCH -c 4
+#SBATCH --mem 400G
+
+source ~/.bashrc
+micromamba activate <mobie_environment>
+
+# Run the script
+
+MOBIE_PROJECT=<mobie_project>
+
+COCHLEA=<cochlea>
+INPUT_DIR=<data_dir>/<cochlea>
+DATASET_FILE=$MOBIE_PROJECT/$COCHLEA/dataset.json
+
+# The n5 of the first stain. Every stain can have its own n5, so the guard below checks all of them.
+INPUT=<data_dir>/<cochlea>/<cochlea_data>
+
+# One entry per stain, in the same order.
+CHANNEL_ARR=(<channel_multi>)
+INPUT_FILE_ARR=(<cochlea_data_multi>)
+INPUT_KEY_ARR=(<input_key_multi>)
+
+RESOLUTION="[0.38,0.38,0.38]"
+SCALE_FACTORS="[[2,2,2],[2,2,2],[2,2,2],[2,2,2],[2,2,2],[2,2,2]]"
+CHUNKS="[64,64,64]"
+
+# The default of --max_jobs is the core count of the whole node, not the count of the allocation.
+MAX_JOBS=${SLURM_CPUS_PER_TASK:-1}
+
+# Verify the input of the job. A missing input stops the rest of the pipeline.
+for file in "${INPUT_FILE_ARR[@]}" ; do
+	path="$INPUT_DIR/$file"
+	if [ ! -e "$path" ] ; then
+		echo "Missing input of the job: $path"
+		exit 1
+	fi
+done
+
+arraylength=${#CHANNEL_ARR[@]}
+
+# use for loop to read all values and indexes
+for (( i=0; i<${arraylength}; i++ )); do
+
+	CHANNEL_NAME=${CHANNEL_ARR[$i]}
+	INPUT_PATH="$INPUT_DIR/${INPUT_FILE_ARR[$i]}"
+	INPUT_KEY=${INPUT_KEY_ARR[$i]}
+
+	# mobie lists a source in dataset.json only after its conversion is complete, so a stain which
+	# a timeout interrupted is converted again. To convert a listed stain again, remove its entry.
+	if [ -e "$DATASET_FILE" ] && python -c "import json, sys; sys.exit(sys.argv[2] not in json.load(open(sys.argv[1]))['sources'])" "$DATASET_FILE" "$CHANNEL_NAME" ; then
+		echo "Skipping $CHANNEL_NAME, which is a source of $DATASET_FILE already."
+		continue
+	fi
+
+	echo "Adding image data ""$INPUT_PATH"":""$INPUT_KEY"" to MoBIE project""$MOBIE_PROJECT"" as ""$CHANNEL_NAME"
+
+	mobie.add_image --input_path "$INPUT_PATH" --input_key "$INPUT_KEY" --root "$MOBIE_PROJECT" \
+		--dataset_name "$COCHLEA" --name "$CHANNEL_NAME" --resolution "$RESOLUTION" \
+		--scale_factors "$SCALE_FACTORS" --chunks "$CHUNKS" \
+		--max_jobs "$MAX_JOBS" || exit 1
+
+done

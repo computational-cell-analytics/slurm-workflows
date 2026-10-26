@@ -4,8 +4,10 @@
 
 Access to the files of an archive folder, and creation of its `metadata.json`.
 """
+import glob
 import json
 import os
+from typing import List, Optional
 
 from slurm_workflows.repositories import repository_status_to_dict
 from slurm_workflows.settings import USER_SETTINGS, load_settings
@@ -59,6 +61,28 @@ def as_list(
         list: The value itself if it is a list, otherwise a list with the value as its only entry.
     """
     return value if isinstance(value, list) else [value]
+
+
+def archive_folders(
+    input_dir: str,
+    pattern: Optional[str] = None,
+) -> List[str]:
+    """List the archive folders in a directory.
+
+    Args:
+        input_dir: Directory of the archive folders.
+        pattern: Part of the folder name, which can hold wildcards, or None for all folders.
+
+    Returns:
+        list: Paths of the archive folders.
+    """
+    if pattern is None:
+        return [f.path for f in os.scandir(input_dir) if f.is_dir()]
+
+    subfolders = sorted(glob.glob(os.path.join(input_dir, f"*{pattern}*"), recursive=False))
+    if len(subfolders) == 0:
+        raise ValueError(f"No subfolders match pattern {pattern}.")
+    return subfolders
 
 
 def init_metadict(

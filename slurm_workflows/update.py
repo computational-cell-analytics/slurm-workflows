@@ -3,17 +3,14 @@
 """author: Martin Schilling (martin.schilling@med.uni-goettingen.de), 2025
 
 Logic of `slurm_wf.update_metadata`: update the archived metadata of Slurm jobs.
-Refresh the efficiency report of a running or pending job, add the data of the slurm output files,
-and summarize the efficiency of the archived jobs.
+Refresh the efficiency report of a running or pending job, and add the data of the slurm output files.
 """
-import glob
 import os
-import statistics
 from datetime import date
 from typing import List, Optional
 
 from slurm_workflows.metadata import LOG_FILE, METADATA_FILE, SBATCH_FILE
-from slurm_workflows.metadata import as_list, read_metadata, write_metadata
+from slurm_workflows.metadata import archive_folders, as_list, read_metadata, write_metadata
 from slurm_workflows.slurm import jobids_from_log, matches_jobid, reportseff_from_jobid, sbatch_parameters_to_dict
 from slurm_workflows.slurm import slurm_output_files, slurm_output_to_dict
 
@@ -199,106 +196,12 @@ def update_slurm_output(subfolders: List[str], slurm_dir: str):
         print("No matching slurm output files found.")
 
 
-def parse_percent(value: str) -> Optional[float]:
-    """Convert a percentage of the efficiency report into a number.
-
-    Args:
-        value: Value of the efficiency report, for example '85.3%'.
-
-    Returns:
-        float: The value without the percent sign, or None if the report has no value.
-    """
-    if value and value not in ('---', 'N/A', ''):
-        try:
-            return float(value.rstrip('%'))
-        except ValueError:
-            return None
-    return None
-
-
-def average_efficiency(subfolders: List[str], slurm_dir: Optional[str] = None):
-    """Print the average efficiency and the core hours of the jobs.
-
-    The efficiency comes from the 'Reportseff' entry of each job that is not RUNNING or PENDING.
-    The core hours come from the 'SlurmOutput' entry, or else from the files in `slurm_dir`.
-
-    Args:
-        subfolders: Archive folders.
-        slurm_dir: Directory of the slurm output files, or None.
-    """
-    cpu_effs = []
-    mem_effs = []
-    time_effs = []
-    core_hours_list = []
-
-    for folder in subfolders:
-        metadata = os.path.join(folder, METADATA_FILE)
-        if not os.path.isfile(metadata):
-            continue
-
-        metadict = read_metadata(metadata)
-
-        for report in as_list(metadict.get("Reportseff", [])):
-            if report.get("State") in UNFINISHED_STATES:
-                continue
-            cpu = parse_percent(report.get("CPUEff"))
-            mem = parse_percent(report.get("MemEff"))
-            time_eff = parse_percent(report.get("TimeEff"))
-            if cpu is not None:
-                cpu_effs.append(cpu)
-            if mem is not None:
-                mem_effs.append(mem)
-            if time_eff is not None:
-                time_effs.append(time_eff)
-
-        slurm_outputs = as_list(metadict.get("SlurmOutput", []))
-
-        if slurm_outputs:
-            job_core_hours = [so["core_hours"] for so in slurm_outputs if so.get("core_hours") is not None]
-            if job_core_hours:
-                core_hours_list.append(sum(job_core_hours))
-        elif slurm_dir:
-            jobid = metadict.get("jobid")
-            if jobid:
-                job_core_hours = [core_hours for core_hours in
-                                  (slurm_output_to_dict(sf).get("core_hours")
-                                   for sf in slurm_output_files(slurm_dir, jobid))
-                                  if core_hours is not None]
-                if job_core_hours:
-                    core_hours_list.append(sum(job_core_hours))
-
-    print(f"Efficiency summary for {len(subfolders)} job(s):")
-
-    if cpu_effs:
-        print(f"  Average CPU Efficiency:    {statistics.mean(cpu_effs):.1f}% (n={len(cpu_effs)})")
-    else:
-        print("  Average CPU Efficiency:    N/A")
-
-    if mem_effs:
-        print(f"  Average Memory Efficiency: {statistics.mean(mem_effs):.1f}% (n={len(mem_effs)})")
-    else:
-        print("  Average Memory Efficiency: N/A")
-
-    if time_effs:
-        print(f"  Average Time Efficiency:   {statistics.mean(time_effs):.1f}% (n={len(time_effs)})")
-    else:
-        print("  Average Time Efficiency:   N/A")
-
-    if core_hours_list:
-        print(f"  Average Core Hours: {statistics.mean(core_hours_list):.2f} (n={len(core_hours_list)})")
-        print(f"  Median Core Hours: {statistics.median(core_hours_list):.2f} (n={len(core_hours_list)})")
-        print(f"  Total Core Hours:   {sum(core_hours_list):.2f}")
-    else:
-        print("  Core Hours:                N/A")
-
-
 def update_archive(
         input_dir: str,
         pattern: Optional[str] = None,
         check_general_info: bool = False,
         check_sbatch_info: bool = False,
         slurm_dir: Optional[str] = None,
-        average: bool = False,
 ):
     """Update the metadata of the archive folders in a directory.
 
@@ -310,14 +213,8 @@ def update_archive(
         check_general_info: Run `check_metadata()`.
         check_sbatch_info: Run `update_sbatch_data()`.
         slurm_dir: Directory of the slurm output files, or None.
-        average: Print the efficiency summary.
     """
-    if pattern is None:
-        subfolders = [f.path for f in os.scandir(input_dir) if f.is_dir()]
-    else:
-        subfolders = sorted(glob.glob(os.path.join(input_dir, f"*{pattern}*"), recursive=False))
-        if len(subfolders) == 0:
-            raise ValueError(f"No subfolders match pattern {pattern}.")
+    subfolders = archive_folders(input_dir, pattern)
 
     if check_sbatch_info:
         update_sbatch_data(subfolders)
@@ -329,6 +226,3 @@ def update_archive(
         update_slurm_output(subfolders, slurm_dir)
 
     update_reporteff(subfolders)
-
-    if average:
-        average_efficiency(subfolders, slurm_dir)

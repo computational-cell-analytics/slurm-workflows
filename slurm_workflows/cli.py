@@ -8,11 +8,13 @@ functions, so they work without an installation.
 import argparse
 import os
 import sys
+from datetime import datetime
 
 from slurm_workflows.deploy import RUN_SBATCH_SCRIPT, SCRIPTS_DIR, deploy_jobs, project_module
 from slurm_workflows.metadata import write_job_metadata
 from slurm_workflows.mobie import add_s3_dataset as add_dataset_to_s3, generate_local_project, generate_s3_project
 from slurm_workflows.pipelines import pipeline_names, project_of_template, resolve_pipeline
+from slurm_workflows.summary import summarize
 from slurm_workflows.update import update_archive
 
 ARCHIVE_SCRIPT = os.path.join(SCRIPTS_DIR, "02_archive_scripts.sh")
@@ -119,12 +121,41 @@ def update_metadata():
                              "slurm-<job_id>_<array_index>.out) to parse and store in metadata.")
     parser.add_argument("--general", action="store_true", help="Check general info.")
     parser.add_argument("--sbatch", action="store_true", help="Check sbatch information.")
-    parser.add_argument("--average", action="store_true",
-                        help="Print average efficiency and core-hour summary across matching jobs.")
     args = parser.parse_args()
 
     try:
-        update_archive(args.input_dir, args.pattern, args.general, args.sbatch, args.slurm_dir, args.average)
+        update_archive(args.input_dir, args.pattern, args.general, args.sbatch, args.slurm_dir)
+    except (FileNotFoundError, ValueError) as exc:
+        sys.exit(str(exc))
+
+
+def iso_date(value: str) -> str:
+    return datetime.strptime(value, "%Y-%m-%d").date().isoformat()
+
+
+def summary():
+    parser = argparse.ArgumentParser(
+        description="Print the average efficiency and the core hours of the archived jobs, and optionally "
+        "write one row per job, ordered by date. The command only reads the archive. "
+        "Run slurm_wf.update_metadata first to refresh the data.")
+
+    parser.add_argument("input_dir", type=str, help="Directory of the archive folders.")
+
+    parser.add_argument("-o", "--output", type=str, default=None,
+                        help="Table with one row per job. An .xlsx file needs openpyxl. "
+                             "Any other suffix gives a TSV file.")
+    parser.add_argument("-p", "--pattern", type=str, default=None,
+                        help="Pattern to match folders in job archive. Supports wildcards.")
+    parser.add_argument("--since", type=iso_date, default=None, help="First job date, YYYY-MM-DD.")
+    parser.add_argument("--until", type=iso_date, default=None, help="Last job date, YYYY-MM-DD.")
+    parser.add_argument("--state", type=lambda value: value.split(","), default=None,
+                        help="Keep a job if one of its tasks has one of these states, e.g. COMPLETED,TIMEOUT.")
+    parser.add_argument("--partition", type=lambda value: value.split(","), default=None,
+                        help="Keep a job of one of these partitions, e.g. grete:shared,standard96.")
+    args = parser.parse_args()
+
+    try:
+        summarize(args.input_dir, args.output, args.pattern, args.since, args.until, args.state, args.partition)
     except (FileNotFoundError, ValueError) as exc:
         sys.exit(str(exc))
 

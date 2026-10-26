@@ -1,6 +1,7 @@
 #!/usr/bin/python
 # -- coding: utf-8 --
-"""Tests of the check of missing files: `slurm_workflows/inputs.py` and `resolve_input()` of cochlea-net."""
+"""Tests of the check of missing files: `slurm_workflows/inputs.py` and the input choice of cochlea-net."""
+import argparse
 import contextlib
 import io
 import os
@@ -61,39 +62,75 @@ class InputCheckTest(unittest.TestCase):
 
 
 class ResolveInputTest(unittest.TestCase):
-    """The n5 of the initial processing wins, the OME-Zarr from the S3 bucket is the fallback."""
+    """An n5 wins, the OME-Zarr from the S3 bucket is the fallback."""
 
-    N5 = "M_LR_1L_PV_fused.n5"
+    COCHLEA = "G_LR_000301_L"
+    STAINS = ["PV", "Vglut3", "CTBP2"]
+    MULTI = "GLR_301L_PV_Vglut3_CTBP2_fused.n5"
+    SINGLE = "GLR_301L_Vglut3_fused.n5"
+    OME_ZARR = "Vglut3.ome.zarr"
 
     def setUp(self):
         self.tmp = tempfile.TemporaryDirectory()
-        self.resolve_input = cochlea_net_module().resolve_input
+        self.cochlea_dir = os.path.join(self.tmp.name, self.COCHLEA)
+        self.module = cochlea_net_module()
 
     def tearDown(self):
         self.tmp.cleanup()
 
-    def add(self, name):
-        write_file(os.path.join(self.tmp.name, name, "attributes.json"))
+    def add(self, *names):
+        for name in names:
+            write_file(os.path.join(self.cochlea_dir, name, "attributes.json"))
 
-    def test_n5_wins(self):
-        self.add(self.N5)
-        self.add("PV.ome.zarr")
+    def resolve(self, stains):
+        candidates = self.module.n5_candidates("GLR", "000301", "L", stains, "Vglut3", "")
+        candidates.append((self.OME_ZARR, "s0"))
+        return self.module.resolve_input(self.cochlea_dir, candidates)
 
-        self.assertEqual(self.resolve_input(self.tmp.name, self.N5, "setup0/timepoint0/s0", "PV"),
-                         (self.N5, "setup0/timepoint0/s0"))
+    def mobie_replacements(self):
+        replacements = {"data_dir": self.tmp.name, "cochlea": self.COCHLEA, "stains": self.STAINS}
+        replacements, _ = self.module.prepare_step({"data_dir": self.tmp.name, "models": {}}, replacements,
+                                                   "mobie_add_image.template", argparse.Namespace(group=None))
+        return replacements
+
+    def test_multi_n5_wins(self):
+        self.add(self.MULTI, self.SINGLE, self.OME_ZARR)
+        self.assertEqual(self.resolve(self.STAINS), (self.MULTI, "setup1/timepoint0/s0"))
+
+    def test_single_n5_wins_over_ome_zarr(self):
+        self.add(self.SINGLE, self.OME_ZARR)
+        self.assertEqual(self.resolve(self.STAINS), (self.SINGLE, "setup0/timepoint0/s0"))
+        self.assertEqual(self.resolve(None), (self.SINGLE, "setup0/timepoint0/s0"))
 
     def test_ome_zarr_fallback(self):
-        self.add("PV.ome.zarr")
+        self.add(self.OME_ZARR)
+        self.assertEqual(self.resolve(self.STAINS), (self.OME_ZARR, "s0"))
 
-        self.assertEqual(self.resolve_input(self.tmp.name, self.N5, "setup0/timepoint0/s0", "PV"),
-                         ("PV.ome.zarr", "s0"))
+    def test_none_reports_first_candidate(self):
+        self.assertEqual(self.resolve(self.STAINS), (self.MULTI, "setup1/timepoint0/s0"))
+        self.assertEqual(self.resolve(None), (self.SINGLE, "setup0/timepoint0/s0"))
 
-    def test_neither_reports_n5(self):
-        self.assertEqual(self.resolve_input(self.tmp.name, self.N5, "setup0/timepoint0/s0", "PV"),
-                         (self.N5, "setup0/timepoint0/s0"))
+    def test_stain_not_in_stains(self):
+        self.assertEqual(self.module.n5_candidates("GLR", "000301", "L", ["PV"], "Vglut3", ""),
+                         [(self.SINGLE, "setup0/timepoint0/s0")])
 
-    def test_unknown_n5(self):
-        self.assertEqual(self.resolve_input(self.tmp.name, None, None, "PV"), ("PV.ome.zarr", "s0"))
+    def test_mobie_image_multi_n5(self):
+        self.add(self.MULTI)
+        replacements = self.mobie_replacements()
+
+        self.assertEqual(replacements["cochlea_data_multi"], " ".join([self.MULTI] * 3))
+        self.assertEqual(replacements["input_key_multi"],
+                         "setup0/timepoint0/s0 setup1/timepoint0/s0 setup2/timepoint0/s0")
+        self.assertEqual(replacements["channel_multi"], "PV Vglut3 CTBP2")
+
+    def test_mobie_image_n5_per_stain(self):
+        files = [f"GLR_301L_{stain}_fused.n5" for stain in self.STAINS]
+        self.add(*files)
+        replacements = self.mobie_replacements()
+
+        self.assertEqual(replacements["cochlea_data"], files[0])
+        self.assertEqual(replacements["cochlea_data_multi"], " ".join(files))
+        self.assertEqual(replacements["input_key_multi"], " ".join(["setup0/timepoint0/s0"] * 3))
 
 
 if __name__ == "__main__":

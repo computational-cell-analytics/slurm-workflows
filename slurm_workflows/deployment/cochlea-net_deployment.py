@@ -16,9 +16,12 @@ PROJECT = "cochlea-net"
 # Written by the apply step. It is the input of the segmentation step.
 SEGMENTATION_INPUT = "predictions.zarr"
 
-# Scale level of an OME-Zarr transferred from the S3 bucket. An n5 of the initial processing uses
-# 'setup<n>/timepoint0/s0' instead, because it holds every stain in one file.
+# Scale level of an OME-Zarr transferred from the S3 bucket.
 OME_ZARR_KEY = "s0"
+
+# Input key of an n5, filled with the setup index. An n5 which holds every stain has one setup per
+# stain. An n5 which holds one stain uses setup 0.
+N5_KEY = "setup{}/timepoint0/s0"
 
 REQUIRED_SETTINGS = ("data_dir", "models")
 
@@ -249,39 +252,62 @@ def marker_prediction_name(
     return f"{synapses_prediction}_{ihc_prediction}"
 
 
+def n5_candidates(
+    prefix: str,
+    number: str,
+    side: str,
+    stains: list,
+    stain: str,
+    version: str,
+) -> list:
+    """Return the n5 files which can hold one stain, with the input key of the stain.
+
+    The initial processing writes one n5 which holds every stain. A cochlea which is transferred
+    stain by stain has one n5 per stain instead, for example 'GLR_301L_PV_fused.n5'.
+
+    Args:
+        prefix: Species and experimenter initials.
+        number: Animal index of the cochlea, with leading zeros.
+        side: Side of the cochlea.
+        stains: Every stain of the cochlea, in the order of the setups of the n5, or None.
+        stain: The stain to read.
+        version: Version suffix of the cochlea, or an empty string.
+
+    Returns:
+        list of tuple: the file name and the input key of each candidate. The n5 with every stain
+            comes first, if 'stains' holds the stain.
+    """
+    candidates = []
+
+    if stains and stain in stains:
+        candidates.append((n5_name(prefix, number, side, stains, version), N5_KEY.format(stains.index(stain))))
+
+    candidates.append((n5_name(prefix, number, side, [stain], version), N5_KEY.format(0)))
+
+    return candidates
+
+
 def resolve_input(
     cochlea_dir: str,
-    n5_name: str,
-    n5_key: str,
-    stain: str,
+    candidates: list,
 ) -> tuple:
     """Return the file name of the job input and the matching input key.
 
-    The n5 of the initial processing wins. The OME-Zarr transferred from the S3 bucket is the
-    fallback, because the n5 is deleted after a cochlea is processed. If neither exists, the n5 is
-    reported, so that `check_job_input()` names the familiar path.
+    The first candidate which exists wins. If no candidate exists, the first one is reported, so
+    that `check_job_input()` names the preferred path.
 
     Args:
         cochlea_dir: Directory of the cochlea.
-        n5_name: File name of the n5, or None if the stain list is unknown.
-        n5_key: Input key of the n5.
-        stain: Stain of the job. It names the OME-Zarr file.
+        candidates: File name and input key of each candidate, in the order of preference.
 
     Returns:
         tuple of str: the file name of the input, and its input key.
     """
-    ome_zarr_name = f"{stain}.ome.zarr"
+    for name, key in candidates:
+        if path_exists(os.path.join(cochlea_dir, name)):
+            return name, key
 
-    if n5_name is None:
-        return ome_zarr_name, OME_ZARR_KEY
-
-    if path_exists(os.path.join(cochlea_dir, n5_name)):
-        return n5_name, n5_key
-
-    if path_exists(os.path.join(cochlea_dir, ome_zarr_name)):
-        return ome_zarr_name, OME_ZARR_KEY
-
-    return n5_name, n5_key
+    return candidates[0]
 
 
 def get_model_path(
@@ -369,36 +395,34 @@ def prepare_step(
 
     prefix = "".join([species, experimenter])
     template_name = os.path.basename(input_file)
+    cochlea_dir = os.path.join(replacement_dict["data_dir"], cochlea)
     group = template_group(input_file)
     if group is None:
         group = pipeline_group
 
     if group is None:
-        # The MoBIE templates read every stain, so they always need the n5.
+        # The MoBIE templates convert every stain from an n5. The OME-Zarr of the S3 bucket is
+        # their result, so it is no candidate.
         if not stains:
             raise ValueError(f"The template {template_name} needs the 'stains' parameter, which lists every "
                              "stain of the n5 data.")
-        replacement_dict["cochlea_data"] = n5_name(prefix, number, side, stains, version)
-        replacement_dict["channel_multi"] = "_".join(stains)
-        replacement_dict["input_key_multi"] = "_".join(
-            [f"setup{index}/timepoint0/s0" for index in range(len(stains))])
+        inputs = [resolve_input(cochlea_dir, n5_candidates(prefix, number, side, stains, stain, version))
+                  for stain in stains]
+        # The lists become bash arrays, so they are separated by spaces. A file name contains '_'.
+        replacement_dict["cochlea_data"] = inputs[0][0]
+        replacement_dict["cochlea_data_multi"] = " ".join(name for name, _ in inputs)
+        replacement_dict["input_key_multi"] = " ".join(key for _, key in inputs)
+        replacement_dict["channel_multi"] = " ".join(stains)
 
     else:
         group_spec = GROUPS[group]
         stain = replacement_dict[f"stain_{group}"]
 
-        # The n5 holds every stain, so its key selects the channel. A stain which the n5 does not
-        # hold leaves the OME-Zarr of the S3 bucket as the only candidate.
-        if stains and stain in stains:
-            n5_candidate = n5_name(prefix, number, side, stains, version)
-            n5_key = f"setup{stains.index(stain)}/timepoint0/s0"
-        else:
-            n5_candidate = None
-            n5_key = None
-
-        cochlea_dir = os.path.join(replacement_dict["data_dir"], cochlea)
-        replacement_dict["cochlea_data"], replacement_dict["input_key"] = resolve_input(
-            cochlea_dir, n5_candidate, n5_key, stain)
+        # The OME-Zarr of the S3 bucket is the fallback, because the n5 is deleted after a cochlea
+        # is processed.
+        candidates = n5_candidates(prefix, number, side, stains, stain, version)
+        candidates.append((f"{stain}.ome.zarr", OME_ZARR_KEY))
+        replacement_dict["cochlea_data"], replacement_dict["input_key"] = resolve_input(cochlea_dir, candidates)
 
         if group_spec["masking"] is not None:
             replacement_dict["masking"] = group_spec["masking"]

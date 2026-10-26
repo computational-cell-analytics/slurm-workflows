@@ -17,8 +17,6 @@ micromamba activate <cochlea-net_environment>
 SCRIPT_REPO=<cochlea-net>
 cd "$SCRIPT_REPO"/flamingo_tools/segmentation/ || exit
 
-export SCRIPT_DIR=$SCRIPT_REPO/scripts
-
 export INPUT=<data_dir>/<cochlea>/<cochlea_data>
 export OUTPUT_FOLDER=<data_dir>/predictions/<cochlea>/<prediction_dir>
 export SEG_MASKING=<masking>
@@ -40,8 +38,7 @@ if [ ! -d "$OUTPUT_FOLDER" ] ; then
 	mkdir -p "$OUTPUT_FOLDER"
 fi
 
-cmd_array=(	'import sys,os;'
-	'sys.path.insert(0,os.environ["SCRIPT_DIR"]);'
+cmd_array=(	'import os;'
 	'import unet_prediction;'
 	'unet_prediction.run_unet_prediction_preprocess_slurm(input_path=os.environ["INPUT"],'
 	'output_folder=os.environ["OUTPUT_FOLDER"],seg_class=os.environ["SEG_MASKING"],'

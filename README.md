@@ -118,8 +118,9 @@ Use the option `--force` to submit the job for data which does not exist yet.
 
 For `cochlea-net`, the deploy step also decides which file the job reads.
 The initial processing writes one n5 which holds every stain, and that n5 is deleted once the cochlea is processed.
+Some cochleae have one n5 per stain instead, e.g. `GLR_301L_PV_fused.n5`.
 A later job reads the OME-Zarr which was transferred back from the S3 bucket instead.
-The n5 wins if it still exists, and the OME-Zarr `<data_dir>/<cochlea>/<stain>.ome.zarr` is the fallback.
+An n5 wins if it still exists, and the OME-Zarr `<data_dir>/<cochlea>/<stain>.ome.zarr` is the fallback.
 The input key follows the file, so a rerun from the S3 bucket needs no extra parameter.
 
 The stain of a job is a parameter.

@@ -34,7 +34,6 @@ The file contains:
 
     "repositories": {
         "cochlea-net": "/path/to/cochlea-net",
-        "mobie-utils-python": "/path/to/mobie-utils-python",
         "slurm-workflows": "/path/to/slurm-workflows"
     },
 
@@ -74,6 +73,9 @@ e.g. the file name `MAMD_137L_PV_Vglut3_CTBP2_fused.n5` refers to:
 * animal index: `137`
 * cochlea side: `L`
 * stains 1 to 3: `PV`, `Vglut3`, `CTBP2`
+
+Some cochleae, e.g. of gerbils, have one n5 file per stain instead: `GLR_301L_PV_fused.n5`, `GLR_301L_Vglut3_fused.n5` and `GLR_301L_CTBP2_fused.n5`.
+The pipelines find both formats. The order of `stains` is important only for the n5 file with every stain.
 
 Each pipeline reads the settings file and one parameter file per cochlea, e.g. `M_AMD_000137_L.json`:
 ```json

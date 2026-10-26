@@ -121,12 +121,10 @@ def update_metadata():
                              "slurm-<job_id>_<array_index>.out) to parse and store in metadata.")
     parser.add_argument("--general", action="store_true", help="Check general info.")
     parser.add_argument("--sbatch", action="store_true", help="Check sbatch information.")
-    parser.add_argument("--average", action="store_true",
-                        help="Print average efficiency and core-hour summary across matching jobs.")
     args = parser.parse_args()
 
     try:
-        update_archive(args.input_dir, args.pattern, args.general, args.sbatch, args.slurm_dir, args.average)
+        update_archive(args.input_dir, args.pattern, args.general, args.sbatch, args.slurm_dir)
     except (FileNotFoundError, ValueError) as exc:
         sys.exit(str(exc))
 

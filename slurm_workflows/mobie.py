@@ -2,9 +2,11 @@
 # -- coding: utf-8 --
 """author: Martin Schilling (martin.schilling@med.uni-goettingen.de), 2025
 
-Access to the `project.json` of a MoBIE project. The S3 file lists the datasets of every local
-MoBIE project, so a local `project.json` must not replace it.
+Access to the `project.json` and the `dataset.json` files of a MoBIE project. The S3 files list the
+datasets and the sources of every local MoBIE project, so a local file must not replace them.
 """
+import csv
+import io
 import json
 import os
 import subprocess
@@ -13,6 +15,20 @@ PROJECT_FILE = "project.json"
 
 # A dataset is a top-level folder of the project which holds this file.
 DATASET_FILE = "dataset.json"
+
+# Data folders of a dataset, which mobie names after the source.
+IMAGE_DIR = "images/ome-zarr"
+TABLE_DIR = "tables"
+OME_ZARR = ".ome.zarr"
+TABLE_FILE = "default.tsv"
+
+# Contrast limits of a rebuilt image source, by the byte size of its unsigned dtype. 1400 replaces
+# the uint16 maximum 65535, as 'mobie_transfer_dataset' does.
+CONTRAST_LIMITS = {1: [0, 255], 2: [0, 1400]}
+
+# Display and menu of the view which mobie creates for a new source.
+DISPLAYS = {"image": "imageDisplay", "segmentation": "segmentationDisplay", "spots": "spotDisplay"}
+MENUS = {"image": "images", "segmentation": "segmentations", "spots": "spots"}
 
 
 def tmp_file(name: str) -> str:
@@ -232,3 +248,287 @@ def generate_local_project(
 
     write_json(path, set_datasets(project, datasets))
     print(f"Updated {path}, {describe_change(project['datasets'], datasets)}.")
+
+
+def s3_data(
+    s3_remote: str,
+    dataset: str,
+) -> set:
+    """Return the data folders of a dataset in the S3 bucket.
+
+    Args:
+        s3_remote: rclone remote and bucket, in the form 'remote:bucket'.
+        dataset: Name of the dataset.
+
+    Returns:
+        set: Paths relative to the dataset folder: each 'images/ome-zarr/<name>.ome.zarr', and each
+            'tables/<name>' which holds a 'default.tsv'.
+    """
+    # Depth 3 reaches 'images/ome-zarr/<name>.ome.zarr' and 'tables/<name>/default.tsv', but not the chunks.
+    output = rclone(["lsf", "--max-depth", "3", f"{s3_remote}/{dataset}"])
+    paths = [line.rstrip("/") for line in output.splitlines() if line]
+    images = {path for path in paths if os.path.dirname(path) == IMAGE_DIR and path.endswith(OME_ZARR)}
+    tables = {os.path.dirname(path) for path in paths
+              if os.path.dirname(os.path.dirname(path)) == TABLE_DIR and os.path.basename(path) == TABLE_FILE}
+    return images | tables
+
+
+def source_paths(
+    entry: dict,
+    dataset: str,
+) -> list:
+    """Return the data folders of a source in the S3 bucket, relative to the dataset folder.
+
+    Args:
+        entry: Entry of the source in the 'sources' of a `dataset.json`.
+        dataset: Name of the dataset.
+
+    Returns:
+        list: The OME-Zarr folder and the table folder, if the source has them.
+    """
+    source = next(iter(entry.values()))
+    image_data = source.get("imageData", {})
+    paths = []
+    if "ome.zarr.s3" in image_data:
+        # MoBIE reads the image data of the S3 project from this address, not from 'relativePath'.
+        paths.append(image_data["ome.zarr.s3"]["s3Address"].split(f"/{dataset}/", 1)[-1])
+    elif "ome.zarr" in image_data:
+        paths.append(image_data["ome.zarr"]["relativePath"])
+    table = source.get("tableData", {}).get("tsv")
+    if table:
+        paths.append(table["relativePath"])
+    return [path.rstrip("/") for path in paths]
+
+
+def unlisted_data(
+    metadata: dict,
+    dataset: str,
+    data: set,
+) -> list:
+    """Return the data folders of a dataset which no source of its `dataset.json` lists.
+
+    Args:
+        metadata: Content of the `dataset.json`.
+        dataset: Name of the dataset.
+        data: Output of `s3_data()`.
+
+    Returns:
+        list: Sorted paths relative to the dataset folder.
+    """
+    listed = {path for entry in metadata["sources"].values() for path in source_paths(entry, dataset)}
+    return sorted(data - listed)
+
+
+def check_dataset(
+    metadata: dict,
+    dataset: str,
+    data: set,
+) -> list:
+    """Return a message for each mismatch between a `dataset.json` and the data folders of its dataset.
+
+    Args:
+        metadata: Content of the `dataset.json`.
+        dataset: Name of the dataset.
+        data: Output of `s3_data()`.
+
+    Returns:
+        list: The messages. The list is empty if the file and the data match.
+    """
+    messages = [f"no source lists the data {path}" for path in unlisted_data(metadata, dataset, data)]
+    for name, entry in sorted(metadata["sources"].items()):
+        messages += [f"the source {name} lists the missing data {path}"
+                     for path in source_paths(entry, dataset) if path not in data]
+
+    # A region display maps regions to sources, so only a list of source names is checked.
+    for name, view in sorted(metadata["views"].items()):
+        shown = {source for display in view.get("sourceDisplays", []) for settings in display.values()
+                 if isinstance(settings.get("sources"), list) for source in settings["sources"]}
+        messages += [f"the view {name} shows the missing source {source}"
+                     for source in sorted(shown - set(metadata["sources"]))]
+
+    default = metadata["views"].get("default")
+    if default is not None and not any(DISPLAYS["image"] in display for display in default.get("sourceDisplays", [])):
+        messages.append("the default view shows no image")
+    return messages
+
+
+def check_s3_datasets(
+    s3_remote: str,
+) -> None:
+    """Print the mismatches between the `dataset.json` and the data folders of each dataset in the S3 bucket.
+
+    Args:
+        s3_remote: rclone remote and bucket, in the form 'remote:bucket'.
+    """
+    datasets = s3_datasets(s3_remote)
+    mismatches = 0
+    for dataset in datasets:
+        metadata = json.loads(rclone(["cat", f"{s3_remote}/{dataset}/{DATASET_FILE}"]))
+        messages = check_dataset(metadata, dataset, s3_data(s3_remote, dataset))
+        for message in messages:
+            print(f"{dataset}: {message}")
+        mismatches += bool(messages)
+    print(f"{mismatches} of {len(datasets)} datasets have a mismatch.")
+
+
+def default_view(
+    source_type: str,
+    name: str,
+    contrast_limits: list = None,
+) -> dict:
+    """Return the view which mobie creates for a new source.
+
+    Args:
+        source_type: 'image', 'segmentation' or 'spots'.
+        name: Name of the source.
+        contrast_limits: Contrast limits of an image source.
+
+    Returns:
+        dict: The view.
+    """
+    display = {"name": name, "sources": [name]}
+    if source_type == "image":
+        display.update(color="white", contrastLimits=contrast_limits, opacity=1.0)
+    else:
+        display.update(lut="glasbey", opacity=0.5)
+    return {"isExclusive": False, "sourceDisplays": [{DISPLAYS[source_type]: display}],
+            "uiSelectionGroup": MENUS[source_type]}
+
+
+def rebuild_source(
+    s3_remote: str,
+    dataset: str,
+    name: str,
+    data: set,
+    service_endpoint: str,
+) -> tuple:
+    """Build the `dataset.json` entry and the view of a source from its data in the S3 bucket.
+
+    The type comes from the data, not from the name. A spot source can carry 'IHC' in its name.
+    - OME-Zarr and a table with 'label_id': segmentation.
+    - A table with 'spot_id' alone: spots. mobie always writes this column.
+    - OME-Zarr alone: image for an 8 or 16 bit unsigned dtype, segmentation for an integer dtype
+      of 32 bit or more.
+
+    Args:
+        s3_remote: rclone remote and bucket, in the form 'remote:bucket'.
+        dataset: Name of the dataset.
+        name: Name of the source, which names its data folders.
+        data: Output of `s3_data()`.
+        service_endpoint: URL of the S3 service, e.g. 'https://s3.fs.gwdg.de'.
+
+    Returns:
+        tuple: The entry and the view of the source.
+
+    Raises:
+        ValueError: If the data matches no source type.
+    """
+    dataset_remote = f"{s3_remote}/{dataset}"
+    image_path = f"{IMAGE_DIR}/{name}{OME_ZARR}"
+    table_path = f"{TABLE_DIR}/{name}"
+    table_data = {"tsv": {"relativePath": table_path}}
+
+    columns, rows = [], []
+    if table_path in data:
+        reader = csv.DictReader(io.StringIO(rclone(["cat", f"{dataset_remote}/{table_path}/{TABLE_FILE}"])),
+                                delimiter="\t")
+        rows = list(reader)
+        columns = reader.fieldnames or []
+
+    if image_path not in data:
+        if not {"spot_id", "x", "y", "z"} <= set(columns) or not rows:
+            raise ValueError(f"{table_path} holds no spot table, and there is no {image_path}")
+        # mobie.add_spots without a bounding box and a reference source takes the range of the
+        # coordinates, which 'mobie_add_detection' relies on.
+        coordinates = [[float(row[axis]) for row in rows] for axis in "xyz"]
+        entry = {"spots": {"boundingBoxMax": [max(values) for values in coordinates],
+                           "boundingBoxMin": [min(values) for values in coordinates],
+                           "tableData": table_data, "unit": "micrometer"}}
+        return entry, default_view("spots", name)
+
+    bucket_path = s3_remote.split(":", 1)[1]
+    image_data = {"ome.zarr": {"relativePath": image_path},
+                  "ome.zarr.s3": {"s3Address": f"{service_endpoint.rstrip('/')}/{bucket_path}/{dataset}/{image_path}"}}
+
+    if columns:
+        if "label_id" not in columns:
+            raise ValueError(f"{table_path} holds no segmentation table")
+        return {"segmentation": {"imageData": image_data, "tableData": table_data}}, default_view("segmentation", name)
+
+    # The dtype has the form '<u2': byte order, kind and byte size.
+    dtype = json.loads(rclone(["cat", f"{dataset_remote}/{image_path}/s0/.zarray"]))["dtype"]
+    kind, size = dtype[1], int(dtype[2:])
+    if kind == "u" and size in CONTRAST_LIMITS:
+        return {"image": {"imageData": image_data}}, default_view("image", name, CONTRAST_LIMITS[size])
+    if kind in "ui" and size >= 4:
+        return {"segmentation": {"imageData": image_data}}, default_view("segmentation", name)
+    raise ValueError(f"{image_path} has the dtype {dtype}, which matches no source type")
+
+
+def source_name(
+    path: str,
+) -> str:
+    name = os.path.basename(path)
+    return name[:-len(OME_ZARR)] if name.endswith(OME_ZARR) else name
+
+
+def repair_s3_dataset(
+    mobie_project: str,
+    s3_remote: str,
+    dataset: str,
+    service_endpoint: str,
+    default_view_source: str = None,
+    output: str = None,
+) -> None:
+    """Add a source to the `dataset.json` of the S3 bucket for the data which no source lists.
+
+    The entries are built from the data in the bucket with `rebuild_source()`. An existing entry
+    does not change. Data which matches no source type is reported and skipped.
+
+    Args:
+        mobie_project: Root of the local MoBIE project, which holds the temporary copy.
+        s3_remote: rclone remote and bucket, in the form 'remote:bucket'.
+        dataset: Name of the dataset.
+        service_endpoint: URL of the S3 service, e.g. 'https://s3.fs.gwdg.de'.
+        default_view_source: Source whose view becomes the default view of the dataset.
+        output: Write the repaired file to this path, and upload nothing.
+    """
+    data = s3_data(s3_remote, dataset)
+    added, skipped = [], []
+
+    def change(remote):
+        sources = dict(remote["sources"])
+        views = dict(remote["views"])
+        for name in sorted({source_name(path) for path in unlisted_data(remote, dataset, data)}):
+            if name in sources:
+                skipped.append(f"{name}: the source of this name lists other data")
+                continue
+            try:
+                sources[name], views[name] = rebuild_source(s3_remote, dataset, name, data, service_endpoint)
+            except ValueError as exc:
+                skipped.append(f"{name}: {exc}")
+                continue
+            added.append(name)
+
+        if default_view_source is not None:
+            if default_view_source not in views:
+                raise ValueError(f"{dataset} has no view {default_view_source}.")
+            # mobie.add_* gives a new dataset the view of its first source as the default view.
+            views["default"] = dict(views[default_view_source], uiSelectionGroup="bookmark")
+        return dict(remote, sources=sources, views=views)
+
+    remote_file = f"{s3_remote}/{dataset}/{DATASET_FILE}"
+    if output is not None:
+        after = change(json.loads(rclone(["cat", remote_file])))
+        write_json(output, after)
+        print(f"Wrote the repaired {DATASET_FILE} of {dataset} to {output}. Nothing was uploaded.")
+    else:
+        before, after = update_s3_json(mobie_project, remote_file, change)
+        print(f"The {DATASET_FILE} of {dataset} in the S3 bucket is up to date." if after == before
+              else f"Updated the {DATASET_FILE} of {dataset} in the S3 bucket.")
+
+    print(f"Added sources: {', '.join(added) or 'none'}")
+    for message in skipped:
+        print(f"Skipped {message}")
+    for message in check_dataset(after, dataset, data):
+        print(f"Remaining mismatch: {message}")

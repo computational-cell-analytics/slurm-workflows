@@ -12,7 +12,8 @@ from datetime import datetime
 
 from slurm_workflows.deploy import RUN_SBATCH_SCRIPT, SCRIPTS_DIR, deploy_jobs, project_module
 from slurm_workflows.metadata import write_job_metadata
-from slurm_workflows.mobie import add_s3_dataset as add_dataset_to_s3, generate_local_project, generate_s3_project
+from slurm_workflows.mobie import (add_s3_dataset as add_dataset_to_s3, check_s3_datasets, generate_local_project,
+                                   generate_s3_project, repair_s3_dataset)
 from slurm_workflows.pipelines import pipeline_names, project_of_template, resolve_pipeline
 from slurm_workflows.summary import summarize
 from slurm_workflows.update import update_archive
@@ -164,11 +165,12 @@ def add_s3_dataset():
     parser = argparse.ArgumentParser(
         description="Add a dataset to the project.json of the MoBIE project in the S3 bucket, or rebuild "
         "the dataset list of a project.json from the dataset folders. A dataset folder holds a dataset.json. "
-        "The dataset names stay in alphabetical order, and the other entries stay unchanged.")
+        "The dataset names stay in alphabetical order, and the other entries stay unchanged. Other modes "
+        "check the dataset.json files of the bucket, or repair one.")
 
     parser.add_argument("-p", "--mobie_project", type=str, required=True,
-                        help="Root of the local MoBIE project. It holds the temporary copy "
-                             "tmp_<JobID>_project.json, or tmp_project.json outside of a Slurm job.")
+                        help="Root of the local MoBIE project. Each upload edits a temporary copy of the S3 file "
+                             "in it: tmp_<JobID>_<file name>, or tmp_<file name> outside of a Slurm job.")
     parser.add_argument("-r", "--s3_remote", type=str, default=None,
                         help="rclone remote and bucket, in the form remote:bucket. Not needed for --generate local.")
 
@@ -178,16 +180,40 @@ def add_s3_dataset():
                       help="Set the dataset list to the dataset folders. 's3' updates the project.json of the "
                            "S3 bucket from the bucket. 'local' updates the project.json of the local project "
                            "from the local folders and uploads nothing.")
+    mode.add_argument("--check", action="store_true",
+                      help="Print each mismatch between the dataset.json and the data folders of every dataset "
+                           "in the S3 bucket.")
+
+    parser.add_argument("--repair", action="store_true",
+                        help="Add a source to the S3 dataset.json of -d for each data folder which no "
+                             "source lists. The entry is built from the data in the bucket.")
+    parser.add_argument("-e", "--service_endpoint", type=str, default=None,
+                        help="URL of the S3 service, e.g. https://s3.fs.gwdg.de. Needed for --repair.")
+    parser.add_argument("--default_view", type=str, default=None,
+                        help="With --repair: the source whose view becomes the default view of the dataset.")
+    parser.add_argument("-o", "--output", type=str, default=None,
+                        help="With --repair: write the repaired dataset.json to this file and upload nothing.")
     args = parser.parse_args()
 
     if args.s3_remote is None and args.generate != "local":
         parser.error("-r is needed, unless --generate local is given.")
+    if args.repair and args.dataset is None:
+        parser.error("--repair needs -d.")
+    if args.repair and args.service_endpoint is None:
+        parser.error("--repair needs -e.")
+    if not args.repair and (args.service_endpoint or args.default_view or args.output):
+        parser.error("-e, --default_view and -o need --repair.")
 
     try:
-        if args.generate == "local":
+        if args.check:
+            check_s3_datasets(args.s3_remote)
+        elif args.generate == "local":
             generate_local_project(args.mobie_project)
         elif args.generate == "s3":
             generate_s3_project(args.mobie_project, args.s3_remote)
+        elif args.repair:
+            repair_s3_dataset(args.mobie_project, args.s3_remote, args.dataset, args.service_endpoint,
+                              args.default_view, args.output)
         else:
             add_dataset_to_s3(args.mobie_project, args.s3_remote, args.dataset)
     except (FileNotFoundError, ValueError) as exc:

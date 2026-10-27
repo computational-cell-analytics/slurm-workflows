@@ -128,3 +128,30 @@ python /path/to/slurm-workflows/scripts/add_s3_dataset.py -p /path/to/mobie_proj
 # set the list of the local project.json to the local dataset folders, without an upload
 python /path/to/slurm-workflows/scripts/add_s3_dataset.py -p /path/to/mobie_project --generate local
 ```
+
+### Check and repair the dataset.json files of the S3 bucket
+`--check` compares the `dataset.json` of each dataset in the S3 bucket with its data folders `images/ome-zarr/<source>.ome.zarr` and `tables/<source>`. A table folder counts only if it holds a `default.tsv`. MoBIE reads the image data of a source from its `s3Address`, so the check uses the `s3Address` and not the `relativePath`. The check reads only, and prints:
+- data which no source lists, e.g. the sources of other users after an upload of a local `dataset.json`;
+- a source whose data is missing, e.g. after a rename by hand;
+- a view which shows a missing source;
+- a default view which shows no image.
+
+`--repair` fixes the first case, and with `--default_view` the last case. Fix the other cases by hand: point the source to the renamed data, or remove a source whose data is missing.
+```bash
+python /path/to/slurm-workflows/scripts/add_s3_dataset.py -p /path/to/mobie_project -r cochlea-lightsheet:cochlea-lightsheet --check
+```
+
+`--repair` adds a source to the S3 `dataset.json` for each data folder which no source lists. It builds the entry from the data in the bucket, so it needs no local MoBIE project. The data, not the name, gives the source type:
+
+| data in the bucket | source |
+|---|---|
+| `<source>.ome.zarr` and a table with `label_id` | segmentation |
+| a table with `spot_id`, no OME-Zarr | spots. The bounding box is the range of `x`, `y` and `z` in the table, as `mobie.add_spots` computes it |
+| `<source>.ome.zarr` with an 8 or 16 bit dtype, no table | image, with the contrast limits `[0, 255]` or `[0, 1400]` |
+| `<source>.ome.zarr` with an integer dtype of 32 bit or more, no table | segmentation without a table |
+
+The repair does not change an existing source. It skips data which matches no row, e.g. a segmentation table without its OME-Zarr, and prints it. `--default_view <source>` makes the view of that source the default view of the dataset. Write the result to a file with `-o` first, check it, then run the command again without `-o` to upload it.
+```bash
+python /path/to/slurm-workflows/scripts/add_s3_dataset.py -p /path/to/mobie_project -r cochlea-lightsheet:cochlea-lightsheet \
+    -d <dataset> --repair -e https://s3.fs.gwdg.de --default_view PV -o repaired_dataset.json
+```

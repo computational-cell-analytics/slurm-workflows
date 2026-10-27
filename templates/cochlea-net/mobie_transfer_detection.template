@@ -35,7 +35,11 @@ done
 
 # A spot source holds no image data in the bucket, so it needs no remote metadata. Adding it would
 # rewrite the dataset.json of every dataset of the project.
-# dataset.json comes last, so that the bucket lists the source only after its table is complete.
 module load rclone
 rclone --progress copyto "$INPUT" "$S3_REMOTE"/<cochlea>/tables/<marker_prediction>/default.tsv || exit 1
-rclone --progress copyto "$DATASET_FILE" "$S3_REMOTE"/<cochlea>/dataset.json || exit 1
+
+# The dataset.json of the S3 bucket lists the sources of every local MoBIE project. The local file
+# must not replace it, so only this spot source is added. dataset.json comes last, so that the
+# bucket lists the source only after its table is complete.
+python <slurm-workflows>/scripts/add_s3_dataset.py -p "$MOBIE_PROJECT" -r "$S3_REMOTE" -d <cochlea> \
+	--source <marker_prediction>

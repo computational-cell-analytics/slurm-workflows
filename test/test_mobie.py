@@ -19,7 +19,7 @@ REMOTE = "remote:bucket"
 RCLONE_STUB = f"""#!/bin/bash
 to_local() {{ echo "${{1/#{REMOTE}/$STUB_BUCKET}}"; }}
 case "$1" in
-    copyto) cp "$(to_local "$2")" "$(to_local "$3")" ;;
+    copyto) mkdir -p "$(dirname "$(to_local "$3")")" && cp "$(to_local "$2")" "$(to_local "$3")" ;;
     cat) cat "$(to_local "$2")" ;;
     lsf)
         cd "$(to_local "${{@: -1}}")" || exit 3
@@ -170,6 +170,31 @@ class DatasetTest(RcloneStubTest):
         write_file(self.remote_path("images", "ome-zarr", f"{name}.ome.zarr", "s0", ".zarray"),
                    json.dumps({"dtype": dtype}))
         write_file(self.remote_path("tables", name, "default.tsv"), LABEL_TABLE)
+
+    def test_named_sources_are_added_to_the_s3_dataset(self):
+        write_file(self.remote_path("dataset.json"), json.dumps(dataset_json(["IHC_v11", "SGN_v2"], "IHC_v11")))
+        local = dataset_json(["SGN_v2", "SGN_v3", "IHC_v4"], "SGN_v2")
+        local["sources"]["SGN_v2"]["segmentation"]["description"] = "new"
+        local_file = write_file(os.path.join(self.mobie_project, DATASET, "dataset.json"), json.dumps(local))
+
+        mobie.add_s3_sources(self.mobie_project, REMOTE, DATASET, ["SGN_v2", "SGN_v3"])
+
+        remote = json.loads(read_file(self.remote_path("dataset.json")))
+        self.assertEqual(sorted(remote["sources"]), ["IHC_v11", "SGN_v2", "SGN_v3"])
+        self.assertEqual(remote["sources"]["SGN_v2"], local["sources"]["SGN_v2"])
+        self.assertEqual(remote["views"]["default"], dataset_json([], "IHC_v11")["views"]["default"])
+        self.assertEqual(json.loads(read_file(local_file)), local)
+        self.assertEqual(os.listdir(self.mobie_project), [DATASET])
+
+    def test_new_s3_dataset_gets_the_named_sources_and_the_local_default_view(self):
+        local = dataset_json(["PV", "SGN_v3"], "PV")
+        write_file(os.path.join(self.mobie_project, DATASET, "dataset.json"), json.dumps(local))
+
+        mobie.add_s3_sources(self.mobie_project, REMOTE, DATASET, ["PV"])
+
+        remote = json.loads(read_file(self.remote_path("dataset.json")))
+        self.assertEqual(sorted(remote["sources"]), ["PV"])
+        self.assertEqual(remote["views"], {"PV": local["views"]["PV"], "default": local["views"]["default"]})
 
     def test_repair_builds_the_unlisted_sources_from_the_data(self):
         before = dataset_json(["IHC_v11"], "IHC_v11")

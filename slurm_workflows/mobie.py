@@ -135,6 +135,7 @@ def update_s3_json(
     mobie_project: str,
     remote_file: str,
     change,
+    exists: bool = True,
 ) -> tuple:
     """Change a JSON file in the S3 bucket.
 
@@ -144,8 +145,9 @@ def update_s3_json(
     Args:
         mobie_project: Root of the local MoBIE project.
         remote_file: The file in the bucket, in the form 'remote:bucket/path'.
-        change: Function which returns the new content for the current one. It must not change
-            its argument.
+        change: Function which returns the new content for the current one, or for None if the
+            file does not exist. It must not change its argument.
+        exists: Whether the S3 file exists.
 
     Returns:
         tuple: The content before and after the change. If they are equal, nothing was uploaded.
@@ -153,8 +155,10 @@ def update_s3_json(
     local_file = os.path.join(mobie_project, tmp_file(os.path.basename(remote_file)))
 
     try:
-        rclone(["copyto", remote_file, local_file])
-        before = read_json(local_file)
+        before = None
+        if exists:
+            rclone(["copyto", remote_file, local_file])
+            before = read_json(local_file)
 
         after = change(before)
         if after == before:
@@ -166,8 +170,8 @@ def update_s3_json(
         # would drop that change. The change keeps all other entries, so the upload then differs
         # from the S3 file by the change alone.
         # ponytail: S3 has no lock. A write by another job between this check and the upload is
-        # still lost. The window is about one second.
-        if json.loads(rclone(["cat", remote_file])) != before:
+        # still lost. The window is about one second. A new file is not checked.
+        if exists and json.loads(rclone(["cat", remote_file])) != before:
             raise ValueError(f"{remote_file} changed during the job. Nothing was uploaded.")
 
         rclone(["copyto", local_file, remote_file])
@@ -369,6 +373,52 @@ def check_s3_datasets(
             print(f"{dataset}: {message}")
         mismatches += bool(messages)
     print(f"{mismatches} of {len(datasets)} datasets have a mismatch.")
+
+
+def add_s3_sources(
+    mobie_project: str,
+    s3_remote: str,
+    dataset: str,
+    names: list,
+) -> None:
+    """Copy sources of the local `dataset.json` into the `dataset.json` of the S3 bucket.
+
+    Only the named sources and their views are copied. They replace a source of the same name. If
+    the bucket holds no `dataset.json` yet, the new file also gets the default view of the local
+    file. Afterwards, each mismatch between the S3 file and the data in the bucket is printed.
+
+    Args:
+        mobie_project: Root of the local MoBIE project.
+        s3_remote: rclone remote and bucket, in the form 'remote:bucket'.
+        dataset: Name of the dataset.
+        names: Names of the sources to copy.
+    """
+    local = read_json(os.path.join(mobie_project, dataset, DATASET_FILE))
+    missing = [name for name in names if name not in local["sources"]]
+    if missing:
+        raise ValueError(f"The local {DATASET_FILE} of {dataset} has no source {', '.join(missing)}.")
+
+    def change(remote):
+        if remote is None:
+            default = {"default": local["views"]["default"]} if "default" in local["views"] else {}
+            remote = dict(local, sources={}, views=default)
+        sources = dict(remote["sources"])
+        views = dict(remote["views"])
+        for name in names:
+            sources[name] = local["sources"][name]
+            if name in local["views"]:
+                views[name] = local["views"][name]
+        return dict(remote, sources=sources, views=views)
+
+    before, after = update_s3_json(mobie_project, f"{s3_remote}/{dataset}/{DATASET_FILE}", change,
+                                   exists=dataset in s3_datasets(s3_remote))
+    if after == before:
+        print(f"The {DATASET_FILE} of {dataset} in the S3 bucket is up to date.")
+    else:
+        print(f"Updated the {DATASET_FILE} of {dataset} in the S3 bucket, sources: {', '.join(names)}.")
+
+    for message in check_dataset(after, dataset, s3_data(s3_remote, dataset)):
+        print(f"Warning: {message}")
 
 
 def default_view(

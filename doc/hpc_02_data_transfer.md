@@ -108,17 +108,23 @@ rclone --progress copyto /path/to/local/file_or_folder cochlea-lightsheet:cochle
 ```
 
 ### Add a dataset to the S3 bucket
-MoBIE lists the datasets of a project in the file `project.json`. A local `project.json` lists only the datasets of the local MoBIE project. The `project.json` of the S3 bucket lists the datasets of all local MoBIE projects.
+MoBIE lists the datasets of a project in the file `project.json`, and the sources of a dataset in the file `<dataset>/dataset.json`. A local file lists only the datasets and sources of the local MoBIE project. The S3 files list the datasets and sources of all local MoBIE projects, i.e. of all users.
 
 > [!CAUTION]
-> Do not overwrite the `project.json` of the S3 bucket with a local copy. Add your dataset to the S3 version instead.
+> Do not overwrite the `project.json` or a `dataset.json` of the S3 bucket with a local copy. Add your dataset or your sources to the S3 version instead.
+> A local copy removes the sources of all other users from the S3 file. Their data stays in the bucket, but MoBIE in Fiji does not show it any more.
 
-The job `mobie_transfer_dataset` adds the cochlea to the `project.json` of the S3 bucket. The script copies the file to `<mobie_project>/tmp_<JobID>_project.json`, adds the dataset, and sorts the dataset names. Outside of a Slurm job, the copy is `tmp_project.json`. Before the upload, it reads the S3 file again. If another job changed the S3 file in the meantime, it uploads nothing. Then it removes the copy.
+The transfer jobs add only their own entries to the S3 files:
+- `mobie_transfer_dataset` adds the stains to the `dataset.json` and the cochlea to the `project.json`.
+- `mobie_transfer_segmentation` adds the segmentation to the `dataset.json`.
+- `mobie_transfer_detection` adds the spot source to the `dataset.json`.
 
-For a dataset which you transfer without the pipeline, run the same script:
+The script copies the S3 file to `<mobie_project>/tmp_<JobID>_<file name>` and adds the entries. Outside of a Slurm job, the copy is `tmp_<file name>`. Before the upload, it reads the S3 file again. If another job changed the S3 file in the meantime, it uploads nothing. Then it removes the copy. The local MoBIE project does not change. After the upload, the script prints a warning for each mismatch between the S3 `dataset.json` and the data in the bucket.
+
+For a dataset which you transfer without the pipeline, run the same script. `--source` names the sources which you transferred:
 ```bash
 module load rclone
-python /path/to/slurm-workflows/scripts/add_s3_dataset.py -p /path/to/mobie_project -r cochlea-lightsheet:cochlea-lightsheet -d <dataset>
+python /path/to/slurm-workflows/scripts/add_s3_dataset.py -p /path/to/mobie_project -r cochlea-lightsheet:cochlea-lightsheet -d <dataset> --source <source> [<source> ...]
 ```
 
 A `project.json` can miss a dataset, for example after a transfer by hand. `--generate` sets the dataset list to the dataset folders, i.e. the folders which hold a `dataset.json`. It adds each missing name and removes each name without a folder. It prints the added and the removed names. Every other entry stays unchanged.
@@ -127,4 +133,31 @@ A `project.json` can miss a dataset, for example after a transfer by hand. `--ge
 python /path/to/slurm-workflows/scripts/add_s3_dataset.py -p /path/to/mobie_project -r cochlea-lightsheet:cochlea-lightsheet --generate s3
 # set the list of the local project.json to the local dataset folders, without an upload
 python /path/to/slurm-workflows/scripts/add_s3_dataset.py -p /path/to/mobie_project --generate local
+```
+
+### Check and repair the dataset.json files of the S3 bucket
+`--check` compares the `dataset.json` of each dataset in the S3 bucket with its data folders `images/ome-zarr/<source>.ome.zarr` and `tables/<source>`. A table folder counts only if it holds a `default.tsv`. MoBIE reads the image data of a source from its `s3Address`, so the check uses the `s3Address` and not the `relativePath`. The check reads only, and prints:
+- data which no source lists, e.g. the sources of other users after an upload of a local `dataset.json`;
+- a source whose data is missing, e.g. after a rename by hand;
+- a view which shows a missing source;
+- a default view which shows no image.
+
+`--repair` fixes the first case, and with `--default_view` the last case. Fix the other cases by hand: point the source to the renamed data, or remove a source whose data is missing.
+```bash
+python /path/to/slurm-workflows/scripts/add_s3_dataset.py -p /path/to/mobie_project -r cochlea-lightsheet:cochlea-lightsheet --check
+```
+
+`--repair` adds a source to the S3 `dataset.json` for each data folder which no source lists. It builds the entry from the data in the bucket, so it needs no local MoBIE project. The data, not the name, gives the source type:
+
+| data in the bucket | source |
+|---|---|
+| `<source>.ome.zarr` and a table with `label_id` | segmentation |
+| a table with `spot_id`, no OME-Zarr | spots. The bounding box is the range of `x`, `y` and `z` in the table, as `mobie.add_spots` computes it |
+| `<source>.ome.zarr` with an 8 or 16 bit dtype, no table | image, with the contrast limits `[0, 255]` or `[0, 1400]` |
+| `<source>.ome.zarr` with an integer dtype of 32 bit or more, no table | segmentation without a table |
+
+The repair does not change an existing source. It skips data which matches no row, e.g. a segmentation table without its OME-Zarr, and prints it. `--default_view <source>` makes the view of that source the default view of the dataset. Write the result to a file with `-o` first, check it, then run the command again without `-o` to upload it.
+```bash
+python /path/to/slurm-workflows/scripts/add_s3_dataset.py -p /path/to/mobie_project -r cochlea-lightsheet:cochlea-lightsheet \
+    -d <dataset> --repair -e https://s3.fs.gwdg.de --default_view PV -o repaired_dataset.json
 ```

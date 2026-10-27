@@ -1,6 +1,7 @@
 #!/usr/bin/python
 # -- coding: utf-8 --
-"""Tests of `slurm_workflows/mobie.py`: the dataset list of the project.json, in the S3 bucket and local."""
+"""Tests of `slurm_workflows/mobie.py`: the dataset list of the project.json, in the S3 bucket and local, and
+the sources of the dataset.json in the S3 bucket."""
 import json
 import os
 import tempfile
@@ -13,14 +14,22 @@ from slurm_workflows import mobie
 
 REMOTE = "remote:bucket"
 
-# Maps 'remote:bucket/<path>' to '$STUB_BUCKET/<path>'. Supports 'copyto', 'cat' and the 'lsf' of
-# s3_datasets(), whose last argument is the remote.
+# Maps 'remote:bucket/<path>' to '$STUB_BUCKET/<path>'. Supports 'copyto', 'cat', the 'lsf --files-only' of
+# s3_datasets() and the 'lsf --max-depth 3' of s3_data(). The last argument of 'lsf' is the remote.
 RCLONE_STUB = f"""#!/bin/bash
 to_local() {{ echo "${{1/#{REMOTE}/$STUB_BUCKET}}"; }}
 case "$1" in
-    copyto) cp "$(to_local "$2")" "$(to_local "$3")" ;;
+    copyto) mkdir -p "$(dirname "$(to_local "$3")")" && cp "$(to_local "$2")" "$(to_local "$3")" ;;
     cat) cat "$(to_local "$2")" ;;
-    lsf) cd "$(to_local "${{@: -1}}")" && ls -d */dataset.json ;;
+    lsf)
+        cd "$(to_local "${{@: -1}}")" || exit 3
+        if [ "$2" = "--max-depth" ] ; then
+            find . -mindepth 1 -maxdepth 3 -type d | sed 's|^\\./||; s|$|/|'
+            find . -mindepth 1 -maxdepth 3 -type f | sed 's|^\\./||'
+        else
+            ls -d */dataset.json 2>/dev/null
+        fi
+        exit 0 ;;
     *) exit 1 ;;
 esac
 """
@@ -33,7 +42,7 @@ def other_entries(project):
     return {key: value for key, value in project.items() if key != "datasets"}
 
 
-class ProjectTest(unittest.TestCase):
+class RcloneStubTest(unittest.TestCase):
 
     def setUp(self):
         self.tmp = tempfile.TemporaryDirectory()
@@ -52,6 +61,9 @@ class ProjectTest(unittest.TestCase):
 
     def tearDown(self):
         self.tmp.cleanup()
+
+
+class ProjectTest(RcloneStubTest):
 
     def add_dataset_folders(self, root, names):
         for name in names:
@@ -130,6 +142,117 @@ class ProjectTest(unittest.TestCase):
         self.assertEqual(local["datasets"], ["G_EK_000049_L", "M_AMD_000058_L"])
         self.assertEqual(other_entries(local), other_entries(PROJECT))
         self.assertEqual(read_file(self.remote_file), bucket_before)
+
+
+DATASET = "M_AMD_000127_L"
+
+SPOT_TABLE = "spot_id\tx\ty\tz\n1.0000\t583.6800\t291.4600\t23.9400\n2.0000\t6.0800\t1527.2200\t1341.0200\n"
+LABEL_TABLE = "label_id\tanchor_x\tanchor_y\tanchor_z\n1\t891.2\t818.8\t41.7\n"
+
+
+def segmentation(name):
+    return {"segmentation": {"imageData": {"ome.zarr": {"relativePath": f"images/ome-zarr/{name}.ome.zarr"}},
+                             "tableData": {"tsv": {"relativePath": f"tables/{name}"}}}}
+
+
+def dataset_json(names, default):
+    return {"is2D": False, "sources": {name: segmentation(name) for name in names},
+            "views": dict({name: mobie.default_view("segmentation", name) for name in names},
+                          default=dict(mobie.default_view("segmentation", default), uiSelectionGroup="bookmark"))}
+
+
+class DatasetTest(RcloneStubTest):
+
+    def remote_path(self, *parts):
+        return os.path.join(self.bucket, DATASET, *parts)
+
+    def add_segmentation_data(self, name, dtype="<u8"):
+        write_file(self.remote_path("images", "ome-zarr", f"{name}.ome.zarr", "s0", ".zarray"),
+                   json.dumps({"dtype": dtype}))
+        write_file(self.remote_path("tables", name, "default.tsv"), LABEL_TABLE)
+
+    def test_named_sources_are_added_to_the_s3_dataset(self):
+        write_file(self.remote_path("dataset.json"), json.dumps(dataset_json(["IHC_v11", "SGN_v2"], "IHC_v11")))
+        local = dataset_json(["SGN_v2", "SGN_v3", "IHC_v4"], "SGN_v2")
+        local["sources"]["SGN_v2"]["segmentation"]["description"] = "new"
+        local_file = write_file(os.path.join(self.mobie_project, DATASET, "dataset.json"), json.dumps(local))
+
+        mobie.add_s3_sources(self.mobie_project, REMOTE, DATASET, ["SGN_v2", "SGN_v3"])
+
+        remote = json.loads(read_file(self.remote_path("dataset.json")))
+        self.assertEqual(sorted(remote["sources"]), ["IHC_v11", "SGN_v2", "SGN_v3"])
+        self.assertEqual(remote["sources"]["SGN_v2"], local["sources"]["SGN_v2"])
+        self.assertEqual(remote["views"]["default"], dataset_json([], "IHC_v11")["views"]["default"])
+        self.assertEqual(json.loads(read_file(local_file)), local)
+        self.assertEqual(os.listdir(self.mobie_project), [DATASET])
+
+    def test_new_s3_dataset_gets_the_named_sources_and_the_local_default_view(self):
+        local = dataset_json(["PV", "SGN_v3"], "PV")
+        write_file(os.path.join(self.mobie_project, DATASET, "dataset.json"), json.dumps(local))
+
+        mobie.add_s3_sources(self.mobie_project, REMOTE, DATASET, ["PV"])
+
+        remote = json.loads(read_file(self.remote_path("dataset.json")))
+        self.assertEqual(sorted(remote["sources"]), ["PV"])
+        self.assertEqual(remote["views"], {"PV": local["views"]["PV"], "default": local["views"]["default"]})
+
+    def test_repair_builds_the_unlisted_sources_from_the_data(self):
+        before = dataset_json(["IHC_v11"], "IHC_v11")
+        write_file(self.remote_path("dataset.json"), json.dumps(before))
+        self.add_segmentation_data("IHC_v11")
+        self.add_segmentation_data("SGN_v3")
+        write_file(self.remote_path("images", "ome-zarr", "PV.ome.zarr", "s0", ".zarray"), json.dumps({"dtype": "<u2"}))
+        write_file(self.remote_path("tables", "synapse_v3_IHC_v9", "default.tsv"), SPOT_TABLE)
+        # A segmentation table without image data is no spot source.
+        write_file(self.remote_path("tables", "IHC", "default.tsv"), LABEL_TABLE)
+        output = os.path.join(self.tmp.name, "repaired.json")
+
+        mobie.repair_s3_dataset(self.mobie_project, REMOTE, DATASET, "https://s3.example.org/",
+                                default_view_source="PV", output=output)
+        self.assertEqual(json.loads(read_file(self.remote_path("dataset.json"))), before)
+        mobie.repair_s3_dataset(self.mobie_project, REMOTE, DATASET, "https://s3.example.org/",
+                                default_view_source="PV")
+
+        remote = json.loads(read_file(self.remote_path("dataset.json")))
+        self.assertEqual(json.loads(read_file(output)), remote)
+        self.assertEqual(sorted(remote["sources"]), ["IHC_v11", "PV", "SGN_v3", "synapse_v3_IHC_v9"])
+        self.assertEqual(remote["sources"]["IHC_v11"], before["sources"]["IHC_v11"])
+        self.assertEqual(remote["sources"]["PV"]["image"]["imageData"]["ome.zarr.s3"]["s3Address"],
+                         f"https://s3.example.org/bucket/{DATASET}/images/ome-zarr/PV.ome.zarr")
+        self.assertEqual(remote["views"]["PV"]["sourceDisplays"][0]["imageDisplay"]["contrastLimits"], [0, 1400])
+        self.assertEqual(remote["sources"]["SGN_v3"]["segmentation"]["tableData"],
+                         {"tsv": {"relativePath": "tables/SGN_v3"}})
+        spots = remote["sources"]["synapse_v3_IHC_v9"]["spots"]
+        self.assertEqual(spots["boundingBoxMin"], [6.08, 291.46, 23.94])
+        self.assertEqual(spots["boundingBoxMax"], [583.68, 1527.22, 1341.02])
+        self.assertEqual(remote["views"]["default"], dict(remote["views"]["PV"], uiSelectionGroup="bookmark"))
+        self.assertEqual(os.listdir(self.mobie_project), [])
+
+    def test_check_dataset_reports_each_mismatch(self):
+        write_file(self.remote_path("tables", "IHC_v11", "default.tsv"), LABEL_TABLE)
+        write_file(self.remote_path("tables", "synapse_v3", "default.tsv"), SPOT_TABLE)
+        write_file(self.remote_path("images", "ome-zarr", "SGN.ome.zarr", "s0", ".zarray"), "{}")
+        # A table folder without default.tsv is no source table.
+        write_file(self.remote_path("tables", "PV_SGN_v2", "subtype_ratio.tsv"), "")
+        metadata = dataset_json(["IHC_v11"], "IHC_v11")
+        # MoBIE reads the image data from the s3Address, so a wrong relativePath does no harm.
+        metadata["sources"]["SGN"] = {"segmentation": {"imageData": {
+            "ome.zarr": {"relativePath": "images/ome.zarr/SGN.ome.zarr"},
+            "ome.zarr.s3": {"s3Address": f"https://s3.example.org/bucket/{DATASET}/images/ome-zarr/SGN.ome.zarr"}}}}
+        metadata["views"]["synapses_v3"] = mobie.default_view("spots", "synapses_v3")
+        # A view without sourceDisplays is valid, e.g. a bookmark of a position.
+        metadata["views"]["apex"] = {"isExclusive": False, "uiSelectionGroup": "bookmark",
+                                     "viewerTransform": {"position": [0.0, 0.0, 0.0]}}
+
+        data = mobie.s3_data(REMOTE, DATASET)
+
+        self.assertEqual(data, {"images/ome-zarr/SGN.ome.zarr", "tables/IHC_v11", "tables/synapse_v3"})
+        self.assertEqual(mobie.check_dataset(metadata, DATASET, data), [
+            "no source lists the data tables/synapse_v3",
+            "the source IHC_v11 lists the missing data images/ome-zarr/IHC_v11.ome.zarr",
+            "the view synapses_v3 shows the missing source synapses_v3",
+            "the default view shows no image",
+        ])
 
 
 if __name__ == "__main__":

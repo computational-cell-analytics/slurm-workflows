@@ -15,10 +15,10 @@ PROJECT_FILE = "project.json"
 DATASET_FILE = "dataset.json"
 
 
-def tmp_project_file() -> str:
+def tmp_file(name: str) -> str:
     # Two jobs which run at the same time must not share the temporary copy.
     jobid = os.environ.get("SLURM_JOB_ID")
-    return f"tmp_{jobid}_project.json" if jobid else "tmp_project.json"
+    return f"tmp_{jobid}_{name}" if jobid else f"tmp_{name}"
 
 
 def rclone(
@@ -39,20 +39,20 @@ def rclone(
     return result.stdout
 
 
-def read_project(
+def read_json(
     path: str,
 ) -> dict:
     with open(path, "r") as myfile:
         return json.load(myfile)
 
 
-def write_project(
+def write_json(
     path: str,
-    project: dict,
+    content: dict,
 ) -> None:
     # Same format as 'write_metadata' of mobie-utils-python, so that a file changes only by its content.
     with open(path, "w") as myfile:
-        json.dump(project, myfile, indent=2, sort_keys=True)
+        json.dump(content, myfile, indent=2, sort_keys=True)
 
 
 def set_datasets(
@@ -115,6 +115,53 @@ def s3_datasets(
     return sorted(line.split("/")[0] for line in output.splitlines() if line)
 
 
+def update_s3_json(
+    mobie_project: str,
+    remote_file: str,
+    change,
+) -> tuple:
+    """Change a JSON file in the S3 bucket.
+
+    The S3 file is copied to `<mobie_project>/tmp_<JobID>_<file name>`, edited and copied back.
+    Outside of a Slurm job, the copy is `tmp_<file name>`. The local copy is removed afterwards.
+
+    Args:
+        mobie_project: Root of the local MoBIE project.
+        remote_file: The file in the bucket, in the form 'remote:bucket/path'.
+        change: Function which returns the new content for the current one. It must not change
+            its argument.
+
+    Returns:
+        tuple: The content before and after the change. If they are equal, nothing was uploaded.
+    """
+    local_file = os.path.join(mobie_project, tmp_file(os.path.basename(remote_file)))
+
+    try:
+        rclone(["copyto", remote_file, local_file])
+        before = read_json(local_file)
+
+        after = change(before)
+        if after == before:
+            return before, after
+
+        write_json(local_file, after)
+
+        # The S3 file can change during the job, e.g. by the transfer of another job. An upload
+        # would drop that change. The change keeps all other entries, so the upload then differs
+        # from the S3 file by the change alone.
+        # ponytail: S3 has no lock. A write by another job between this check and the upload is
+        # still lost. The window is about one second.
+        if json.loads(rclone(["cat", remote_file])) != before:
+            raise ValueError(f"{remote_file} changed during the job. Nothing was uploaded.")
+
+        rclone(["copyto", local_file, remote_file])
+        return before, after
+
+    finally:
+        if os.path.exists(local_file):
+            os.remove(local_file)
+
+
 def update_s3_project(
     mobie_project: str,
     s3_remote: str,
@@ -122,42 +169,20 @@ def update_s3_project(
 ) -> None:
     """Change the dataset list of the `project.json` in the S3 bucket.
 
-    The S3 file is copied to `<mobie_project>/tmp_<JobID>_project.json`, edited and copied back.
-    Outside of a Slurm job, the copy is `tmp_project.json`. The local copy is removed afterwards.
-
     Args:
-        mobie_project: Root of the local MoBIE project.
+        mobie_project: Root of the local MoBIE project, which holds the temporary copy.
         s3_remote: rclone remote and bucket, in the form 'remote:bucket'.
         new_datasets: Function which returns the new dataset list for the current one.
     """
-    local_file = os.path.join(mobie_project, tmp_project_file())
-    remote_file = f"{s3_remote}/{PROJECT_FILE}"
-
-    try:
-        rclone(["copyto", remote_file, local_file])
-        project = read_project(local_file)
-
+    def change(project):
         datasets = new_datasets(project["datasets"])
-        if datasets == project["datasets"]:
-            print(f"The {PROJECT_FILE} of the S3 bucket is up to date.")
-            return
+        return project if datasets == project["datasets"] else set_datasets(project, datasets)
 
-        write_project(local_file, set_datasets(project, datasets))
-
-        # The S3 file can change during the job, e.g. by the transfer of another cochlea. An upload
-        # would drop that change. set_datasets() keeps all other entries, so the upload then
-        # differs from the S3 file by the dataset list alone.
-        # ponytail: S3 has no lock. A write by another job between this check and the upload is
-        # still lost. The window is about one second.
-        if json.loads(rclone(["cat", remote_file])) != project:
-            raise ValueError(f"The {PROJECT_FILE} of the S3 bucket changed during the job. Nothing was uploaded.")
-
-        rclone(["copyto", local_file, remote_file])
-        print(f"Updated the {PROJECT_FILE} of the S3 bucket, {describe_change(project['datasets'], datasets)}.")
-
-    finally:
-        if os.path.exists(local_file):
-            os.remove(local_file)
+    before, after = update_s3_json(mobie_project, f"{s3_remote}/{PROJECT_FILE}", change)
+    if after == before:
+        print(f"The {PROJECT_FILE} of the S3 bucket is up to date.")
+    else:
+        print(f"Updated the {PROJECT_FILE} of the S3 bucket, {describe_change(before['datasets'], after['datasets'])}.")
 
 
 def add_s3_dataset(
@@ -198,12 +223,12 @@ def generate_local_project(
         mobie_project: Root of the local MoBIE project.
     """
     path = os.path.join(mobie_project, PROJECT_FILE)
-    project = read_project(path)
+    project = read_json(path)
 
     datasets = local_datasets(mobie_project)
     if datasets == project["datasets"]:
         print(f"{path} is up to date.")
         return
 
-    write_project(path, set_datasets(project, datasets))
+    write_json(path, set_datasets(project, datasets))
     print(f"Updated {path}, {describe_change(project['datasets'], datasets)}.")

@@ -1,6 +1,6 @@
 #!/bin/bash
 #SBATCH --job-name=apply-synapses_<cochlea_job_name>
-#SBATCH -t 10:00:00             # estimated time, adapt to your needs
+#SBATCH -t 00:10:00             # estimated time, adapt to your needs
 #SBATCH --mail-user=<user_address> # change this to your mailaddress
 #SBATCH --mail-type=FAIL        # send mail when job begins and ends
 
@@ -9,7 +9,7 @@
 #SBATCH -G A100:1               # For requesting 1 A100 GPU.
 # The prefetch workers load the next blocks while the GPU predicts, so give the job cores.
 #SBATCH -c 8
-#SBATCH --mem 64G
+#SBATCH --mem 10G
 #SBATCH -a 0-9
 
 # The size of the array above and PREDICTION_INSTANCES below must match. Otherwise the tasks

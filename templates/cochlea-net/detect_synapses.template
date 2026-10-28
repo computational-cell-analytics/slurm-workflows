@@ -1,6 +1,6 @@
 #!/bin/bash
 #SBATCH --job-name=detect-synapses_<cochlea_job_name>
-#SBATCH -t 08:00:00             # estimated time, adapt to your needs
+#SBATCH -t 00:20:00             # estimated time, adapt to your needs
 #SBATCH --mail-user=<user_address> # change this to your mailaddress
 #SBATCH --mail-type=FAIL        # send mail when job begins and ends
 
@@ -8,7 +8,7 @@
 #SBATCH -A <account_name>
 # The peak detection is thread-parallel over blocks, so it scales with the cores.
 #SBATCH -c 16
-#SBATCH --mem 200G
+#SBATCH --mem 24G
 #SBATCH --constraint=inet       # the IHC segmentation is read from the S3 bucket
 
 source ~/.bashrc

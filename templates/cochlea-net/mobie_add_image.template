@@ -1,6 +1,6 @@
 #!/bin/bash
 #SBATCH --job-name=mobie_<cochlea_job_name>
-#SBATCH -t 04:00:00             # estimated time, adapt to your needs
+#SBATCH -t 03:15:00             # estimated time, adapt to your needs
 #SBATCH --mail-user=<user_address> # change this to your mailaddress
 #SBATCH --mail-type=FAIL        # send mail when job begins and ends
 

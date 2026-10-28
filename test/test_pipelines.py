@@ -61,7 +61,7 @@ class ResolveTemplateTest(unittest.TestCase):
 
     def test_default_template(self):
         self.assertEqual(self.resolve("M_AMD_000137_L", "apply_SGN"), step_template("cochlea-net", "apply_SGN"))
-        self.assertEqual(self.resolve("G_EK_000071_L", "apply_IHC"), step_template("cochlea-net", "apply_IHC"))
+        self.assertEqual(self.resolve("G_EK_000071_L", "cleanup_IHC"), step_template("cochlea-net", "cleanup_IHC"))
 
     def test_project_of_species_template(self):
         species_template = step_template("cochlea-net", os.path.join("G", "apply_SGN"))

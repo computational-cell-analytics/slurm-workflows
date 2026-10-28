@@ -7,7 +7,7 @@
 #SBATCH -p standard96s:shared         # the partition
 #SBATCH -A <account_name>
 #SBATCH -c 4
-#SBATCH --mem 128G
+#SBATCH --mem 48G
 
 source ~/.bashrc
 micromamba activate <cochlea-net_environment>

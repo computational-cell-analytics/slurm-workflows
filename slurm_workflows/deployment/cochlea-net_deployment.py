@@ -45,6 +45,9 @@ GROUP_KEY = "group"
 # First step of a pipeline with '--download'. It copies the OME-Zarr of the stain from the S3 bucket.
 DOWNLOAD_STEP = "download_image"
 
+# Last step of a pipeline with '--cleanup-input'. It removes the image data of the stain.
+CLEANUP_INPUT_STEP = "cleanup_input"
+
 # Watershed defaults, used if the model directory has no 'best_best_params.json'.
 WATERSHED_DEFAULTS = {
     # default for SGN_v2
@@ -97,6 +100,10 @@ def add_arguments(
     parser.add_argument("--download", action="store_true",
                         help="Add a first step which downloads the OME-Zarr of the stain from the S3 bucket "
                              "to <data_dir>/<cochlea>. The other steps read it. Needs -p.")
+    parser.add_argument("--cleanup-input", dest="cleanup_input", action="store_true",
+                        help="Add a last step which removes the image data of the stain, if the S3 bucket "
+                             "holds its OME-Zarr. From an n5, only the setup of the stain is removed. "
+                             "Needs -p.")
 
 
 def select_steps(
@@ -115,7 +122,8 @@ def select_steps(
     '--no-cleanup' drops every cleanup step for a single run.
 
     '--download' adds the download step at the start. It needs a group, because it downloads the
-    stain of one group.
+    stain of one group. '--cleanup-input' adds the step which removes that image data at the end.
+    It also needs a group, and '--no-cleanup' does not drop it.
 
     Args:
         definition: Output of `load_pipeline()`.
@@ -133,9 +141,10 @@ def select_steps(
         if missing:
             raise ValueError(f"Pipeline {definition['name']} refers to steps without a template: {missing}.")
 
-    if args.download and definition.get(GROUP_KEY) is None and args.group is None:
-        raise ValueError(f"--download needs a group. Pipeline {definition['name']} has none, "
-                         "so it reads every stain from an n5.")
+    for option, given in (("--download", args.download), ("--cleanup-input", args.cleanup_input)):
+        if given and definition.get(GROUP_KEY) is None and args.group is None:
+            raise ValueError(f"{option} needs a group. Pipeline {definition['name']} has none, "
+                             "so it reads every stain from an n5.")
 
     steps = list(definition["steps"])
     if args.download:
@@ -154,13 +163,15 @@ def select_steps(
         print(f"The MoBIE steps are skipped, because {reason}: " +
               ", ".join(mobie_steps + mobie_cleanup_steps) + ".")
 
-    if not args.no_cleanup:
-        return steps + cleanup_steps
+    if args.no_cleanup:
+        if cleanup_steps:
+            print("The cleanup steps are skipped, because --no-cleanup was given: " + ", ".join(cleanup_steps) + ".")
+        cleanup_steps = []
 
-    if cleanup_steps:
-        print("The cleanup steps are skipped, because --no-cleanup was given: " + ", ".join(cleanup_steps) + ".")
+    if args.cleanup_input:
+        cleanup_steps.append(CLEANUP_INPUT_STEP)
 
-    return steps
+    return steps + cleanup_steps
 
 
 def species_template(
@@ -397,8 +408,9 @@ def resolve_input(
 ) -> tuple:
     """Return the file name of the job input and the matching input key.
 
-    The first candidate which exists wins. If no candidate exists, the first one is reported, so
-    that `check_job_input()` names the preferred path.
+    The first candidate whose input key exists wins. The file alone is not enough, because
+    'cleanup_input' removes only the setup of one stain from an n5. If no candidate exists, the
+    first one is reported, so that `check_job_input()` or `check_steps()` names the preferred path.
 
     Args:
         cochlea_dir: Directory of the cochlea.
@@ -408,7 +420,7 @@ def resolve_input(
         tuple of str: the file name of the input, and its input key.
     """
     for name, key in candidates:
-        if path_exists(os.path.join(cochlea_dir, name)):
+        if path_exists(os.path.join(cochlea_dir, name, key)):
             return name, key
 
     return candidates[0]
@@ -729,6 +741,13 @@ def check_steps(
         prediction = os.path.join(output_folder, SEGMENTATION_INPUT)
         if not path_exists(prediction):
             messages.append(f"the prediction of the apply step does not exist: {prediction}")
+
+    # 'cleanup_input' removes only the setup of one stain from an n5, so the n5 can exist without the
+    # input key. A key with '$' is set in a loop of the job, as in 'mobie_add_image'.
+    input_path, input_key = variables.get("INPUT"), variables.get("INPUT_KEY")
+    if (input_path is not None and input_key is not None and "$" not in input_key and
+            path_exists(input_path) and not path_exists(os.path.join(input_path, input_key))):
+        messages.append(f"the input of the job holds no {input_key}: {input_path}")
 
     for input_file, output_file in zip(input_files, output_files):
         messages += check_prediction_absent(input_file, output_file)

@@ -6,6 +6,7 @@ import contextlib
 import io
 import json
 import os
+import shutil
 import tempfile
 import unittest
 from unittest import mock
@@ -83,7 +84,12 @@ class ResolveInputTest(unittest.TestCase):
 
     def add(self, *names):
         for name in names:
-            write_file(os.path.join(self.cochlea_dir, name, "attributes.json"))
+            if name.endswith(".n5"):
+                for setup in range(len(self.STAINS)):
+                    write_file(os.path.join(self.cochlea_dir, name, f"setup{setup}", "timepoint0", "s0",
+                                            "attributes.json"))
+            else:
+                write_file(os.path.join(self.cochlea_dir, name, "s0", ".zarray"))
 
     def resolve(self, stains):
         candidates = self.module.n5_candidates("GLR", "000301", "L", stains, "Vglut3", "")
@@ -108,6 +114,17 @@ class ResolveInputTest(unittest.TestCase):
     def test_ome_zarr_fallback(self):
         self.add(self.OME_ZARR)
         self.assertEqual(self.resolve(self.STAINS), (self.OME_ZARR, "s0"))
+
+    def test_n5_without_the_setup_of_the_stain(self):
+        self.add(self.MULTI, self.OME_ZARR)
+        shutil.rmtree(os.path.join(self.cochlea_dir, self.MULTI, "setup1"))
+        self.assertEqual(self.resolve(self.STAINS), (self.OME_ZARR, "s0"))
+
+        n5 = os.path.join(self.cochlea_dir, self.MULTI)
+        for input_key, count in (("setup0/timepoint0/s0", 0), ("setup1/timepoint0/s0", 1), ("${KEYS[$i]}", 0)):
+            sbatch = write_file(os.path.join(self.tmp.name, "job.sbatch"),
+                                f"export INPUT={n5}\nexport INPUT_KEY={input_key}\n")
+            self.assertEqual(len(self.module.check_steps(["mask_IHC.template"], [sbatch])), count, input_key)
 
     def test_none_reports_first_candidate(self):
         self.assertEqual(self.resolve(self.STAINS), (self.MULTI, "setup1/timepoint0/s0"))

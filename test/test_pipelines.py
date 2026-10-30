@@ -1,7 +1,7 @@
 #!/usr/bin/python
 # -- coding: utf-8 --
 """Tests of the step selection of a pipeline: `select_steps()` and `resolve_template()` of cochlea-net,
-and the `download_image` job which `--download` adds."""
+and the `download_image` and `cleanup_input` jobs which `--download` and `--cleanup-input` add."""
 import argparse
 import contextlib
 import io
@@ -25,8 +25,9 @@ class SelectStepsTest(unittest.TestCase):
         project, pipeline_file = resolve_pipeline("cochlea-net/sgn")
         self.definition = load_pipeline(project, pipeline_file)
 
-    def select(self, settings=SETTINGS, no_mobie=False, no_cleanup=False, download=False):
-        args = argparse.Namespace(no_mobie=no_mobie, no_cleanup=no_cleanup, download=download, group=None)
+    def select(self, settings=SETTINGS, no_mobie=False, no_cleanup=False, download=False, cleanup_input=False):
+        args = argparse.Namespace(no_mobie=no_mobie, no_cleanup=no_cleanup, download=download,
+                                  cleanup_input=cleanup_input, group=None)
         with contextlib.redirect_stdout(io.StringIO()):
             return self.module.select_steps(self.definition, settings, args)
 
@@ -51,6 +52,15 @@ class SelectStepsTest(unittest.TestCase):
         with self.assertRaises(ValueError):
             self.select(download=True)
 
+    def test_cleanup_input_runs_last(self):
+        self.assertEqual(self.select(cleanup_input=True)[-2:], ["mobie_cleanup_segmentation", "cleanup_input"])
+        self.assertEqual(self.select(no_cleanup=True, cleanup_input=True)[-2:],
+                         ["mobie_transfer_segmentation", "cleanup_input"])
+
+        del self.definition["group"]
+        with self.assertRaises(ValueError):
+            self.select(cleanup_input=True)
+
     def test_cleanup_steps_must_be_a_list(self):
         self.definition["cleanup_steps"] = "cleanup_SGN"
 
@@ -59,7 +69,7 @@ class SelectStepsTest(unittest.TestCase):
 
 
 class S3TemplateTest(unittest.TestCase):
-    """Run the rendered `download_image` job against the rclone stub of `test_mobie.py`."""
+    """Run the rendered `download_image` and `cleanup_input` jobs against the rclone stub of `test_mobie.py`."""
 
     COCHLEA = "M_LR_000226_R"
 
@@ -87,9 +97,10 @@ class S3TemplateTest(unittest.TestCase):
             self.sources[stain] = {}
         write_file(os.path.join(self.bucket, self.COCHLEA, "dataset.json"), json.dumps({"sources": self.sources}))
 
-    def run_step(self, step, stain):
+    def run_step(self, step, stain, cochlea_data="", input_key=""):
         replacements = {"cochlea_job_name": "job", "user_address": "a", "account_name": "b",
-                        "data_dir": self.data_dir, "cochlea": self.COCHLEA, "s3_remote": REMOTE, "stain": stain}
+                        "data_dir": self.data_dir, "cochlea": self.COCHLEA, "cochlea_data": cochlea_data,
+                        "input_key": input_key, "s3_remote": REMOTE, "stain": stain}
         sbatch_file = os.path.join(self.tmp.name, f"{step}.sbatch")
         with contextlib.redirect_stdout(io.StringIO()):
             replace_substrings_in_file(step_template("cochlea-net", step), sbatch_file, replacements)
@@ -111,6 +122,34 @@ class S3TemplateTest(unittest.TestCase):
 
         self.assertNotEqual(self.run_step("download_image", "PV"), 0)
         self.assertFalse(os.path.exists(self.cochlea_path()))
+
+    def test_n5_setup_is_removed_and_the_n5_with_its_last_setup(self):
+        n5 = "M_LR_226R_PV_Vglut3_fused.n5"
+        for setup in ("setup0", "setup1"):
+            write_file(self.cochlea_path(n5, setup, "timepoint0", "s0", "attributes.json"))
+        self.add_to_bucket("PV")
+        self.add_to_bucket("Vglut3")
+
+        self.assertEqual(self.run_step("cleanup_input", "PV", n5, "setup0/timepoint0/s0"), 0)
+        self.assertEqual(os.listdir(self.cochlea_path(n5)), ["setup1"])
+
+        self.assertEqual(self.run_step("cleanup_input", "Vglut3", n5, "setup1/timepoint0/s0"), 0)
+        self.assertEqual(os.listdir(self.cochlea_path()), [])
+
+    def test_ome_zarr_is_removed(self):
+        write_file(self.cochlea_path("PV.ome.zarr", "s0", ".zarray"))
+        self.add_to_bucket("PV")
+
+        self.assertEqual(self.run_step("cleanup_input", "PV", "PV.ome.zarr", "s0"), 0)
+        self.assertEqual(os.listdir(self.cochlea_path()), [])
+
+    def test_input_stays_without_a_complete_copy_in_the_bucket(self):
+        write_file(self.cochlea_path("PV.ome.zarr", "s0", ".zarray"))
+        self.assertNotEqual(self.run_step("cleanup_input", "PV", "PV.ome.zarr", "s0"), 0)
+
+        self.add_to_bucket("PV", listed=False)
+        self.assertNotEqual(self.run_step("cleanup_input", "PV", "PV.ome.zarr", "s0"), 0)
+        self.assertTrue(os.path.exists(self.cochlea_path("PV.ome.zarr", "s0", ".zarray")))
 
 
 class ResolveTemplateTest(unittest.TestCase):

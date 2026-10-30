@@ -4,6 +4,7 @@
 import argparse
 import contextlib
 import io
+import json
 import os
 import tempfile
 import unittest
@@ -133,6 +134,39 @@ class ResolveInputTest(unittest.TestCase):
         self.assertEqual(replacements["cochlea_data"], files[0])
         self.assertEqual(replacements["cochlea_data_multi"], " ".join(files))
         self.assertEqual(replacements["input_key_multi"], " ".join(["setup0/timepoint0/s0"] * 3))
+
+    def ihc_step(self, download=False, definition=None):
+        replacements = {"data_dir": self.tmp.name, "cochlea": self.COCHLEA, "stains": self.STAINS,
+                        "ihc_version": "IHC_v11", "s3_remote": "remote:bucket"}
+        settings = {"data_dir": self.tmp.name, "models": {"IHC": {"IHC_v11": "/path/to/model"}}}
+        stdout = io.StringIO()
+        with contextlib.redirect_stdout(stdout):
+            replacements, _ = self.module.prepare_step(settings, replacements, "mask_IHC.template",
+                                                       argparse.Namespace(group=None, download=download), definition)
+        return replacements, stdout.getvalue()
+
+    def test_download_reads_the_ome_zarr(self):
+        self.add(self.MULTI)
+        replacements, _ = self.ihc_step(download=True)
+
+        self.assertEqual((replacements["cochlea_data"], replacements["input_key"]), (self.OME_ZARR, "s0"))
+        self.assertEqual(replacements["stain"], "Vglut3")
+
+    def test_s3_note(self):
+        definition = {"name": "ihc", "steps": ["mask_IHC", "apply_IHC"]}
+        dataset = json.dumps({"sources": {"Vglut3": {}}})
+        with mock.patch.object(self.module, "s3_datasets", return_value=[self.COCHLEA]), \
+                mock.patch.object(self.module, "rclone", return_value=dataset):
+            self.assertIn("--download", self.ihc_step(definition=definition)[1])
+            self.assertNotIn("S3 bucket", self.ihc_step(download=True, definition=definition)[1])
+
+        # The transfer of a partial copy did not list the source.
+        with mock.patch.object(self.module, "s3_datasets", return_value=[self.COCHLEA]), \
+                mock.patch.object(self.module, "rclone", return_value=json.dumps({"sources": {}})):
+            self.assertIn("either", self.ihc_step(definition=definition)[1])
+
+        with mock.patch.object(self.module, "s3_datasets", return_value=[]):
+            self.assertIn("either", self.ihc_step(definition=definition)[1])
 
 
 class SynapseNameTest(unittest.TestCase):

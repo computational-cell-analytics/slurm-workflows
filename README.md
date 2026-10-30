@@ -124,6 +124,12 @@ Some cochleae have one n5 per stain instead, e.g. `GLR_301L_PV_fused.n5`.
 A later job reads the OME-Zarr which was transferred back from the S3 bucket instead.
 An n5 wins if it still exists, and the OME-Zarr `<data_dir>/<cochlea>/<stain>.ome.zarr` is the fallback.
 The input key follows the file, so a rerun from the S3 bucket needs no extra parameter.
+If no file holds the stain, the deploy step of a pipeline checks whether the `dataset.json` of the cochlea in the S3 bucket lists the stain as a source.
+The transfer lists a source only after its data `<cochlea>/images/ome-zarr/<stain>.ome.zarr` is complete.
+If the bucket lists the stain, the deploy step prints the command with the option `--download`.
+That option adds a first step, which copies the OME-Zarr from the bucket to `<data_dir>/<cochlea>/<stain>.ome.zarr`, and the other steps read it.
+An interrupted download stays in `<stain>.ome.zarr.part`, so no step reads a partial copy, and a rerun completes it.
+The check needs `rclone`, so run `module load rclone` first on the cluster.
 
 The stain of a job is a parameter.
 Use `stain_SGN`, `stain_IHC` or `stain_synapses` to process a target with a different stain, for example `Homer1` instead of `CTBP2` for synapses.

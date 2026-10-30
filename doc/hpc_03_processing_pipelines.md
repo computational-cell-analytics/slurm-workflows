@@ -116,6 +116,9 @@ python slurm-workflows/scripts/deploy_process.py --pipeline cochlea-net/sgn --js
 > [!NOTE]
 > The last step of each pipeline removes the intermediate data, such as `predictions.zarr` and the local MoBIE copies, after it checks the result. Add `--no-cleanup` to keep it, for example to run a new watershed on the same prediction.
 
+> [!NOTE]
+> If the image data of the stain is not in the cochlea folder, the dry run checks the S3 bucket. If the `dataset.json` of the cochlea in the bucket lists the stain as a source, the dry run prints the command with `--download`. That option adds a first step, which copies the OME-Zarr to `<data_dir>/<cochlea>/<stain>.ome.zarr`. The check needs `module load rclone` on the login node.
+
 ## Next steps
 
 The analysis of a segmentation runs with the console scripts of cochlea-net:

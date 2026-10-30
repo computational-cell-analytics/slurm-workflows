@@ -1,0 +1,44 @@
+#!/bin/bash
+#SBATCH --job-name=download_<cochlea_job_name>
+#SBATCH -t 08:00:00             # estimated time, adapt to your needs
+#SBATCH --mail-user=<user_address> # change this to your mailaddress
+#SBATCH --mail-type=FAIL        # send mail when job begins and ends
+
+#SBATCH -p standard96s:shared         # the partition
+#SBATCH -A <account_name>
+#SBATCH -c 1
+#SBATCH --mem 4G
+#SBATCH --constraint=inet
+
+source ~/.bashrc
+
+# Image data of one stain, which 'mobie_transfer_dataset' copied to the S3 bucket. The n5 of the
+# initial processing is removed after a cochlea is processed, so the bucket can hold the only copy.
+# The steps after this one read the OME-Zarr from OUTPUT.
+S3_REMOTE=<s3_remote>
+INPUT=<cochlea>/images/ome-zarr/<stain>.ome.zarr
+OUTPUT=<data_dir>/<cochlea>/<stain>.ome.zarr
+STAIN=<stain>
+
+echo "Download of $S3_REMOTE/$INPUT to $OUTPUT"
+
+module load rclone
+
+# The transfer lists a source in the dataset.json of the bucket only after its data is complete, so
+# a data folder alone can be a partial copy. A failed 'rclone cat' gives no valid JSON. A failed
+# check stops the rest of the pipeline.
+if ! rclone cat "$S3_REMOTE/<cochlea>/dataset.json" | \
+		python3 -c "import json, sys; sys.exit(sys.argv[1] not in json.load(sys.stdin)['sources'])" "$STAIN" ; then
+	echo "The dataset.json of $S3_REMOTE/<cochlea> lists no source $STAIN."
+	exit 1
+fi
+
+# rclone copies only the files which are missing or differ, so a rerun completes a partial download.
+# A new download goes to a temporary folder first, so that an interrupted job leaves no partial
+# OUTPUT, which a later deployment would read.
+if [ -e "$OUTPUT" ] ; then
+	rclone --progress copyto "$S3_REMOTE/$INPUT" "$OUTPUT" || exit 1
+else
+	rclone --progress copyto "$S3_REMOTE/$INPUT" "$OUTPUT.part" || exit 1
+	mv -T "$OUTPUT.part" "$OUTPUT" || exit 1
+fi

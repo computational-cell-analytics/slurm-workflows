@@ -18,8 +18,9 @@ REMOTE = "remote:bucket"
 # s3_datasets() and the 'lsf --max-depth 3' of s3_data(). The last argument of 'lsf' is the remote.
 RCLONE_STUB = f"""#!/bin/bash
 to_local() {{ echo "${{1/#{REMOTE}/$STUB_BUCKET}}"; }}
+while [[ "$1" == --* ]] ; do shift ; done
 case "$1" in
-    copyto) mkdir -p "$(dirname "$(to_local "$3")")" && cp "$(to_local "$2")" "$(to_local "$3")" ;;
+    copyto) mkdir -p "$(dirname "$(to_local "$3")")" && cp -rT "$(to_local "$2")" "$(to_local "$3")" ;;
     cat) cat "$(to_local "$2")" ;;
     lsf)
         cd "$(to_local "${{@: -1}}")" || exit 3

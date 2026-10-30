@@ -7,8 +7,11 @@ ribbon synapses, and the export of the results to MoBIE and the S3 bucket.
 """
 import json
 import os
+import shlex
+import sys
 
 from slurm_workflows.inputs import job_variables, path_exists
+from slurm_workflows.mobie import DATASET_FILE, IMAGE_DIR, OME_ZARR, rclone, s3_datasets
 from slurm_workflows.pipelines import missing_templates, step_template
 
 PROJECT = "cochlea-net"
@@ -38,6 +41,12 @@ MOBIE_CLEANUP_STEPS_KEY = "mobie_cleanup_steps"
 
 # Key of the group which a step without a group in its template name belongs to.
 GROUP_KEY = "group"
+
+# First step of a pipeline with '--download'. It copies the OME-Zarr of the stain from the S3 bucket.
+DOWNLOAD_STEP = "download_image"
+
+# Last step of a pipeline with '--cleanup-input'. It removes the image data of the stain.
+CLEANUP_INPUT_STEP = "cleanup_input"
 
 # Watershed defaults, used if the model directory has no 'best_best_params.json'.
 WATERSHED_DEFAULTS = {
@@ -88,6 +97,13 @@ def add_arguments(
                         help="Group of a template which serves more than one group, such as a MoBIE "
                              "export. It overrides the group of the pipeline. "
                              f"Available: {sorted(GROUPS)}")
+    parser.add_argument("--download", action="store_true",
+                        help="Add a first step which downloads the OME-Zarr of the stain from the S3 bucket "
+                             "to <data_dir>/<cochlea>. The other steps read it. Needs -p.")
+    parser.add_argument("--cleanup-input", dest="cleanup_input", action="store_true",
+                        help="Add a last step which removes the image data of the stain, if the S3 bucket "
+                             "holds its OME-Zarr. From an n5, only the setup of the stain is removed. "
+                             "Needs -p.")
 
 
 def select_steps(
@@ -105,6 +121,10 @@ def select_steps(
     intermediate data stays for a rerun. A MoBIE cleanup step runs only with the MoBIE steps.
     '--no-cleanup' drops every cleanup step for a single run.
 
+    '--download' adds the download step at the start. It needs a group, because it downloads the
+    stain of one group. '--cleanup-input' adds the step which removes that image data at the end.
+    It also needs a group, and '--no-cleanup' does not drop it.
+
     Args:
         definition: Output of `load_pipeline()`.
         settings: Output of `load_settings()`.
@@ -121,7 +141,15 @@ def select_steps(
         if missing:
             raise ValueError(f"Pipeline {definition['name']} refers to steps without a template: {missing}.")
 
+    for option, given in (("--download", args.download), ("--cleanup-input", args.cleanup_input)):
+        if given and definition.get(GROUP_KEY) is None and args.group is None:
+            raise ValueError(f"{option} needs a group. Pipeline {definition['name']} has none, "
+                             "so it reads every stain from an n5.")
+
     steps = list(definition["steps"])
+    if args.download:
+        steps.insert(0, DOWNLOAD_STEP)
+
     mobie_steps = definition.get(MOBIE_STEPS_KEY, [])
     cleanup_steps = list(definition.get(CLEANUP_STEPS_KEY, []))
     mobie_cleanup_steps = definition.get(MOBIE_CLEANUP_STEPS_KEY, [])
@@ -135,13 +163,15 @@ def select_steps(
         print(f"The MoBIE steps are skipped, because {reason}: " +
               ", ".join(mobie_steps + mobie_cleanup_steps) + ".")
 
-    if not args.no_cleanup:
-        return steps + cleanup_steps
+    if args.no_cleanup:
+        if cleanup_steps:
+            print("The cleanup steps are skipped, because --no-cleanup was given: " + ", ".join(cleanup_steps) + ".")
+        cleanup_steps = []
 
-    if cleanup_steps:
-        print("The cleanup steps are skipped, because --no-cleanup was given: " + ", ".join(cleanup_steps) + ".")
+    if args.cleanup_input:
+        cleanup_steps.append(CLEANUP_INPUT_STEP)
 
-    return steps
+    return steps + cleanup_steps
 
 
 def species_template(
@@ -378,8 +408,9 @@ def resolve_input(
 ) -> tuple:
     """Return the file name of the job input and the matching input key.
 
-    The first candidate which exists wins. If no candidate exists, the first one is reported, so
-    that `check_job_input()` names the preferred path.
+    The first candidate whose input key exists wins. The file alone is not enough, because
+    'cleanup_input' removes only the setup of one stain from an n5. If no candidate exists, the
+    first one is reported, so that `check_job_input()` or `check_steps()` names the preferred path.
 
     Args:
         cochlea_dir: Directory of the cochlea.
@@ -389,10 +420,53 @@ def resolve_input(
         tuple of str: the file name of the input, and its input key.
     """
     for name, key in candidates:
-        if path_exists(os.path.join(cochlea_dir, name)):
+        if path_exists(os.path.join(cochlea_dir, name, key)):
             return name, key
 
     return candidates[0]
+
+
+def note_s3_image(
+    s3_remote: str,
+    cochlea: str,
+    stain: str,
+) -> None:
+    """Print whether the S3 bucket holds the image data of a stain which is missing locally.
+
+    If the bucket holds it, the note gives the command with '--download'. The note never stops the
+    deployment, so a failed check is printed and not raised.
+
+    Args:
+        s3_remote: rclone remote and bucket, in the form 'remote:bucket', or None.
+        cochlea: Name of the cochlea, which is the dataset in the bucket.
+        stain: The stain to read.
+    """
+    image = f"{IMAGE_DIR}/{stain}{OME_ZARR}"
+    if s3_remote is None:
+        print(f"Note: the settings file names no 's3_remote', so the S3 bucket was not checked for {image}.")
+        return
+
+    # rclone gives the same error for a missing dataset folder and for a failed listing, so the
+    # dataset list comes first. The transfer lists a source only after its data is complete, so a
+    # data folder alone can be a partial copy.
+    try:
+        found = (cochlea in s3_datasets(s3_remote) and
+                 stain in json.loads(rclone(["cat", f"{s3_remote}/{cochlea}/{DATASET_FILE}"]))["sources"])
+    except FileNotFoundError:
+        print("Note: rclone was not found, so the S3 bucket was not checked. Run 'module load rclone' first.")
+        return
+    except ValueError as exc:
+        print(f"Note: the S3 bucket was not checked: {exc}")
+        return
+
+    if not found:
+        print(f"Note: the {DATASET_FILE} of {cochlea} in the S3 bucket lists no source {stain}, so the bucket "
+              f"holds no complete {image} either.")
+        return
+
+    command = " ".join(shlex.quote(arg) for arg in ["python"] + sys.argv + ["--download"])
+    print(f"Note: the S3 bucket holds {s3_remote}/{cochlea}/{image}. To download it in a first step "
+          f"of the chain, run:\n    {command}")
 
 
 def get_model_path(
@@ -508,12 +582,23 @@ def prepare_step(
     else:
         group_spec = GROUPS[group]
         stain = replacement_dict[f"stain_{group}"]
+        replacement_dict["stain"] = stain
 
         # The OME-Zarr of the S3 bucket is the fallback, because the n5 is deleted after a cochlea
-        # is processed.
+        # is processed. The download step writes it only when the chain runs, so with '--download'
+        # it is the only candidate.
         candidates = n5_candidates(prefix, number, side, stains, stain, version)
         candidates.append((f"{stain}.ome.zarr", OME_ZARR_KEY))
+        if args.download:
+            candidates = candidates[-1:]
         replacement_dict["cochlea_data"], replacement_dict["input_key"] = resolve_input(cochlea_dir, candidates)
+
+        # The first step of a pipeline reads the image data and is rendered once per chain.
+        if (definition is not None and not args.download and
+                template_name.split(".template")[0] == definition["steps"][0] and
+                not path_exists(os.path.join(cochlea_dir, replacement_dict["cochlea_data"],
+                                             replacement_dict["input_key"]))):
+            note_s3_image(replacement_dict.get("s3_remote"), cochlea, stain)
 
         if group_spec["masking"] is not None:
             replacement_dict["masking"] = group_spec["masking"]
@@ -656,6 +741,13 @@ def check_steps(
         prediction = os.path.join(output_folder, SEGMENTATION_INPUT)
         if not path_exists(prediction):
             messages.append(f"the prediction of the apply step does not exist: {prediction}")
+
+    # 'cleanup_input' removes only the setup of one stain from an n5, so the n5 can exist without the
+    # input key. A key with '$' is set in a loop of the job, as in 'mobie_add_image'.
+    input_path, input_key = variables.get("INPUT"), variables.get("INPUT_KEY")
+    if (input_path is not None and input_key is not None and "$" not in input_key and
+            path_exists(input_path) and not path_exists(os.path.join(input_path, input_key))):
+        messages.append(f"the input of the job holds no {input_key}: {input_path}")
 
     for input_file, output_file in zip(input_files, output_files):
         messages += check_prediction_absent(input_file, output_file)

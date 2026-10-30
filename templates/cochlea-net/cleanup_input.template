@@ -1,0 +1,64 @@
+#!/bin/bash
+#SBATCH --job-name=cleanup-input_<cochlea_job_name>
+#SBATCH -t 01:00:00             # estimated time, adapt to your needs
+#SBATCH --mail-user=<user_address> # change this to your mailaddress
+#SBATCH --mail-type=FAIL        # send mail when job begins and ends
+
+#SBATCH -p standard96s:shared         # the partition
+#SBATCH -A <account_name>
+#SBATCH -c 1
+#SBATCH --mem 2G
+#SBATCH --constraint=inet
+
+source ~/.bashrc
+
+# Remove the image data of the stain which the pipeline read, e.g. the OME-Zarr of '--download'.
+# An n5 can hold the stains of other pipelines, so only the setup of the stain is removed. The n5
+# is removed with its last setup.
+INPUT=<data_dir>/<cochlea>/<cochlea_data>
+INPUT_KEY=<input_key>
+
+# The input is removed only if the S3 bucket holds the stain, so that '--download' can restore it.
+S3_REMOTE=<s3_remote>
+STAIN=<stain>
+
+# Verify the input of the job. A missing input stops the rest of the pipeline.
+for path in "$INPUT" ; do
+	if [ ! -e "$path" ] ; then
+		echo "Missing input of the job: $path"
+		exit 1
+	fi
+done
+
+module load rclone
+
+# The transfer lists a source in the dataset.json of the bucket only after its data is complete, so
+# a data folder alone can be a partial copy. A failed 'rclone cat' gives no valid JSON, so the input
+# is kept.
+if ! rclone cat "$S3_REMOTE/<cochlea>/dataset.json" | \
+		python3 -c "import json, sys; sys.exit(sys.argv[1] not in json.load(sys.stdin)['sources'])" "$STAIN" ; then
+	echo "The dataset.json of $S3_REMOTE/<cochlea> lists no source $STAIN. The input is kept."
+	exit 1
+fi
+
+# A path is renamed before its removal, so that an interrupted job leaves no partial input, which a
+# later deployment would read.
+remove() {
+	local trash
+	trash="$(dirname "$1")/removing_$(basename "$1")"
+	echo "Removing $1"
+	if [ -e "$1" ] ; then
+		mv -T "$1" "$trash" || exit 1
+	fi
+	rm -rf "$trash" || exit 1
+}
+
+# The input key of an n5 starts with the setup folder of the stain, e.g. 'setup0/timepoint0/s0'.
+if [[ "$INPUT" == *.n5 ]] ; then
+	remove "$INPUT/${INPUT_KEY%%/*}"
+	if compgen -G "$INPUT/setup*" > /dev/null ; then
+		exit 0
+	fi
+fi
+
+remove "$INPUT"

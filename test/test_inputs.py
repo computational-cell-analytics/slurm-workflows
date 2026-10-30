@@ -4,7 +4,9 @@
 import argparse
 import contextlib
 import io
+import json
 import os
+import shutil
 import tempfile
 import unittest
 from unittest import mock
@@ -82,7 +84,12 @@ class ResolveInputTest(unittest.TestCase):
 
     def add(self, *names):
         for name in names:
-            write_file(os.path.join(self.cochlea_dir, name, "attributes.json"))
+            if name.endswith(".n5"):
+                for setup in range(len(self.STAINS)):
+                    write_file(os.path.join(self.cochlea_dir, name, f"setup{setup}", "timepoint0", "s0",
+                                            "attributes.json"))
+            else:
+                write_file(os.path.join(self.cochlea_dir, name, "s0", ".zarray"))
 
     def resolve(self, stains):
         candidates = self.module.n5_candidates("GLR", "000301", "L", stains, "Vglut3", "")
@@ -107,6 +114,17 @@ class ResolveInputTest(unittest.TestCase):
     def test_ome_zarr_fallback(self):
         self.add(self.OME_ZARR)
         self.assertEqual(self.resolve(self.STAINS), (self.OME_ZARR, "s0"))
+
+    def test_n5_without_the_setup_of_the_stain(self):
+        self.add(self.MULTI, self.OME_ZARR)
+        shutil.rmtree(os.path.join(self.cochlea_dir, self.MULTI, "setup1"))
+        self.assertEqual(self.resolve(self.STAINS), (self.OME_ZARR, "s0"))
+
+        n5 = os.path.join(self.cochlea_dir, self.MULTI)
+        for input_key, count in (("setup0/timepoint0/s0", 0), ("setup1/timepoint0/s0", 1), ("${KEYS[$i]}", 0)):
+            sbatch = write_file(os.path.join(self.tmp.name, "job.sbatch"),
+                                f"export INPUT={n5}\nexport INPUT_KEY={input_key}\n")
+            self.assertEqual(len(self.module.check_steps(["mask_IHC.template"], [sbatch])), count, input_key)
 
     def test_none_reports_first_candidate(self):
         self.assertEqual(self.resolve(self.STAINS), (self.MULTI, "setup1/timepoint0/s0"))
@@ -133,6 +151,39 @@ class ResolveInputTest(unittest.TestCase):
         self.assertEqual(replacements["cochlea_data"], files[0])
         self.assertEqual(replacements["cochlea_data_multi"], " ".join(files))
         self.assertEqual(replacements["input_key_multi"], " ".join(["setup0/timepoint0/s0"] * 3))
+
+    def ihc_step(self, download=False, definition=None):
+        replacements = {"data_dir": self.tmp.name, "cochlea": self.COCHLEA, "stains": self.STAINS,
+                        "ihc_version": "IHC_v11", "s3_remote": "remote:bucket"}
+        settings = {"data_dir": self.tmp.name, "models": {"IHC": {"IHC_v11": "/path/to/model"}}}
+        stdout = io.StringIO()
+        with contextlib.redirect_stdout(stdout):
+            replacements, _ = self.module.prepare_step(settings, replacements, "mask_IHC.template",
+                                                       argparse.Namespace(group=None, download=download), definition)
+        return replacements, stdout.getvalue()
+
+    def test_download_reads_the_ome_zarr(self):
+        self.add(self.MULTI)
+        replacements, _ = self.ihc_step(download=True)
+
+        self.assertEqual((replacements["cochlea_data"], replacements["input_key"]), (self.OME_ZARR, "s0"))
+        self.assertEqual(replacements["stain"], "Vglut3")
+
+    def test_s3_note(self):
+        definition = {"name": "ihc", "steps": ["mask_IHC", "apply_IHC"]}
+        dataset = json.dumps({"sources": {"Vglut3": {}}})
+        with mock.patch.object(self.module, "s3_datasets", return_value=[self.COCHLEA]), \
+                mock.patch.object(self.module, "rclone", return_value=dataset):
+            self.assertIn("--download", self.ihc_step(definition=definition)[1])
+            self.assertNotIn("S3 bucket", self.ihc_step(download=True, definition=definition)[1])
+
+        # The transfer of a partial copy did not list the source.
+        with mock.patch.object(self.module, "s3_datasets", return_value=[self.COCHLEA]), \
+                mock.patch.object(self.module, "rclone", return_value=json.dumps({"sources": {}})):
+            self.assertIn("either", self.ihc_step(definition=definition)[1])
+
+        with mock.patch.object(self.module, "s3_datasets", return_value=[]):
+            self.assertIn("either", self.ihc_step(definition=definition)[1])
 
 
 class SynapseNameTest(unittest.TestCase):

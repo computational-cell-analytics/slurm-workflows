@@ -122,8 +122,14 @@ For `cochlea-net`, the deploy step also decides which file the job reads.
 The initial processing writes one n5 which holds every stain, and that n5 is deleted once the cochlea is processed.
 Some cochleae have one n5 per stain instead, e.g. `GLR_301L_PV_fused.n5`.
 A later job reads the OME-Zarr which was transferred back from the S3 bucket instead.
-An n5 wins if it still exists, and the OME-Zarr `<data_dir>/<cochlea>/<stain>.ome.zarr` is the fallback.
+An n5 wins if it still holds the stain, and the OME-Zarr `<data_dir>/<cochlea>/<stain>.ome.zarr` is the fallback.
 The input key follows the file, so a rerun from the S3 bucket needs no extra parameter.
+If no file holds the stain, the deploy step of a pipeline checks whether the `dataset.json` of the cochlea in the S3 bucket lists the stain as a source.
+The transfer lists a source only after its data `<cochlea>/images/ome-zarr/<stain>.ome.zarr` is complete.
+If the bucket lists the stain, the deploy step prints the command with the option `--download`.
+That option adds a first step, which copies the OME-Zarr from the bucket to `<data_dir>/<cochlea>/<stain>.ome.zarr`, and the other steps read it.
+An interrupted download stays in `<stain>.ome.zarr.part`, so no step reads a partial copy, and a rerun completes it.
+The check needs `rclone`, so run `module load rclone` first on the cluster.
 
 The stain of a job is a parameter.
 Use `stain_SGN`, `stain_IHC` or `stain_synapses` to process a target with a different stain, for example `Homer1` instead of `CTBP2` for synapses.
@@ -197,6 +203,13 @@ The cleanup runs after the MoBIE steps, so a failed step cancels it and the data
 Use the option `--no-cleanup` to keep the intermediate data for a single run.
 A new watershed or a new detection threshold needs `predictions.zarr`, which only a new apply step rebuilds.
 Use `--start-at` with the cleanup step, e.g. `--start-at cleanup_SGN`, to clean up a cochlea from an earlier run.
+
+Use the option `--cleanup-input` to also remove the image data of the stain, for example the OME-Zarr of `--download`.
+It adds the step `cleanup_input` at the end of the chain, and `--no-cleanup` does not drop it.
+The step removes the image data only if the `dataset.json` of the cochlea in the S3 bucket lists the stain as a source, so a later `--download` can restore it.
+It removes an OME-Zarr completely.
+From an n5, it removes only the setup folder of the stain, e.g. `setup0`, and it removes the n5 together with its last setup.
+Do not run another chain on the same stain while a chain with `--cleanup-input` runs, because the other chain can lose its input.
 
 ## Mockup example
 

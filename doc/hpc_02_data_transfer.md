@@ -140,7 +140,8 @@ python /path/to/slurm-workflows/scripts/add_s3_dataset.py -p /path/to/mobie_proj
 - data which no source lists, e.g. the sources of other users after an upload of a local `dataset.json`;
 - a source whose data is missing, e.g. after a rename by hand;
 - a view which shows a missing source;
-- a default view which shows no image.
+- a default view which shows no image;
+- a synapse source whose name is not `[<stain>_]synapse_<lowercase suffix>`, e.g. `synapses_v3_IHC_v11` instead of `synapse_v3_ihc_v11`. cochlea-net reads a synapse source by its name.
 
 `--repair` fixes the first case, and with `--default_view` the last case. Fix the other cases by hand: point the source to the renamed data, or remove a source whose data is missing.
 ```bash

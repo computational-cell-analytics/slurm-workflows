@@ -52,8 +52,8 @@ The file contains:
             "IHC_v11": "/path/to/cochlea-lightsheet/trained_models/IHC/v11_cochlea_distance_unet_IHC_supervised_2026-07-20"
         },
         "Synapses": {
-            "synapses_v3": "/path/to/cochlea-lightsheet/trained_models/Synapses/synapse_detection_model_v3.pt",
-            "synapses_v5": "/path/to/cochlea-lightsheet/trained_models/Synapses/synapse_detection_model_v5.pt"
+            "synapse_v3": "/path/to/cochlea-lightsheet/trained_models/Synapses/synapse_detection_model_v3.pt",
+            "synapse_v5": "/path/to/cochlea-lightsheet/trained_models/Synapses/synapse_detection_model_v5.pt"
         }
     }
 }
@@ -90,13 +90,13 @@ Each pipeline reads the settings file and one parameter file per cochlea, e.g. `
     "sgn_masking_threshold": 150,
     "ihc_version": "IHC_v11",
     "ihc_masking_threshold": 200,
-    "synapse_version": "synapses_v3",
+    "synapse_version": "synapse_v3",
     "stain_synapses": "CTBP2"
 }
 ```
 
 > [!NOTE]
-> `stain_synapses` selects the stain of the synapse detection. The default is `CTBP2`. A different stain, e.g. `Homer1`, becomes part of the prediction folder, the MoBIE source and the S3 table, e.g. `Homer1_synapses_v3_IHC_v11`.
+> `stain_synapses` selects the stain of the synapse detection. The default is `CTBP2`. A different stain, e.g. `Homer1`, becomes part of the prediction folder, the MoBIE source and the S3 table, e.g. `Homer1_synapse_v3_ihc_v11`.
 
 ## Running the processing pipelines
 

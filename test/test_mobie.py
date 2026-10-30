@@ -202,7 +202,7 @@ class DatasetTest(RcloneStubTest):
         self.add_segmentation_data("IHC_v11")
         self.add_segmentation_data("SGN_v3")
         write_file(self.remote_path("images", "ome-zarr", "PV.ome.zarr", "s0", ".zarray"), json.dumps({"dtype": "<u2"}))
-        write_file(self.remote_path("tables", "synapse_v3_IHC_v9", "default.tsv"), SPOT_TABLE)
+        write_file(self.remote_path("tables", "synapse_v3_ihc_v9", "default.tsv"), SPOT_TABLE)
         # A segmentation table without image data is no spot source.
         write_file(self.remote_path("tables", "IHC", "default.tsv"), LABEL_TABLE)
         output = os.path.join(self.tmp.name, "repaired.json")
@@ -215,14 +215,14 @@ class DatasetTest(RcloneStubTest):
 
         remote = json.loads(read_file(self.remote_path("dataset.json")))
         self.assertEqual(json.loads(read_file(output)), remote)
-        self.assertEqual(sorted(remote["sources"]), ["IHC_v11", "PV", "SGN_v3", "synapse_v3_IHC_v9"])
+        self.assertEqual(sorted(remote["sources"]), ["IHC_v11", "PV", "SGN_v3", "synapse_v3_ihc_v9"])
         self.assertEqual(remote["sources"]["IHC_v11"], before["sources"]["IHC_v11"])
         self.assertEqual(remote["sources"]["PV"]["image"]["imageData"]["ome.zarr.s3"]["s3Address"],
                          f"https://s3.example.org/bucket/{DATASET}/images/ome-zarr/PV.ome.zarr")
         self.assertEqual(remote["views"]["PV"]["sourceDisplays"][0]["imageDisplay"]["contrastLimits"], [0, 1400])
         self.assertEqual(remote["sources"]["SGN_v3"]["segmentation"]["tableData"],
                          {"tsv": {"relativePath": "tables/SGN_v3"}})
-        spots = remote["sources"]["synapse_v3_IHC_v9"]["spots"]
+        spots = remote["sources"]["synapse_v3_ihc_v9"]["spots"]
         self.assertEqual(spots["boundingBoxMin"], [6.08, 291.46, 23.94])
         self.assertEqual(spots["boundingBoxMax"], [583.68, 1527.22, 1341.02])
         self.assertEqual(remote["views"]["default"], dict(remote["views"]["PV"], uiSelectionGroup="bookmark"))
@@ -253,6 +253,15 @@ class DatasetTest(RcloneStubTest):
             "the view synapses_v3 shows the missing source synapses_v3",
             "the default view shows no image",
         ])
+
+    def test_check_dataset_reports_a_bad_synapse_name(self):
+        names = ["synapse_v3_ihc_v11", "CTBP2_synapse_v3", "RibB_synapse", "synapses_v3_IHC_v11", "synapse_v3_IHC_v9"]
+        metadata = {"sources": {name: {"spots": {"tableData": {"tsv": {"relativePath": f"tables/{name}"}}}}
+                                for name in names}, "views": {}}
+
+        messages = mobie.check_dataset(metadata, DATASET, {f"tables/{name}" for name in names})
+
+        self.assertEqual([message.split()[3] for message in messages], ["synapse_v3_IHC_v9", "synapses_v3_IHC_v11"])
 
 
 if __name__ == "__main__":

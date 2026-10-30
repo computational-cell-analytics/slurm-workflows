@@ -9,6 +9,7 @@ import csv
 import io
 import json
 import os
+import re
 import subprocess
 
 PROJECT_FILE = "project.json"
@@ -29,6 +30,11 @@ CONTRAST_LIMITS = {1: [0, 255], 2: [0, 1400]}
 # Display and menu of the view which mobie creates for a new source.
 DISPLAYS = {"image": "imageDisplay", "segmentation": "segmentationDisplay", "spots": "spotDisplay"}
 MENUS = {"image": "images", "segmentation": "segmentations", "spots": "spots"}
+
+# Name of a synapse source, e.g. 'synapse_v3_ihc_v11' or 'CTBP2_synapse_v3'. cochlea-net reads a
+# synapse source by its name, so a deviation such as 'synapses_v3_IHC_v11' causes a KeyError there.
+# Keep it in line with SYNAPSE_SOURCE of the cochlea-net deployment. test_inputs.py checks this.
+SYNAPSE_NAME = re.compile(r"([A-Za-z0-9]+_)?synapse(_[a-z0-9_]+)?")
 
 
 def tmp_file(name: str) -> str:
@@ -342,6 +348,9 @@ def check_dataset(
     for name, entry in sorted(metadata["sources"].items()):
         messages += [f"the source {name} lists the missing data {path}"
                      for path in source_paths(entry, dataset) if path not in data]
+        if "synapse" in name.lower() and not SYNAPSE_NAME.fullmatch(name):
+            messages.append(f"the synapse source {name} has no name of the form "
+                            "[<stain>_]synapse_<lowercase suffix>, e.g. synapse_v3_ihc_v11")
 
     # A region display maps regions to sources, so only a list of source names is checked.
     for name, view in sorted(metadata["views"].items()):

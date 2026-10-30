@@ -60,7 +60,11 @@ GROUPS = {
 }
 
 # Model version which is used if 'synapse_version' is not a parameter of the job.
-DEFAULT_SYNAPSE_VERSION = "synapses_v3"
+DEFAULT_SYNAPSE_VERSION = "synapse_v3"
+
+# Name of the prediction folder and the MoBIE source of the synapse jobs. The fields are the version
+# parts of the model keys, e.g. 'v3' of 'synapse_v3'. cochlea-net reads the source by this name.
+SYNAPSE_SOURCE = "synapse_{synapse}_ihc_{ihc}"
 
 # rclone reads its remotes from this file, unless the environment variable RCLONE_CONFIG names another one.
 RCLONE_CONFIG = os.path.join("~", ".config", "rclone", "rclone.conf")
@@ -287,9 +291,25 @@ def prediction_name(
     return f"{stain}_{version}"
 
 
+def version_part(
+    version: str,
+) -> str:
+    """Return the version part of a model key in lowercase, e.g. 'v11' of 'IHC_v11'.
+
+    Args:
+        version: Model key of the settings file.
+
+    Returns:
+        str: The text after the first '_', or the full key if it has no '_'.
+    """
+    return version.split("_", 1)[-1].lower()
+
+
 def marker_prediction_name(
-    synapses_prediction: str,
-    ihc_prediction: str,
+    stain_synapses: str,
+    synapse_version: str,
+    stain_ihc: str,
+    ihc_version: str,
 ) -> str:
     """Return the name of the prediction folder of the synapse jobs.
 
@@ -297,14 +317,24 @@ def marker_prediction_name(
     result depends on two model versions. The joined name keeps a run against another IHC
     segmentation from overwriting an earlier one.
 
+    The name is also the MoBIE source of the detections, which cochlea-net reads by name.
+    `SYNAPSE_SOURCE` sets the format. The spelling of the model keys does not change the name.
+    A non-default synapse stain is a prefix of the name. A non-default IHC stain is part of the
+    IHC field, e.g. 'synapse_v3_ihc_myo7a_v11'.
+
     Args:
-        synapses_prediction: Prediction folder of the synapse detection.
-        ihc_prediction: Prediction folder of the IHC segmentation.
+        stain_synapses: Stain of the synapse jobs.
+        synapse_version: Model key of the synapse detection.
+        stain_ihc: Stain of the IHC segmentation.
+        ihc_version: Model key of the IHC segmentation.
 
     Returns:
         str: Name of the prediction folder.
     """
-    return f"{synapses_prediction}_{ihc_prediction}"
+    name = SYNAPSE_SOURCE.format(
+        synapse=version_part(synapse_version),
+        ihc=prediction_name("IHC", stain_ihc, version_part(ihc_version)).lower())
+    return prediction_name("synapses", stain_synapses, name)
 
 
 def n5_candidates(
@@ -510,9 +540,10 @@ def prepare_step(
 
     # The folder of the synapse jobs depends on two model versions. It is derived for every template,
     # so that a later step, such as the MoBIE export, can name their result.
-    if "synapses_prediction" in replacement_dict and "ihc_prediction" in replacement_dict:
+    if "synapse_version" in replacement_dict and "ihc_version" in replacement_dict:
         replacement_dict["marker_prediction"] = marker_prediction_name(
-            replacement_dict["synapses_prediction"], replacement_dict["ihc_prediction"])
+            replacement_dict["stain_synapses"], replacement_dict["synapse_version"],
+            replacement_dict["stain_IHC"], replacement_dict["ihc_version"])
 
     # The prediction is masked with the IHC segmentation, so every step of the group depends on the
     # IHC model version as well and writes into the joined folder.

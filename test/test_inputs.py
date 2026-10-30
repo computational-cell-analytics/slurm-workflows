@@ -9,6 +9,7 @@ import tempfile
 import unittest
 from unittest import mock
 
+from slurm_workflows import mobie
 from slurm_workflows.inputs import check_external_input, check_job_input, check_output_absent, job_variables
 from stubs import cochlea_net_module, write_file
 
@@ -132,6 +133,19 @@ class ResolveInputTest(unittest.TestCase):
         self.assertEqual(replacements["cochlea_data"], files[0])
         self.assertEqual(replacements["cochlea_data_multi"], " ".join(files))
         self.assertEqual(replacements["input_key_multi"], " ".join(["setup0/timepoint0/s0"] * 3))
+
+
+class SynapseNameTest(unittest.TestCase):
+    """The name of the synapse jobs is also the MoBIE source, so `add_s3_dataset --check` must accept it."""
+
+    def test_marker_prediction_name(self):
+        module = cochlea_net_module()
+        cases = [(("CTBP2", "synapses_v3", "Vglut3", "IHC_v11"), "synapse_v3_ihc_v11"),
+                 (("Homer1", "synapse_v3", "Vglut3", "IHC_v4b"), "Homer1_synapse_v3_ihc_v4b"),
+                 (("CTBP2", "synapse_v3", "Myo7a", "IHC_v11"), "synapse_v3_ihc_myo7a_v11")]
+        for args, name in cases:
+            self.assertEqual(module.marker_prediction_name(*args), name)
+            self.assertTrue(mobie.SYNAPSE_NAME.fullmatch(name), name)
 
 
 class PreviousRunTest(unittest.TestCase):

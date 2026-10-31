@@ -295,6 +295,8 @@ The sbatch script was adapted from the [GWDG](https://docs.hpc.gwdg.de/how_to_us
 |---|---|
 | `project_settings/mockup.json` | Settings of the project: mail address, environment, HPC user, git repositories. |
 | `templates/mockup/mockup.template` | Template of the job, with the placeholders `<job_name>`, `<user_address>`, `<environment>`, `<module>` and `<dataset>`. |
+| `templates/mockup/evaluate.template` | Template of the second step of the mockup pipeline. |
+| `pipelines/mockup/train_evaluate.json` | Pipeline which chains `mockup` and `evaluate`. |
 | `params.json` | Parameter file of the job: job name, debug module, dataset name. |
 | `YYYY-MM-DD_sbatch_mockup.sbatch` | The sbatch script which is generated from the template. |
 | `YYYY-MM-DD_log_mockup.txt` | The log file with the fictional JobID 1234567. |
@@ -303,6 +305,15 @@ The sbatch script was adapted from the [GWDG](https://docs.hpc.gwdg.de/how_to_us
 
 The mockup files are kept in `mockup_example`, and not in the top-level directories `templates` and `project_settings`.
 So the mockup is not listed as a project, and its settings file can be tracked by git.
+
+A pipeline reads its templates from the folder `templates/<project>/` beside its folder `pipelines/<project>/`.
+So the mockup pipeline runs from its own folder.
+The dry run writes one sbatch script per step into the working directory and submits nothing:
+
+```bash
+python scripts/deploy.py -p mockup_example/pipelines/mockup/train_evaluate.json \
+    -j mockup_example/params.json -s mockup_example/project_settings/mockup.json
+```
 
 ### From the template to the archive
 

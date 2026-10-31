@@ -14,6 +14,7 @@ TEMPLATE_DIR = os.path.join(REPOSITORY_DIR, "templates", "cochlea-net")
 MOCKUP_TEMPLATE = os.path.join(MOCKUP_DIR, "templates", "mockup", "mockup.template")
 MOCKUP_SETTINGS = os.path.join(MOCKUP_DIR, "project_settings", "mockup.json")
 MOCKUP_PARAMS = os.path.join(MOCKUP_DIR, "params.json")
+MOCKUP_PIPELINE = os.path.join(MOCKUP_DIR, "pipelines", "mockup", "train_evaluate.json")
 
 SUBMIT_SCRIPT = os.path.join(SCRIPTS_DIR, "submit_job.py")
 ARCHIVE_SCRIPT = os.path.join(SCRIPTS_DIR, "archive_job.py")

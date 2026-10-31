@@ -17,8 +17,8 @@ from unittest import mock
 from slurm_workflows import deploy
 from slurm_workflows.projects import default
 from slurm_workflows.submission import environment_export
-from stubs import (FIRST_JOBID, MOCKUP_PARAMS, MOCKUP_SETTINGS, MOCKUP_TEMPLATE, SUBMIT_SCRIPT, read_file, run,
-                   sbatch_calls, stub_env, write_file)
+from stubs import (FIRST_JOBID, MOCKUP_PARAMS, MOCKUP_PIPELINE, MOCKUP_SETTINGS, MOCKUP_TEMPLATE, SUBMIT_SCRIPT,
+                   read_file, run, sbatch_calls, stub_env, write_file)
 
 DATE = "2025-01-01"
 SBATCH_NAME = f"{DATE}_sbatch_x.sbatch"
@@ -129,15 +129,15 @@ class DeploySubmissionTest(unittest.TestCase):
         os.chdir(self.cwd)
         self.tmp.cleanup()
 
-    def deploy(self, archive_dir):
-        args = argparse.Namespace(input=MOCKUP_TEMPLATE, pipeline=None, params=MOCKUP_PARAMS, settings=MOCKUP_SETTINGS,
-                                  archive_dir=archive_dir, repository_file=None, submit=True, allow_missing=False,
-                                  start_at=None, force=False)
+    def deploy(self, archive_dir, pipeline=None):
+        args = argparse.Namespace(input=MOCKUP_TEMPLATE if pipeline is None else None, pipeline=pipeline,
+                                  params=MOCKUP_PARAMS, settings=MOCKUP_SETTINGS, archive_dir=archive_dir,
+                                  repository_file=None, submit=True, allow_missing=False, start_at=None, force=False)
         with mock.patch.dict(os.environ, self.env), contextlib.redirect_stdout(io.StringIO()):
             deploy.deploy_jobs(args, "mockup", default)
 
-    def archived_metadata(self):
-        [folder] = os.listdir(self.archive_dir)
+    def archived_metadata(self, step="mockup"):
+        [folder] = [name for name in os.listdir(self.archive_dir) if name.endswith(f"_{step}")]
         with open(os.path.join(self.archive_dir, folder, "metadata.json")) as myfile:
             return json.load(myfile)
 
@@ -149,6 +149,15 @@ class DeploySubmissionTest(unittest.TestCase):
         self.assertEqual(metadata["jobid"], str(FIRST_JOBID))
         [folder] = os.listdir(self.archive_dir)
         self.assertEqual(read_file(os.path.join(self.archive_dir, folder, "environment.yml")), "name: dl-gpu\n")
+
+    def test_pipeline_is_a_chain(self):
+        self.deploy(self.archive_dir, MOCKUP_PIPELINE)
+
+        self.assertIn(f"--dependency=afterok:{FIRST_JOBID}", sbatch_calls(self.env)[1])
+        self.assertEqual(self.archived_metadata("mockup")["pipeline"],
+                         {"name": "train_evaluate", "step": 1, "of": 2})
+        self.assertEqual(self.archived_metadata("evaluate")["pipeline"],
+                         {"name": "train_evaluate", "step": 2, "of": 2, "depends_on": str(FIRST_JOBID)})
 
     def test_job_is_submitted_if_archiving_fails(self):
         self.deploy(os.path.join(self.tmp.name, "none"))

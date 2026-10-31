@@ -145,7 +145,7 @@ class DeploySubmissionTest(unittest.TestCase):
         self.deploy(self.archive_dir)
 
         metadata = self.archived_metadata()
-        self.assertEqual(metadata["Project"], "mockup")
+        self.assertEqual(metadata["project"], "mockup")
         self.assertEqual(metadata["jobid"], str(FIRST_JOBID))
         [folder] = os.listdir(self.archive_dir)
         self.assertEqual(read_file(os.path.join(self.archive_dir, folder, "environment.yml")), "name: dl-gpu\n")

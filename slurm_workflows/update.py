@@ -79,9 +79,9 @@ def update_reportseff(subfolders: List[str]):
             if days_past.days > REPORTSEFF_MAX_DAYS:
                 continue
 
-            reports = as_list(metadict.get("Reportseff", []))
+            reports = as_list(metadict.get("reportseff", []))
             for report in reports:
-                if report["State"] in UNFINISHED_STATES:
+                if report["state"] in UNFINISHED_STATES:
                     update_dir.append(folder)
                     break
 
@@ -132,11 +132,11 @@ def check_metadata(subfolders: List[str]):
                 update_metadata.append(folder)
 
             # check if JobID of efficiency report is identical with JobID of log
-            reports = as_list(metadict.get("Reportseff", []))
+            reports = as_list(metadict.get("reportseff", []))
             for report in reports:
-                if not matches_jobid(report["JobID"], metadict["jobid"]):
+                if not matches_jobid(report["jobid"], metadict["jobid"]):
                     if metadict["jobid"] not in jobids_from_log(log_file):
-                        metadict["Reportseff"] = []
+                        metadict["reportseff"] = []
                     reportseff_from_jobid(log_file, metadict, jobid=metadict["jobid"])
                     update_metadata.append(folder)
 
@@ -153,7 +153,7 @@ def update_slurm_output(subfolders: List[str], slurm_dir: str):
     """Add the data of the slurm output files of each job to its metadata.
 
     Each file `slurm-<jobid>.out` or `slurm-<jobid>_<array_index>.out` gives one entry of the list
-    'SlurmOutput'.
+    'slurm_output'.
 
     Args:
         subfolders: Archive folders.
@@ -178,10 +178,10 @@ def update_slurm_output(subfolders: List[str], slurm_dir: str):
             continue
 
         new_slurm_output = [slurm_output_to_dict(sf) for sf in slurm_files]
-        if new_slurm_output == metadict.get("SlurmOutput"):
+        if new_slurm_output == metadict.get("slurm_output"):
             continue
 
-        metadict["SlurmOutput"] = new_slurm_output
+        metadict["slurm_output"] = new_slurm_output
         update_dir.append(folder)
 
         write_metadata(metadict, metadata)

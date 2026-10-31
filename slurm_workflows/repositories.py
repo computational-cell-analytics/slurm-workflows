@@ -67,4 +67,4 @@ def add_repository_status(
                           "repo_version": repo_version.strip(),
                           "status": git_status})
 
-    metadict["Repositories"] = repo_list
+    metadict["repositories"] = repo_list

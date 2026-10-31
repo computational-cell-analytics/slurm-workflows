@@ -72,6 +72,14 @@ Further scripts might be connected to this script by using the same date and suf
 ## Archiving metadata
 The job information of an sbatch script is monitored and can be looked up using `reportseff -u <user_id>` for around one week after the initial submission.
 This information, among other pieces of information from the sbatch script, are extracted using `scripts/write_metadata.py`.
+The keys of `metadata.json` are lower case with underscores, e.g. `job_name` and `reportseff`.
+An archive which was written before this rule still has keys such as `job-name` and `Reportseff`.
+Rename them once, then `scripts/summary.py` reads the archive again:
+
+```bash
+python scripts/migrate_metadata_keys.py --dry-run <archive_dir>   # list the files which change
+python scripts/migrate_metadata_keys.py <archive_dir>
+```
 
 ## Projects
 A project is a set of templates, pipelines, settings and deployment logic which share one name.
@@ -107,7 +115,7 @@ It fills the placeholders only from the settings file and the parameter file, an
 A placeholder without a value raises an error.
 If all placeholders are filled, a note tells that the default deployment was used.
 
-The deploy step records the project as `Project` in the `metadata.json` of every job.
+The deploy step records the project as `project` in the `metadata.json` of every job.
 
 ## Template contract
 
@@ -320,7 +328,7 @@ So the mockup is not listed as a project, and its settings file can be tracked b
        mockup_example/YYYY-MM-DD_mockup/ -o mockup_example/YYYY-MM-DD_mockup/metadata.json
    ```
    `reportseff` is available only on the cluster.
-   `scripts/deploy.py` passes the settings file on by itself and adds the key `Project`.
+   `scripts/deploy.py` passes the settings file on by itself and adds the key `project`.
 
 ### Create your own project
 

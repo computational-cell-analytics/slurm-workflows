@@ -171,11 +171,11 @@ def deploy_jobs(
         print(f"Step {step_index} of {len(sbatch_files)} submitted as JobID {jobid}.")
 
         if archive_dir:
-            metadata = {"Project": project}
+            metadata = {"project": project}
             if definition is not None:
-                metadata["Pipeline"] = {"name": definition["name"], "step": step_index, "of": len(sbatch_files)}
+                metadata["pipeline"] = {"name": definition["name"], "step": step_index, "of": len(sbatch_files)}
                 if dependency is not None:
-                    metadata["Pipeline"]["depends_on"] = dependency
+                    metadata["pipeline"]["depends_on"] = dependency
             try:
                 archive_submitted_job(sbatch_file, jobid, archive_dir, move=True, repositories=repositories,
                                       settings_file=settings_path, metadata=metadata)

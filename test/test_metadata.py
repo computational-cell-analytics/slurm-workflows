@@ -71,15 +71,15 @@ class SbatchParameterTest(unittest.TestCase):
             "#SBATCH -p grete:shared",
         )
 
-        self.assertEqual(metadict, {"runtime": "05:00:00", "Memory-per-node": "5G",
-                                    "job-name": "train", "partition": "grete:shared"})
+        self.assertEqual(metadict, {"runtime": "05:00:00", "memory_per_node": "5G",
+                                    "job_name": "train", "partition": "grete:shared"})
 
     def test_option_with_space(self):
-        self.assertEqual(self.parameters("#SBATCH --mem 64G"), {"Memory-per-node": "64G"})
+        self.assertEqual(self.parameters("#SBATCH --mem 64G"), {"memory_per_node": "64G"})
 
     def test_tab_and_double_space(self):
         self.assertEqual(self.parameters("#SBATCH\t-c 4", "#SBATCH  -t 01:00:00"),
-                         {"cpus-per-task": "4", "runtime": "01:00:00"})
+                         {"cpus_per_task": "4", "runtime": "01:00:00"})
 
     def test_disabled_directive_is_ignored(self):
         self.assertEqual(self.parameters("##SBATCH -t 99:00:00", "#SBATCH -t 01:00:00", "#SBATCH",
@@ -108,23 +108,23 @@ class ReportseffTest(unittest.TestCase):
         # The report of 91234 and 12345 must not be taken for JobID 1234.
         metadict = self.report("1234")
 
-        self.assertEqual([report["JobID"] for report in metadict["Reportseff"]], ["1234_0", "1234_1"])
+        self.assertEqual([report["jobid"] for report in metadict["reportseff"]], ["1234_0", "1234_1"])
 
     def test_single_job(self):
         metadict = self.report("91234")
 
         self.assertEqual(metadict["jobid"], "91234")
-        self.assertEqual(metadict["Reportseff"], [{"JobID": "91234", "State": "COMPLETED", "Elapsed": "00:01:00",
-                                                   "TimeEff": "1.0%", "CPUEff": "10.0%", "MemEff": "1.0%"}])
+        self.assertEqual(metadict["reportseff"], [{"jobid": "91234", "state": "COMPLETED", "elapsed": "00:01:00",
+                                                   "time_eff": "1.0%", "cpu_eff": "10.0%", "mem_eff": "1.0%"}])
 
     def test_unknown_jobid_keeps_report(self):
         env = stub_env(self.tmp.name)
         set_reportseff_output(env, REPORT_LINES)
-        metadict = {"Reportseff": [{"JobID": "5"}]}
+        metadict = {"reportseff": [{"jobid": "5"}]}
         with mock.patch.dict(os.environ, env), contextlib.redirect_stdout(io.StringIO()):
             reportseff_from_jobid(None, metadict, jobid="777")
 
-        self.assertEqual(metadict["Reportseff"], [{"JobID": "5"}])
+        self.assertEqual(metadict["reportseff"], [{"jobid": "5"}])
 
 
 class WriteMetadataTest(unittest.TestCase):
@@ -151,7 +151,7 @@ class WriteMetadataTest(unittest.TestCase):
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertIn("Warning", result.stdout)
         self.assertEqual(self.metadata()["jobid"], "1234")
-        self.assertNotIn("Reportseff", self.metadata())
+        self.assertNotIn("reportseff", self.metadata())
 
     def git(self, repository, *args):
         identity = ["-c", "user.name=test", "-c", "user.email=test@example.org"]
@@ -171,7 +171,7 @@ class WriteMetadataTest(unittest.TestCase):
         self.git(repository, "commit", "-q", "--allow-empty", "-m", "second")
         run([sys.executable, WRITE_METADATA, "-r", repository_file, self.archived], env=env)
 
-        self.assertEqual(self.metadata()["Repositories"][0]["repo_version"], self.git(repository, "rev-parse", "HEAD"))
+        self.assertEqual(self.metadata()["repositories"][0]["repo_version"], self.git(repository, "rev-parse", "HEAD"))
 
 
 if __name__ == "__main__":

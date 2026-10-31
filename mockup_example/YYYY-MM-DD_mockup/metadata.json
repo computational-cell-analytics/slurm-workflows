@@ -3,14 +3,14 @@
 	"task": "mockup",
 	"academic_id": "your_academic_id",
 	"hpc_user": "your_hpc_user",
-	"job-name": "train-nn-gpu",
+	"job_name": "train-nn-gpu",
 	"runtime": "05:00:00",
-	"mail-user": "yourmail@gwdg.de",
+	"mail_user": "yourmail@gwdg.de",
 	"partition": "grete:shared",
 	"gpu": "A100:2",
 	"jobid": "1234567",
-	"Reportseff": [],
-	"Repositories": [
+	"reportseff": [],
+	"repositories": [
 		{
 			"repo_name": "cochlea-net",
 			"repo_version": "230b80699e90787b9562e27a8662a2842d61b2ee",
@@ -22,5 +22,5 @@
 			"status": "clean"
 		}
 	],
-	"Project": "mockup"
+	"project": "mockup"
 }

@@ -17,11 +17,9 @@ from slurm_workflows import deploy
 from slurm_workflows.projects import default
 from slurm_workflows.settings import load_settings, settings_to_placeholders
 from slurm_workflows.templates import TEMPLATE_ROOT, TEMPLATE_SUFFIX, placeholders_in, render_template
-from stubs import MOCKUP_DIR, REPOSITORY_DIR, read_file, run, write_file
+from stubs import (MOCKUP_DIR, MOCKUP_PARAMS, MOCKUP_SETTINGS, MOCKUP_TEMPLATE, REPOSITORY_DIR, read_file, run,
+                   write_file)
 
-MOCKUP_TEMPLATE = os.path.join(MOCKUP_DIR, "templates", "mockup", "mockup.template")
-MOCKUP_SETTINGS = os.path.join(MOCKUP_DIR, "project_settings", "mockup.json")
-MOCKUP_PARAMS = os.path.join(MOCKUP_DIR, "params.json")
 MOCKUP_SBATCH = os.path.join(MOCKUP_DIR, "YYYY-MM-DD_sbatch_mockup.sbatch")
 DEPLOY_SCRIPT = os.path.join(REPOSITORY_DIR, "scripts", "deploy.py")
 

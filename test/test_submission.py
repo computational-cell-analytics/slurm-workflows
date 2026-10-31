@@ -1,26 +1,31 @@
 #!/usr/bin/python
 # -- coding: utf-8 --
-"""Tests of `scripts/submit_job.sh` and of the submission step of `slurm_workflows/deploy.py`.
+"""Tests of `scripts/submit_job.py` and of the submission step of `slurm_workflows/deploy.py`.
 
-`sbatch` and `reportseff` are stubs, see `test/stubs.py`.
+`sbatch`, `reportseff` and `micromamba` are stubs, see `test/stubs.py`.
 """
+import argparse
 import contextlib
 import io
 import json
 import os
+import sys
 import tempfile
 import unittest
 from unittest import mock
 
 from slurm_workflows import deploy
-from stubs import FIRST_JOBID, SUBMIT_SCRIPT, read_file, run, sbatch_calls, stub_env, write_file
+from slurm_workflows.projects import default
+from slurm_workflows.submission import environment_export
+from stubs import (FIRST_JOBID, MOCKUP_PARAMS, MOCKUP_SETTINGS, MOCKUP_TEMPLATE, SUBMIT_SCRIPT, read_file, run,
+                   sbatch_calls, stub_env, write_file)
 
 DATE = "2025-01-01"
 SBATCH_NAME = f"{DATE}_sbatch_x.sbatch"
 LOG_NAME = f"{DATE}_log_x.txt"
 
 
-class RunSbatchTest(unittest.TestCase):
+class SubmitJobTest(unittest.TestCase):
 
     def setUp(self):
         self.tmp = tempfile.TemporaryDirectory()
@@ -38,13 +43,13 @@ class RunSbatchTest(unittest.TestCase):
     def submit(self, *options):
         if not os.path.isfile(self.sbatch_file):
             write_file(self.sbatch_file, "#!/bin/bash\n#SBATCH -t 01:00:00\n")
-        return run(["bash", SUBMIT_SCRIPT] + list(options) + [self.sbatch_file], env=self.env)
+        return run([sys.executable, SUBMIT_SCRIPT] + list(options) + [self.sbatch_file], env=self.env)
 
     def test_first_submission_writes_log(self):
         result = self.submit()
 
         self.assertEqual(result.returncode, 0, result.stderr)
-        self.assertIn(f"SUBMITTED_JOBID={FIRST_JOBID}", result.stdout)
+        self.assertIn(f"Submitted batch job {FIRST_JOBID}", result.stdout)
         self.assertEqual(read_file(self.log_file), f"{FIRST_JOBID}\n")
 
     def test_second_submission_appends(self):
@@ -53,12 +58,12 @@ class RunSbatchTest(unittest.TestCase):
 
         self.assertEqual(read_file(self.log_file), f"{FIRST_JOBID}\n{FIRST_JOBID + 1}\n")
 
-    def test_empty_log_gets_jobid(self):
-        write_file(self.log_file, "")
+    def test_log_without_final_newline(self):
+        write_file(self.log_file, "7")
 
         self.submit()
 
-        self.assertEqual(read_file(self.log_file), f"{FIRST_JOBID}\n")
+        self.assertEqual(read_file(self.log_file), f"7\n{FIRST_JOBID}\n")
 
     def test_dependency(self):
         self.submit("-d", "7")
@@ -71,7 +76,16 @@ class RunSbatchTest(unittest.TestCase):
         result = self.submit()
 
         self.assertEqual(result.returncode, 1)
+        self.assertIn("stub failure", result.stderr)
         self.assertFalse(os.path.exists(self.log_file))
+
+    def test_bad_file_name_is_not_submitted(self):
+        sbatch_file = write_file(os.path.join(self.job_dir, "job.sbatch"), "#!/bin/bash\n")
+
+        result = run([sys.executable, SUBMIT_SCRIPT, sbatch_file], env=self.env)
+
+        self.assertEqual(result.returncode, 1)
+        self.assertEqual(sbatch_calls(self.env), [])
 
     def test_two_moved_submissions_keep_both_jobids(self):
         first = self.submit("-m", "-a", self.archive_dir)
@@ -84,34 +98,68 @@ class RunSbatchTest(unittest.TestCase):
         with open(os.path.join(archived, "metadata.json")) as myfile:
             self.assertEqual(json.load(myfile)["jobid"], str(FIRST_JOBID + 1))
 
+    def test_environment_is_archived(self):
+        write_file(self.sbatch_file, "#!/bin/bash\nsource ~/.bashrc\nmicromamba activate tools\n")
 
-class SubmitStepTest(unittest.TestCase):
-    """The chain of `slurm_workflows/deploy.py` continues when only the archiving of a job fails."""
+        result = self.submit("-a", self.archive_dir)
+
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertEqual(read_file(os.path.join(self.archive_dir, f"{DATE}_x", "environment.yml")), "name: tools\n")
+
+    def test_failed_archiving_is_reported(self):
+        result = self.submit("-a", os.path.join(self.tmp.name, "none"))
+
+        self.assertEqual(result.returncode, 1)
+        self.assertIn(f"Job {FIRST_JOBID} was submitted", result.stderr)
+
+
+class DeploySubmissionTest(unittest.TestCase):
+    """`deploy_jobs()` submits and archives in one process, and the chain goes on if only the archiving fails."""
 
     def setUp(self):
         self.tmp = tempfile.TemporaryDirectory()
+        self.archive_dir = os.path.join(self.tmp.name, "archive")
+        os.makedirs(self.archive_dir)
+        self.env = stub_env(self.tmp.name)
+        self.cwd = os.getcwd()
+        os.chdir(self.tmp.name)
+        environment_export.cache_clear()
 
     def tearDown(self):
+        os.chdir(self.cwd)
         self.tmp.cleanup()
 
-    def submit_step(self, stub):
-        with mock.patch.object(deploy, "SUBMIT_SCRIPT", stub), \
-                contextlib.redirect_stdout(io.StringIO()), contextlib.redirect_stderr(io.StringIO()):
-            return deploy.submit_step("job.sbatch", "", "repositories.txt")
+    def deploy(self, archive_dir):
+        args = argparse.Namespace(input=MOCKUP_TEMPLATE, pipeline=None, params=MOCKUP_PARAMS, settings=MOCKUP_SETTINGS,
+                                  archive_dir=archive_dir, repository_file=None, submit=True, allow_missing=False,
+                                  start_at=None, force=False)
+        with mock.patch.dict(os.environ, self.env), contextlib.redirect_stdout(io.StringIO()):
+            deploy.deploy_jobs(args, "mockup", default)
 
-    def test_jobid_is_returned_if_archiving_fails(self):
-        # The job is submitted, then the metadata step exits with an error.
-        stub = write_file(os.path.join(self.tmp.name, "run_sbatch.sh"),
-                          "#!/bin/bash\necho SUBMITTED_JOBID=42\necho 'archiving failed' >&2\nexit 1\n")
+    def archived_metadata(self):
+        [folder] = os.listdir(self.archive_dir)
+        with open(os.path.join(self.archive_dir, folder, "metadata.json")) as myfile:
+            return json.load(myfile)
 
-        self.assertEqual(self.submit_step(stub), "42")
+    def test_project_and_environment_are_archived(self):
+        self.deploy(self.archive_dir)
+
+        metadata = self.archived_metadata()
+        self.assertEqual(metadata["Project"], "mockup")
+        self.assertEqual(metadata["jobid"], str(FIRST_JOBID))
+        [folder] = os.listdir(self.archive_dir)
+        self.assertEqual(read_file(os.path.join(self.archive_dir, folder, "environment.yml")), "name: dl-gpu\n")
+
+    def test_job_is_submitted_if_archiving_fails(self):
+        self.deploy(os.path.join(self.tmp.name, "none"))
+
+        self.assertEqual(len(sbatch_calls(self.env)), 1)
 
     def test_failed_submission_raises(self):
-        stub = write_file(os.path.join(self.tmp.name, "run_sbatch.sh"),
-                          "#!/bin/bash\necho 'Submission failed.' >&2\nexit 1\n")
+        self.env["SBATCH_EXIT"] = "1"
 
         with self.assertRaises(ValueError):
-            self.submit_step(stub)
+            self.deploy(self.archive_dir)
 
 
 if __name__ == "__main__":

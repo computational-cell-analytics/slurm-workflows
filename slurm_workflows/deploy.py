@@ -5,157 +5,23 @@
 Logic of `slurm_wf.deploy`: fill the parameters of a job into a template, submit the sbatch script,
 and archive it.
 """
-import contextlib
 import importlib
 import json
 import os
-import subprocess
-import sys
-import tempfile
 import types
 from datetime import date
 
 from slurm_workflows import REPOSITORY_DIR
 from slurm_workflows.inputs import check_external_input, check_job_input, check_output_absent
-from slurm_workflows.metadata import METADATA_FILE, read_metadata, write_metadata
 from slurm_workflows.pipelines import load_pipeline, resolve_pipeline, steps_starting_at
 from slurm_workflows.projects import default
-from slurm_workflows.repositories import write_repository_file
+from slurm_workflows.repositories import read_repository_file
 from slurm_workflows.settings import blueprint_settings_file, load_settings, settings_file, settings_to_placeholders
+from slurm_workflows.submission import archive_submitted_job, submit
 from slurm_workflows.templates import render_template
-
-SCRIPTS_DIR = os.path.join(REPOSITORY_DIR, "scripts")
-
-SUBMIT_SCRIPT = os.path.join(SCRIPTS_DIR, "submit_job.sh")
-
-# Printed by submit_job.sh for the JobID of the submitted job.
-JOBID_PREFIX = "SUBMITTED_JOBID="
 
 # The functions which `deploy_jobs()` calls on the deployment module of a project.
 DEPLOYMENT_FUNCTIONS = ("add_arguments", "select_steps", "resolve_template", "prepare_step", "check_steps")
-
-
-def submit_step(
-    sbatch_file: str,
-    archive_dir: str,
-    repository_file: str,
-    settings_path: str = None,
-    dependency: str = None,
-) -> str:
-    """Submit one job through `submit_job.sh` and return its JobID.
-
-    Args:
-        sbatch_file: Path of the generated sbatch script.
-        archive_dir: Directory to archive the job in. No archive is written for an empty value.
-        repository_file: File listing the git repositories to snapshot.
-        settings_path: Settings file which names the HPC user in the metadata, or None.
-        dependency: JobID which has to complete successfully before this job starts.
-
-    Returns:
-        str: JobID of the submitted job.
-    """
-    cmd = ["bash", SUBMIT_SCRIPT, "-m"]
-    if archive_dir:
-        cmd += ["-a", archive_dir]
-    else:
-        print("Warning: no archive directory is set. The job is not archived.")
-    if dependency is not None:
-        cmd += ["-d", dependency]
-    if settings_path is not None:
-        cmd += ["-s", settings_path]
-    cmd += ["-r", repository_file, sbatch_file]
-
-    print(" ".join(cmd))
-    # 'capture_output' and 'text' need Python 3.7. The login node of the cluster has Python 3.6.
-    result = subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, universal_newlines=True)
-
-    if result.stdout:
-        print(result.stdout, end="")
-    if result.stderr:
-        print(result.stderr, end="", file=sys.stderr)
-
-    jobid = None
-    for line in result.stdout.splitlines():
-        if line.startswith(JOBID_PREFIX):
-            jobid = line[len(JOBID_PREFIX):].strip()
-
-    if jobid is None:
-        if result.returncode != 0:
-            raise ValueError(f"Submission of {sbatch_file} failed with exit code {result.returncode}.")
-        raise ValueError(f"No JobID was reported for {sbatch_file}.")
-
-    # The job is queued, so the chain goes on. Only the archive of the job is incomplete.
-    if result.returncode != 0:
-        print(f"Warning: job {jobid} was submitted, but its archiving failed with exit code {result.returncode}.")
-
-    return jobid
-
-
-def add_project_to_metadata(
-    archive_dir: str,
-    sbatch_file: str,
-    project: str,
-    pipeline_name: str = None,
-    step_index: int = None,
-    step_count: int = None,
-    dependency: str = None,
-) -> None:
-    """Add the project and the pipeline information to the archived metadata of one job.
-
-    Args:
-        archive_dir: Directory the job was archived in.
-        sbatch_file: Name of the generated sbatch script.
-        project: Name of the project.
-        pipeline_name: Name of the pipeline, or None for a single job.
-        step_index: Position of the step in the pipeline, starting at 1.
-        step_count: Number of steps of the pipeline.
-        dependency: JobID of the previous step, if there is one.
-    """
-    suffix = os.path.basename(sbatch_file).split(".sbatch")[0].replace("_sbatch_", "_", 1)
-    metadata_file = os.path.join(archive_dir, suffix, METADATA_FILE)
-
-    if not os.path.isfile(metadata_file):
-        print(f"Warning: no metadata found in {metadata_file}. The project information is not stored.")
-        return
-
-    metadict = read_metadata(metadata_file)
-    metadict["Project"] = project
-    if pipeline_name is not None:
-        metadict["Pipeline"] = {"name": pipeline_name, "step": step_index, "of": step_count}
-        if dependency is not None:
-            metadict["Pipeline"]["depends_on"] = dependency
-
-    write_metadata(metadict, metadata_file)
-
-
-@contextlib.contextmanager
-def repository_file_for(
-    settings: dict,
-    repository_file: str = None,
-):
-    """Yield the file which lists the git repositories of the job.
-
-    Without a repository file from the command line, a temporary file lists the repositories of the
-    settings. The temporary file is removed on exit.
-
-    Args:
-        settings: Output of `load_settings()`.
-        repository_file: Repository file given on the command line, or None.
-
-    Yields:
-        str: Path of the repository file.
-    """
-    if repository_file is not None:
-        yield repository_file
-        return
-
-    handle, temporary_file = tempfile.mkstemp(prefix="repository_list_", suffix=".txt", text=True)
-    os.close(handle)
-    try:
-        write_repository_file(settings.get("repositories", {}), temporary_file)
-        yield temporary_file
-    finally:
-        os.remove(temporary_file)
 
 
 def project_module(
@@ -291,18 +157,30 @@ def deploy_jobs(
     archive_dir = args.archive_dir
     if archive_dir is None:
         archive_dir = settings.get("archive_dir")
+    if not archive_dir:
+        print("Warning: no archive directory is set. The jobs are not archived.")
 
-    with repository_file_for(settings, args.repository_file) as repository_file:
-        dependency = None
-        for step_index, sbatch_file in enumerate(sbatch_files, start=1):
-            jobid = submit_step(sbatch_file, archive_dir, repository_file, settings_path, dependency)
-            print(f"Step {step_index} of {len(sbatch_files)} submitted as JobID {jobid}.")
+    if args.repository_file is not None:
+        repositories = read_repository_file(args.repository_file)
+    else:
+        repositories = settings.get("repositories", {})
 
-            if archive_dir:
-                if definition is None:
-                    add_project_to_metadata(archive_dir, sbatch_file, project)
-                else:
-                    add_project_to_metadata(archive_dir, sbatch_file, project, definition["name"],
-                                            step_index, len(sbatch_files), dependency)
+    dependency = None
+    for step_index, sbatch_file in enumerate(sbatch_files, start=1):
+        jobid = submit(sbatch_file, dependency)
+        print(f"Step {step_index} of {len(sbatch_files)} submitted as JobID {jobid}.")
 
-            dependency = jobid
+        if archive_dir:
+            metadata = {"Project": project}
+            if definition is not None:
+                metadata["Pipeline"] = {"name": definition["name"], "step": step_index, "of": len(sbatch_files)}
+                if dependency is not None:
+                    metadata["Pipeline"]["depends_on"] = dependency
+            try:
+                archive_submitted_job(sbatch_file, jobid, archive_dir, move=True, repositories=repositories,
+                                      settings_file=settings_path, metadata=metadata)
+            except (OSError, ValueError) as exc:
+                # The job is queued, so the chain goes on. Only the archive of the job is incomplete.
+                print(f"Warning: job {jobid} was submitted, but its archiving failed: {exc}")
+
+        dependency = jobid

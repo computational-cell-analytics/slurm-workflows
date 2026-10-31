@@ -136,10 +136,11 @@ def add_user(
 def write_job_metadata(
     input_dir: str,
     output_file: str = None,
-    jobid: int = None,
-    repository_file: str = None,
+    jobid: str = None,
+    repositories: dict = None,
     overwrite: bool = False,
     settings_file: str = None,
+    metadata: dict = None,
 ):
     """Create or update the `metadata.json` of an archive folder.
 
@@ -147,9 +148,10 @@ def write_job_metadata(
         input_dir: Archive folder.
         output_file: Metadata file. Default: `<input_dir>/metadata.json`.
         jobid: JobID, or None for the last JobID of `log.txt`.
-        repository_file: Git repositories to record, or None.
+        repositories: Dictionary mapping the names of the git repositories to record to their paths, or None.
         overwrite: Replace an existing `metadata.json`.
         settings_file: Settings file of the project, which names the HPC user.
+        metadata: Entries to add, e.g. the project of the job, or None.
     """
     if output_file is None:
         output_file = os.path.join(input_dir, METADATA_FILE)
@@ -168,7 +170,9 @@ def write_job_metadata(
     add_sbatch_parameters(metadict, sbatch_file)
     reportseff_from_jobid(log_file, metadict=metadict, jobid=jobid)
     # A resubmission can run on a newer commit, so the hash is refreshed for an existing file too.
-    if repository_file is not None:
-        add_repository_status(metadict, repository_file)
+    if repositories is not None:
+        add_repository_status(metadict, repositories)
+    if metadata is not None:
+        metadict.update(metadata)
 
     write_metadata(metadict, output_file)

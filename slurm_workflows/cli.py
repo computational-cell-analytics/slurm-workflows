@@ -10,14 +10,14 @@ import os
 import sys
 from datetime import datetime
 
-from slurm_workflows.deploy import SUBMIT_SCRIPT, SCRIPTS_DIR, deploy_jobs, project_module
+from slurm_workflows.deploy import deploy_jobs, project_module
 from slurm_workflows.metadata import write_job_metadata
 from slurm_workflows.pipelines import pipeline_names, resolve_pipeline
+from slurm_workflows.repositories import read_repository_file
+from slurm_workflows.submission import archive_job, archive_submitted_job, submit
 from slurm_workflows.summary import summarize
 from slurm_workflows.templates import project_of_template
 from slurm_workflows.update import update_archive
-
-ARCHIVE_SCRIPT = os.path.join(SCRIPTS_DIR, "archive_job.sh")
 
 
 def main_deploy():
@@ -105,8 +105,8 @@ def main_write_metadata():
     args = parser.parse_args()
 
     try:
-        write_job_metadata(args.input_dir, args.output, args.jobid, args.repository_file, args.overwrite,
-                           args.settings)
+        repositories = None if args.repository_file is None else read_repository_file(args.repository_file)
+        write_job_metadata(args.input_dir, args.output, args.jobid, repositories, args.overwrite, args.settings)
     except (FileNotFoundError, ValueError) as exc:
         sys.exit(str(exc))
 
@@ -163,11 +163,64 @@ def main_summary():
         sys.exit(str(exc))
 
 
-# The bash scripts stay standalone. exec hands them the process, so their options, output and exit
-# code are unchanged.
 def main_submit():
-    os.execvp("bash", ["bash", SUBMIT_SCRIPT] + sys.argv[1:])
+    parser = argparse.ArgumentParser(
+        description="Submit an sbatch script and add its JobID to the log file <date>_log_<suffix>.txt beside it. "
+        "With -a, the files of the job, its environment and its metadata are archived in "
+        "<archive_dir>/<date>_<suffix>/. The sbatch script follows the format <date>_sbatch_<suffix>.sbatch.")
+
+    parser.add_argument("sbatch_file", type=str, help="The sbatch script.")
+
+    parser.add_argument("-m", "--move", action="store_true",
+                        help="Move the job files into the archive instead of copying them.")
+    parser.add_argument("-a", "--archive-dir", type=str, default=None,
+                        help="Directory to archive the job in. Without it, the job is not archived.")
+    parser.add_argument("-r", "--repository-file", type=str, default=None,
+                        help="File listing the git repositories to snapshot, one '<name>\t<path>' per line.")
+    parser.add_argument("-s", "--settings", type=str, default=None,
+                        help="Settings file of the project, which names the HPC user in the metadata.")
+    parser.add_argument("-d", "--dependency", type=str, default=None,
+                        help="Start the job only after this JobID completed successfully.")
+    args = parser.parse_args()
+
+    try:
+        repositories = None if args.repository_file is None else read_repository_file(args.repository_file)
+        jobid = submit(args.sbatch_file, args.dependency)
+    except (FileNotFoundError, ValueError) as exc:
+        sys.exit(str(exc))
+
+    print(f"Submitted batch job {jobid}")
+
+    if args.archive_dir is None:
+        return
+
+    try:
+        archive_submitted_job(args.sbatch_file, jobid, args.archive_dir, args.move, repositories, args.settings)
+    except (OSError, ValueError) as exc:
+        sys.exit(f"Job {jobid} was submitted, but its archiving failed: {exc}")
 
 
 def main_archive():
-    os.execvp("bash", ["bash", ARCHIVE_SCRIPT] + sys.argv[1:])
+    parser = argparse.ArgumentParser(
+        description="Copy or move the files of one job into its archive folder <archive_dir>/<date>_<suffix>/. "
+        "Every file of the job follows the format <date>_<middle>_<suffix>.<ext>, with a middle part of one word, "
+        "such as 'sbatch' or 'log', and is archived as <middle>.<ext>.")
+
+    parser.add_argument("date", type=str, help="Date of the job, YYYY-MM-DD.")
+    parser.add_argument("suffix", type=str, help="Suffix of the job.")
+
+    parser.add_argument("-m", "--move", action="store_true", help="Move the files instead of copying them.")
+    parser.add_argument("-i", "--input-dir", type=str, default=os.environ.get("WORK"),
+                        help="Directory of the job files. Default: $WORK")
+    parser.add_argument("-a", "--archive-dir", type=str, default=os.environ.get("JOB_ARCHIVE"),
+                        help="Directory of the archive folders. Default: $JOB_ARCHIVE")
+    args = parser.parse_args()
+
+    if args.input_dir is None or args.archive_dir is None:
+        parser.error("-i and -a are needed, unless WORK and JOB_ARCHIVE are set.")
+
+    try:
+        archive_job(os.path.realpath(args.input_dir), os.path.realpath(args.archive_dir), args.date, args.suffix,
+                    args.move)
+    except (OSError, ValueError) as exc:
+        sys.exit(str(exc))

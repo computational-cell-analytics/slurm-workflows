@@ -201,7 +201,6 @@ def reportseff_from_jobid(
         jobid = jobids[-1]
     else:
         jobid = str(jobid)
-        print(f"Using manually provided JobID {jobid}")
 
     metadict["jobid"] = jobid
     user_id = subprocess.run(['whoami'], stdout=subprocess.PIPE).stdout.decode('utf-8').strip()

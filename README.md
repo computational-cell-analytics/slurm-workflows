@@ -38,8 +38,8 @@ Each command runs the same code as its script:
 | `slurm_wf.write_metadata` | `scripts/write_metadata.py` |
 | `slurm_wf.update_metadata` | `scripts/update_metadata.py` |
 | `slurm_wf.summary` | `scripts/summary.py` |
-| `slurm_wf.submit` | `scripts/submit_job.sh` |
-| `slurm_wf.archive` | `scripts/archive_job.sh` |
+| `slurm_wf.submit` | `scripts/submit_job.py` |
+| `slurm_wf.archive` | `scripts/archive_job.py` |
 | `slurm_wf.add_s3_dataset` | `scripts/add_s3_dataset.py`, only for `cochlea-net` |
 
 ## Repository structure
@@ -127,7 +127,8 @@ Do not put a `<` and a `>` in the same line of shell code, e.g. `cmd < in > out`
 
 The deploy step writes the sbatch script `<date>_sbatch_<name>.sbatch` into the current directory.
 `<name>` is the name of the template, or the name which the deployment module gives.
-With `--submit`, `scripts/submit_job.sh` moves the sbatch script into the archive folder `<archive_dir>/<date>_<name>/`.
+With `--submit`, the deploy step submits the sbatch script and moves it into the archive folder `<archive_dir>/<date>_<name>/`.
+The archive folder also gets `metadata.json` and `environment.yml`, the export of the micromamba environment which the job activates.
 
 ### Variables which the deploy step checks
 
@@ -306,12 +307,13 @@ So the mockup is not listed as a project, and its settings file can be tracked b
        -j mockup_example/params.json -s mockup_example/project_settings/mockup.json
    ```
    Without `--submit`, the command writes `<date>_sbatch_mockup.sbatch` with the current date into the working directory and submits nothing.
-2. `scripts/submit_job.sh` submits the sbatch script and writes the JobID into the log file.
+2. `scripts/submit_job.py` submits the sbatch script and writes the JobID into the log file.
    If the script is submitted again, the new JobID is appended in a new line.
    If the log file was moved into the archive before, the archive merges the new JobID into the archived log file.
-3. `scripts/archive_job.sh` copies the script and the log file into the archive folder:
+   With `-a`, it also runs the next two steps and writes `environment.yml`, the export of the micromamba environment of the job.
+3. `scripts/archive_job.py` copies the script and the log file into the archive folder:
    ```bash
-   bash scripts/archive_job.sh -i mockup_example/ -a mockup_example/ YYYY-MM-DD mockup
+   python scripts/archive_job.py -i mockup_example/ -a mockup_example/ YYYY-MM-DD mockup
    ```
 4. `scripts/write_metadata.py` creates `metadata.json` from the `#SBATCH` parameters, the JobID, the efficiency report of `reportseff`, the HPC user of the settings file, and the git hash of each repository:
    ```bash

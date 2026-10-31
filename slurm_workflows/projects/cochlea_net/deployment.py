@@ -13,7 +13,7 @@ import sys
 from slurm_workflows.inputs import job_variables, path_exists
 from slurm_workflows.pipelines import missing_templates
 from slurm_workflows.projects.cochlea_net.mobie import DATASET_FILE, IMAGE_DIR, OME_ZARR, rclone, s3_datasets
-from slurm_workflows.templates import step_template
+from slurm_workflows.templates import TEMPLATE_SUFFIX, placeholders_in
 
 # Written by the apply step. It is the input of the segmentation step.
 SEGMENTATION_INPUT = "predictions.zarr"
@@ -38,8 +38,20 @@ MOBIE_STEPS_KEY = "mobie_steps"
 CLEANUP_STEPS_KEY = "cleanup_steps"
 MOBIE_CLEANUP_STEPS_KEY = "mobie_cleanup_steps"
 
-# Key of the group which a step without a group in its template name belongs to.
+# Key of the group of a pipeline, and of a row of the steps file. A step without a group gets the
+# group of the pipeline.
 GROUP_KEY = "group"
+
+# One row per template in its folder: the group of the step and its resources, with the deviations
+# of a species under the species code, e.g. {"group": "SGN", "time": "00:25:00", "mem": "96G",
+# "G": {"time": "01:30:00"}}. The default resources fit mice.
+STEPS_FILE = "steps.json"
+
+# Keys of a row of the steps file which become placeholders. A job parameter overrides them.
+RESOURCE_KEYS = ("time", "mem")
+
+# The segmentation step needs the watershed parameters of its model.
+WATERSHED_PLACEHOLDER = "center_distance_threshold"
 
 # First step of a pipeline with '--download'. It copies the OME-Zarr of the stain from the S3 bucket.
 DOWNLOAD_STEP = "download_image"
@@ -173,55 +185,6 @@ def select_steps(
     return steps + cleanup_steps
 
 
-def species_template(
-    template_dir: str,
-    step: str,
-    species: str,
-) -> str:
-    """Return the template of a step in the folder of a species.
-
-    Args:
-        template_dir: Template folder of the project.
-        step: Name of the step.
-        species: Species code of the cochlea, e.g. `G`.
-
-    Returns:
-        str: Path of the template, or None if the species folder has no template for the step.
-    """
-    template = step_template(template_dir, os.path.join(species, step))
-    if species and os.path.isfile(template):
-        return template
-    return None
-
-
-def resolve_template(
-    template_dir: str,
-    step: str,
-    parameters: dict,
-) -> str:
-    """Return the template of a pipeline step for the species of the cochlea.
-
-    The default templates fit mice. A species whose cochleae need other resources has a folder
-    `templates/<project>/<species>/`, named after the species code of the cochlea, e.g. `G`. A step
-    without a template in that folder uses the default template.
-
-    Args:
-        template_dir: Template folder of the project.
-        step: Name of the step.
-        parameters: Job parameters, which name the cochlea.
-
-    Returns:
-        str: Path of the template.
-    """
-    species = parameters.get("cochlea", "").split("_")[0]
-    template = species_template(template_dir, step, species)
-    if template is None:
-        return step_template(template_dir, step)
-
-    print(f"Step {step} uses the template of species {species}: {template}")
-    return template
-
-
 def watershed_parameters(
     model_path: str,
     group: str,
@@ -249,27 +212,44 @@ def watershed_parameters(
             ("center_distance_threshold", "boundary_distance_threshold", "distance_smoothing")}
 
 
-def template_group(
+def step_row(
     template_file: str,
-) -> str:
-    """Return the group of a template.
+    species: str,
+) -> tuple:
+    """Return the group and the resources of a template from the steps file in its folder.
+
+    The file has one row per template, so a renamed or a new template without a row fails here
+    instead of being treated as another step.
 
     Args:
         template_file: Path of the template.
+        species: Species code of the cochlea, e.g. `G`.
 
     Returns:
-        str: Key of `GROUPS`, or None for a template which reads every stain, such as a MoBIE step.
+        tuple of:
+            str  - the key of `GROUPS`, or None for a template which serves every group, such as a MoBIE step
+            dict - the values of `RESOURCE_KEYS`, with the deviations of the species applied
     """
-    template_name = os.path.basename(template_file)
+    steps_file = os.path.join(os.path.dirname(template_file), STEPS_FILE)
+    step = os.path.basename(template_file)[:-len(TEMPLATE_SUFFIX)]
 
-    if "SGN" in template_name:
-        return "SGN"
-    if "IHC" in template_name:
-        return "IHC"
-    if "synapse" in template_name:
-        return "synapses"
+    if not os.path.isfile(steps_file):
+        raise FileNotFoundError(f"The steps file {steps_file} of the template {template_file} does not exist.")
+    with open(steps_file, "r") as myfile:
+        steps = json.load(myfile)
 
-    return None
+    if step not in steps:
+        raise ValueError(f"The template {template_file} has no row in {steps_file}. Add its group and resources.")
+
+    row = steps[step]
+    group = row.get(GROUP_KEY)
+    if group is not None and group not in GROUPS:
+        raise ValueError(f"Unknown group '{group}' of {step} in {steps_file}. Available groups: {sorted(GROUPS)}.")
+
+    resources = {key: row[key] for key in RESOURCE_KEYS if key in row}
+    resources.update(row.get(species, {}))
+
+    return group, resources
 
 
 def n5_name(
@@ -503,8 +483,8 @@ def prepare_step(
         settings: Output of `load_settings()`.
         placeholder_values: The settings and the job parameters as placeholder values. The dictionary is
             changed in place.
-        template_file: Path of the template. Its name selects the watershed step, and the model
-            group unless the pipeline or '--group' supplies it.
+        template_file: Path of the template. Its row of the steps file gives the group and the
+            resources. A template without a group gets the group of the pipeline or of '--group'.
         args: Parsed command line options.
         definition: Output of `load_pipeline()`, or None for a single job.
 
@@ -552,13 +532,12 @@ def prepare_step(
     prefix = "".join([species, experimenter])
     template_name = os.path.basename(template_file)
 
-    # A single job uses the given template as it is. A pipeline selects the species template.
-    if definition is None:
-        template = species_template(os.path.dirname(template_file), template_name.split(".template")[0], species)
-        if template is not None and os.path.realpath(template) != os.path.realpath(template_file):
-            print(f"Note: {template} fits species {species}. Pass it with -i to use its resources.")
+    step_group, resources = step_row(template_file, species)
+    for key, value in resources.items():
+        placeholder_values.setdefault(key, value)
+
     cochlea_dir = os.path.join(placeholder_values["data_dir"], cochlea)
-    group = template_group(template_file)
+    group = step_group
     if group is None:
         group = pipeline_group
 
@@ -635,14 +614,14 @@ def prepare_step(
                              "which selects the IHC segmentation the prediction is masked with.")
         placeholder_values["prediction_dir"] = placeholder_values["synapse_ihc_prediction"]
 
-    # 'mobie_add_segmentation' also contains 'segment', but it needs no model and no watershed.
-    if template_name.startswith("segment"):
-        placeholder_values.update(watershed_parameters(placeholder_values["model"], group))
+    with open(template_file, "r") as myfile:
+        if WATERSHED_PLACEHOLDER in placeholders_in(myfile.read()):
+            placeholder_values.update(watershed_parameters(placeholder_values["model"], group))
 
     # The group enters the name of a template which serves more than one group, so that the runs
     # of two groups do not share an archive folder.
     script_str = template_name.split(".template")[0]
-    if pipeline_group is not None and template_group(template_file) is None:
+    if pipeline_group is not None and step_group is None:
         script_str = f"{script_str}_{pipeline_group}"
 
     return placeholder_values, f"{script_str}_{prefix}{number.lstrip('0')}{side}"

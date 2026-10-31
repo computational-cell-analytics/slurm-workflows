@@ -18,10 +18,10 @@ from slurm_workflows.projects import default
 from slurm_workflows.repositories import read_repository_file
 from slurm_workflows.settings import blueprint_settings_file, load_settings, settings_file, settings_to_placeholders
 from slurm_workflows.submission import archive_submitted_job, submit
-from slurm_workflows.templates import render_template
+from slurm_workflows.templates import render_template, step_template
 
 # The functions which `deploy_jobs()` calls on the deployment module of a project.
-DEPLOYMENT_FUNCTIONS = ("add_arguments", "select_steps", "resolve_template", "prepare_step", "check_steps")
+DEPLOYMENT_FUNCTIONS = ("add_arguments", "select_steps", "prepare_step", "check_steps")
 
 
 def project_module(
@@ -107,8 +107,7 @@ def deploy_jobs(
         step_names = module.select_steps(definition, settings, args)
         if args.start_at is not None:
             step_names = steps_starting_at(step_names, args.start_at)
-        template_files = [module.resolve_template(definition["template_dir"], step, parameters)
-                          for step in step_names]
+        template_files = [step_template(definition["template_dir"], step) for step in step_names]
 
     # Render every step before anything is submitted, so that an unresolved placeholder of a later
     # step cannot leave the earlier steps of the chain queued.

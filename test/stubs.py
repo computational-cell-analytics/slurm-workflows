@@ -10,6 +10,7 @@ import subprocess
 REPOSITORY_DIR = os.path.dirname(os.path.dirname(os.path.realpath(__file__)))
 SCRIPTS_DIR = os.path.join(REPOSITORY_DIR, "scripts")
 MOCKUP_DIR = os.path.join(REPOSITORY_DIR, "mockup_example")
+TEMPLATE_DIR = os.path.join(REPOSITORY_DIR, "templates", "cochlea-net")
 MOCKUP_TEMPLATE = os.path.join(MOCKUP_DIR, "templates", "mockup", "mockup.template")
 MOCKUP_SETTINGS = os.path.join(MOCKUP_DIR, "project_settings", "mockup.json")
 MOCKUP_PARAMS = os.path.join(MOCKUP_DIR, "params.json")

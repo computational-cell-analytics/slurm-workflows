@@ -49,7 +49,7 @@ The package `slurm_workflows` contains the logic of the Python scripts and the u
 Its module `cli` contains the command line interface of the generic commands.
 Its subpackage `projects` contains one package per project, with the deployment module and the code which only that project uses.
 The directory `templates` contains one subfolder per project with one template per processing step.
-A subfolder named after a species code, such as `templates/cochlea-net/G`, holds the templates with other resources for that species, which a pipeline selects from the cochlea name.
+The file `templates/cochlea-net/steps.json` holds the group and the resources of each cochlea-net template, with the deviations of a species such as the gerbil `G`.
 The directory `pipelines` contains one subfolder per project with the definitions which chain those steps.
 The directory `project_settings` contains the settings file of each project.
 The directory `doc` contains the documentation of the work on the HPC:
@@ -91,13 +91,12 @@ To add a project `<project>`, add these four parts:
 - `slurm_workflows/projects/<project>/deployment.py` with the logic which is specific to the project, if the project needs it.
   A hyphen of the project name becomes an underscore in the package name, e.g. `slurm_workflows/projects/cochlea_net/`.
 
-`slurm_workflows/deploy.py` calls five functions of the deployment module:
+`slurm_workflows/deploy.py` calls four functions of the deployment module:
 
 | Function | Purpose |
 |---|---|
 | `add_arguments(parser)` | Add the command line options of the project. |
 | `select_steps(definition, settings, args)` | Return the steps of a pipeline to submit. |
-| `resolve_template(template_dir, step, parameters)` | Return the template file of a pipeline step. |
 | `prepare_step(settings, placeholder_values, template_file, args, definition)` | Add the placeholder values of one job and return them together with the name of the sbatch script. |
 | `check_steps(template_files, sbatch_files)` | Return warnings, see [Warnings](#warnings). |
 

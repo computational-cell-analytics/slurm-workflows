@@ -1,9 +1,10 @@
 #!/usr/bin/python
 # -- coding: utf-8 --
-"""Tests of the step selection of a pipeline: `select_steps()` and `resolve_template()` of cochlea-net,
+"""Tests of the step selection of a pipeline: `select_steps()` and `step_row()` of cochlea-net,
 and the `download_image` and `cleanup_input` jobs which `--download` and `--cleanup-input` add."""
 import argparse
 import contextlib
+import glob
 import io
 import json
 import os
@@ -12,13 +13,11 @@ import unittest
 
 from slurm_workflows.pipelines import load_pipeline, resolve_pipeline
 from slurm_workflows.projects.cochlea_net import deployment
-from slurm_workflows.templates import TEMPLATE_ROOT, project_of_template, render_template, step_template
-from stubs import run, write_executable, write_file
+from slurm_workflows.templates import TEMPLATE_SUFFIX, project_of_template, render_template, step_template
+from stubs import TEMPLATE_DIR, read_file, run, write_executable, write_file
 from test_mobie import RCLONE_STUB, REMOTE
 
 SETTINGS = {"mobie_project": "/path/to/mobie_project"}
-
-TEMPLATE_DIR = os.path.join(TEMPLATE_ROOT, "cochlea-net")
 
 
 class SelectStepsTest(unittest.TestCase):
@@ -103,7 +102,7 @@ class S3TemplateTest(unittest.TestCase):
     def run_step(self, step, stain, cochlea_data="", input_key=""):
         values = {"cochlea_job_name": "job", "user_address": "a", "account_name": "b",
                   "data_dir": self.data_dir, "cochlea": self.COCHLEA, "cochlea_data": cochlea_data,
-                  "input_key": input_key, "s3_remote": REMOTE, "stain": stain}
+                  "input_key": input_key, "s3_remote": REMOTE, "stain": stain, "time": "01:00:00", "mem": "1G"}
         sbatch_file = os.path.join(self.tmp.name, f"{step}.sbatch")
         with contextlib.redirect_stdout(io.StringIO()):
             render_template(step_template(TEMPLATE_DIR, step), sbatch_file, values)
@@ -155,27 +154,36 @@ class S3TemplateTest(unittest.TestCase):
         self.assertTrue(os.path.exists(self.cochlea_path("PV.ome.zarr", "s0", ".zarray")))
 
 
-class ResolveTemplateTest(unittest.TestCase):
+class StepRowTest(unittest.TestCase):
+    """The steps file of cochlea-net gives the group and the resources of every template."""
 
-    def setUp(self):
-        self.module = deployment
+    def test_every_template_has_a_row(self):
+        steps = json.loads(read_file(os.path.join(TEMPLATE_DIR, deployment.STEPS_FILE)))
+        templates = glob.glob(os.path.join(TEMPLATE_DIR, f"*{TEMPLATE_SUFFIX}"))
 
-    def resolve(self, cochlea, step):
-        with contextlib.redirect_stdout(io.StringIO()):
-            return self.module.resolve_template(TEMPLATE_DIR, step, {"cochlea": cochlea})
+        self.assertEqual(sorted(steps), sorted(os.path.basename(path)[:-len(TEMPLATE_SUFFIX)] for path in templates))
+        for template in templates:
+            with self.subTest(template):
+                group, resources = deployment.step_row(template, "M")
+                self.assertIn(group, list(deployment.GROUPS) + [None])
+                self.assertEqual(sorted(resources), sorted(deployment.RESOURCE_KEYS))
 
-    def test_species_template(self):
-        self.assertEqual(self.resolve("G_EK_000071_L", "apply_SGN"),
-                         step_template(TEMPLATE_DIR, os.path.join("G", "apply_SGN")))
+    def test_species_deviation(self):
+        template = step_template(TEMPLATE_DIR, "apply_SGN")
 
-    def test_default_template(self):
-        self.assertEqual(self.resolve("M_AMD_000137_L", "apply_SGN"), step_template(TEMPLATE_DIR, "apply_SGN"))
-        self.assertEqual(self.resolve("G_EK_000071_L", "cleanup_IHC"), step_template(TEMPLATE_DIR, "cleanup_IHC"))
+        self.assertEqual(deployment.step_row(template, "M"), ("SGN", {"time": "00:25:00", "mem": "96G"}))
+        self.assertEqual(deployment.step_row(template, "G"), ("SGN", {"time": "01:30:00", "mem": "128G"}))
 
-    def test_project_of_species_template(self):
-        species_template = step_template(TEMPLATE_DIR, os.path.join("G", "apply_SGN"))
+    def test_template_without_row_raises(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            write_file(os.path.join(tmp, deployment.STEPS_FILE), json.dumps({"apply_SGN": {"group": "SGN"}}))
+            template = write_file(os.path.join(tmp, "predict_SGN.template"))
 
-        self.assertEqual(project_of_template(species_template), "cochlea-net")
+            with self.assertRaises(ValueError):
+                deployment.step_row(template, "M")
+
+    def test_project_of_template(self):
+        self.assertEqual(project_of_template(step_template(TEMPLATE_DIR, "apply_SGN")), "cochlea-net")
 
 
 if __name__ == "__main__":

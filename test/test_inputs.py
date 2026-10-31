@@ -13,7 +13,8 @@ from unittest import mock
 
 from slurm_workflows.projects.cochlea_net import deployment, mobie
 from slurm_workflows.inputs import check_external_input, check_job_input, check_output_absent, job_variables
-from stubs import write_file
+from slurm_workflows.templates import step_template
+from stubs import TEMPLATE_DIR, write_file
 
 
 class InputCheckTest(unittest.TestCase):
@@ -99,7 +100,8 @@ class ResolveInputTest(unittest.TestCase):
     def mobie_values(self):
         values = {"data_dir": self.tmp.name, "cochlea": self.COCHLEA, "stains": self.STAINS}
         values, _ = self.module.prepare_step({"data_dir": self.tmp.name, "models": {}}, values,
-                                             "mobie_add_image.template", argparse.Namespace(group=None))
+                                             step_template(TEMPLATE_DIR, "mobie_add_image"),
+                                             argparse.Namespace(group=None))
         return values
 
     def test_multi_n5_wins(self):
@@ -152,15 +154,22 @@ class ResolveInputTest(unittest.TestCase):
         self.assertEqual(values["cochlea_data_multi"], " ".join(files))
         self.assertEqual(values["input_key_multi"], " ".join(["setup0/timepoint0/s0"] * 3))
 
-    def ihc_step(self, download=False, definition=None):
+    def ihc_step(self, download=False, definition=None, **parameters):
         values = {"data_dir": self.tmp.name, "cochlea": self.COCHLEA, "stains": self.STAINS,
-                  "ihc_version": "IHC_v11", "s3_remote": "remote:bucket"}
+                  "ihc_version": "IHC_v11", "s3_remote": "remote:bucket", **parameters}
         settings = {"data_dir": self.tmp.name, "models": {"IHC": {"IHC_v11": "/path/to/model"}}}
         stdout = io.StringIO()
         with contextlib.redirect_stdout(stdout):
-            values, _ = self.module.prepare_step(settings, values, "mask_IHC.template",
+            values, _ = self.module.prepare_step(settings, values, step_template(TEMPLATE_DIR, "mask_IHC"),
                                                  argparse.Namespace(group=None, download=download), definition)
         return values, stdout.getvalue()
+
+    def test_resources_of_the_species_and_of_a_parameter(self):
+        values, _ = self.ihc_step()
+        self.assertEqual((values["time"], values["mem"]), ("00:30:00", "32G"))
+
+        values, _ = self.ihc_step(time="09:00:00")
+        self.assertEqual((values["time"], values["mem"]), ("09:00:00", "32G"))
 
     def test_download_reads_the_ome_zarr(self):
         self.add(self.MULTI)

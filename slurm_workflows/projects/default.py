@@ -9,7 +9,7 @@ each function which it does not define from this module.
 import os
 
 from slurm_workflows.pipelines import STEPS_KEY
-from slurm_workflows.templates import TEMPLATE_SUFFIX, step_template
+from slurm_workflows.templates import TEMPLATE_SUFFIX
 
 
 def add_arguments(
@@ -25,15 +25,6 @@ def select_steps(
 ) -> list:
     """Return all steps of the pipeline definition."""
     return definition[STEPS_KEY]
-
-
-def resolve_template(
-    template_dir: str,
-    step: str,
-    parameters: dict,
-) -> str:
-    """Return the template of the step."""
-    return step_template(template_dir, step)
 
 
 def prepare_step(

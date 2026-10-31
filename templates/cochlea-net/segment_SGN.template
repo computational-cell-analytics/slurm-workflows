@@ -1,13 +1,13 @@
 #!/bin/bash
 #SBATCH --job-name=segment-unet-SGN_<cochlea_job_name>
-#SBATCH --time 05:30:00             # estimated time, adapt to your needs
+#SBATCH -t <time>
 #SBATCH --mail-user=<user_address> # change this to your mailaddress
 #SBATCH --mail-type=FAIL        # send mail when job begins and ends
 
 #SBATCH -p standard96s:shared         # the partition
 #SBATCH -A <account_name>
 #SBATCH -c 8
-#SBATCH --mem 400G
+#SBATCH --mem <mem>
 
 source ~/.bashrc
 micromamba activate <cochlea-net_environment>

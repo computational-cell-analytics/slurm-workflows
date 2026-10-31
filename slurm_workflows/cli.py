@@ -10,18 +10,18 @@ import os
 import sys
 from datetime import datetime
 
-from slurm_workflows.deploy import RUN_SBATCH_SCRIPT, SCRIPTS_DIR, deploy_jobs, project_module
+from slurm_workflows.deploy import SUBMIT_SCRIPT, SCRIPTS_DIR, deploy_jobs, project_module
 from slurm_workflows.metadata import write_job_metadata
-from slurm_workflows.mobie import (add_s3_dataset as add_dataset_to_s3, add_s3_sources, check_s3_datasets,
-                                   generate_local_project, generate_s3_project, repair_s3_dataset)
+from slurm_workflows.mobie import (add_s3_dataset, add_s3_sources, check_s3_datasets, generate_local_project,
+                                   generate_s3_project, repair_s3_dataset)
 from slurm_workflows.pipelines import pipeline_names, project_of_template, resolve_pipeline
 from slurm_workflows.summary import summarize
 from slurm_workflows.update import update_archive
 
-ARCHIVE_SCRIPT = os.path.join(SCRIPTS_DIR, "02_archive_scripts.sh")
+ARCHIVE_SCRIPT = os.path.join(SCRIPTS_DIR, "archive_job.sh")
 
 
-def deploy():
+def main_deploy():
     parser = argparse.ArgumentParser(
         description="Fill in a template for an sbatch script using a JSON dictionary. "
         "The new sbatch script is deployed to the cluster and an entry in the archive directory is created. "
@@ -36,17 +36,20 @@ def deploy():
                         help=f"Pipeline to submit as a chain of jobs, as <project>/<pipeline>. "
                              f"Available: {pipeline_names()}")
 
-    parser.add_argument("-j", "--json", type=str, required=True, help="JSON dictionary.")
+    parser.add_argument("-j", "--params", type=str, required=True,
+                        help="Parameter file of the job, a JSON dictionary. "
+                             "A parameter overrides the setting of the same key.")
 
     parser.add_argument("-s", "--settings", type=str, default=None,
                         help="JSON file with the paths and names of your account. "
                              "Default: project_settings/<project>.json")
-    parser.add_argument("-a", "--archive_dir", type=str, default=None,
+    parser.add_argument("-a", "--archive-dir", type=str, default=None,
                         help="Directory to archive scripts and metadata. Default: archive_dir of the settings file.")
-    parser.add_argument("-r", "--repository_file", type=str, default=None,
+    parser.add_argument("-r", "--repository-file", type=str, default=None,
                         help="File containing git repositories to track. "
                              "Default: derived from the repositories of the settings file.")
-    parser.add_argument("--deploy", action="store_true", help="Run script.")
+    parser.add_argument("--submit", action="store_true",
+                        help="Submit the jobs. Without this option, the sbatch scripts are only written and checked.")
     parser.add_argument("--allow-missing", dest="allow_missing", action="store_true",
                         help="Print a warning instead of raising an error for an unresolved placeholder.")
     parser.add_argument("--start-at", dest="start_at", type=str, default=None,
@@ -85,7 +88,7 @@ def deploy():
         sys.exit(str(exc))
 
 
-def write_metadata():
+def main_write_metadata():
     parser = argparse.ArgumentParser(
         description="Extract metadata from an sbatch script.")
 
@@ -94,7 +97,7 @@ def write_metadata():
     parser.add_argument('-o', "--output", type=str, default=None,
                         help="Output file for metadata. Default: <input_dir>/metadata.json")
     parser.add_argument('-j', "--jobid", type=str, default=None, help="JobID")
-    parser.add_argument('-r', "--repository_file",
+    parser.add_argument('-r', "--repository-file",
                         type=str, default=None,
                         help="File with information about git repositories in format '<Name>\t<path-to-repository>\n'")
     parser.add_argument("-s", "--settings", type=str, default=None,
@@ -109,7 +112,7 @@ def write_metadata():
         sys.exit(str(exc))
 
 
-def update_metadata():
+def main_update_metadata():
     parser = argparse.ArgumentParser(
         description="Update report of job efficiency, if last status was 'PENDING'.")
 
@@ -117,7 +120,7 @@ def update_metadata():
 
     parser.add_argument('-p', "--pattern", type=str, default=None,
                         help="Pattern to match folders in job archive. Supports wildcards.")
-    parser.add_argument('-s', "--slurm_dir", type=str, default=None,
+    parser.add_argument('-s', "--slurm-dir", type=str, default=None,
                         help="Directory containing slurm output files (slurm-<job_id>.out or "
                              "slurm-<job_id>_<array_index>.out) to parse and store in metadata.")
     parser.add_argument("--general", action="store_true", help="Check general info.")
@@ -134,7 +137,7 @@ def iso_date(value: str) -> str:
     return datetime.strptime(value, "%Y-%m-%d").date().isoformat()
 
 
-def summary():
+def main_summary():
     parser = argparse.ArgumentParser(
         description="Print the average efficiency and the core hours of the archived jobs, and optionally "
         "write one row per job, ordered by date. The command only reads the archive. "
@@ -161,18 +164,18 @@ def summary():
         sys.exit(str(exc))
 
 
-def add_s3_dataset():
+def main_add_s3_dataset():
     parser = argparse.ArgumentParser(
         description="Add a dataset to the MoBIE project in the S3 bucket: its name to the project.json and, with "
         "--source, its sources to its dataset.json. The S3 files list the datasets and the sources of every local "
         "MoBIE project, so only the new entries are added and all other entries stay unchanged. Other modes "
         "rebuild the dataset list of a project.json, check the dataset.json files of the bucket, or repair one.")
 
-    parser.add_argument("-p", "--mobie_project", type=str, required=True,
+    parser.add_argument("-p", "--mobie-project", type=str, required=True,
                         help="Root of the local MoBIE project. --source reads the local dataset.json from it. "
                              "Each upload edits a temporary copy of the S3 file in it: tmp_<JobID>_<file name>, "
                              "or tmp_<file name> outside of a Slurm job.")
-    parser.add_argument("-r", "--s3_remote", type=str, default=None,
+    parser.add_argument("-r", "--s3-remote", type=str, default=None,
                         help="rclone remote and bucket, in the form remote:bucket. Not needed for --generate local.")
 
     mode = parser.add_mutually_exclusive_group(required=True)
@@ -193,9 +196,9 @@ def add_s3_dataset():
     dataset_mode.add_argument("--repair", action="store_true",
                               help="Add a source to the S3 dataset.json of -d for each data folder which no "
                                    "source lists. The entry is built from the data in the bucket.")
-    parser.add_argument("-e", "--service_endpoint", type=str, default=None,
+    parser.add_argument("-e", "--service-endpoint", type=str, default=None,
                         help="URL of the S3 service, e.g. https://s3.fs.gwdg.de. Needed for --repair.")
-    parser.add_argument("--default_view", type=str, default=None,
+    parser.add_argument("--default-view", type=str, default=None,
                         help="With --repair: the source whose view becomes the default view of the dataset.")
     parser.add_argument("-o", "--output", type=str, default=None,
                         help="With --repair: write the repaired dataset.json to this file and upload nothing.")
@@ -208,7 +211,7 @@ def add_s3_dataset():
     if args.repair and args.service_endpoint is None:
         parser.error("--repair needs -e.")
     if not args.repair and (args.service_endpoint or args.default_view or args.output):
-        parser.error("-e, --default_view and -o need --repair.")
+        parser.error("-e, --default-view and -o need --repair.")
 
     try:
         if args.check:
@@ -224,16 +227,16 @@ def add_s3_dataset():
             # The dataset.json comes first, so that the project.json lists the dataset only with its sources.
             if args.source:
                 add_s3_sources(args.mobie_project, args.s3_remote, args.dataset, args.source)
-            add_dataset_to_s3(args.mobie_project, args.s3_remote, args.dataset)
+            add_s3_dataset(args.mobie_project, args.s3_remote, args.dataset)
     except (FileNotFoundError, ValueError) as exc:
         sys.exit(str(exc))
 
 
 # The bash scripts stay standalone. exec hands them the process, so their options, output and exit
 # code are unchanged.
-def submit():
-    os.execvp("bash", ["bash", RUN_SBATCH_SCRIPT] + sys.argv[1:])
+def main_submit():
+    os.execvp("bash", ["bash", SUBMIT_SCRIPT] + sys.argv[1:])
 
 
-def archive():
+def main_archive():
     os.execvp("bash", ["bash", ARCHIVE_SCRIPT] + sys.argv[1:])

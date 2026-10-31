@@ -3,11 +3,12 @@
 """author: Martin Schilling (martin.schilling@med.uni-goettingen.de), 2025
 
 Deployment of a project without its own module `slurm_workflows/deployment/<project>_deployment.py`.
-The placeholders are filled from the settings and the job parameters only.
+The placeholders are filled from the settings and the job parameters only. A project module takes
+each function which it does not define from this module.
 """
 import os
 
-from slurm_workflows.pipelines import STEPS_KEY, TEMPLATE_SUFFIX, project_of_template, step_template
+from slurm_workflows.pipelines import STEPS_KEY, TEMPLATE_SUFFIX, step_template
 
 
 def add_arguments(
@@ -36,23 +37,18 @@ def resolve_template(
 
 def prepare_step(
     settings: dict,
-    replacements: dict,
-    input_file: str,
+    placeholder_values: dict,
+    template_file: str,
     args,
     definition: dict = None,
 ) -> tuple:
-    """Keep the replacements, and name the sbatch script after the template."""
-    return replacements, os.path.basename(input_file)[:-len(TEMPLATE_SUFFIX)]
+    """Keep the placeholder values, and name the sbatch script after the template."""
+    return placeholder_values, os.path.basename(template_file)[:-len(TEMPLATE_SUFFIX)]
 
 
 def check_steps(
-    input_files: list,
-    output_files: list,
+    template_files: list,
+    sbatch_files: list,
 ) -> list:
-    """Print a notice that the default deployment filled the templates, and return no warning.
-
-    A warning would stop `--deploy` without `--force`, so the notice is printed instead.
-    """
-    print(f"Note: project '{project_of_template(input_files[0])}' has no deployment module. "
-          "The placeholders were filled from the settings and the parameters only.")
+    """Return no warning, because the default deployment knows nothing about the data of a job."""
     return []

@@ -9,7 +9,7 @@ import sys
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.realpath(__file__))))
 
-from slurm_workflows.cli import summary  # noqa: E402
+from slurm_workflows.cli import main_summary  # noqa: E402
 
 if __name__ == "__main__":
-    summary()
+    main_summary()

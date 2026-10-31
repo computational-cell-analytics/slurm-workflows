@@ -108,9 +108,9 @@ The pipelines are `cochlea-net/mobie`, `cochlea-net/ihc`, `cochlea-net/sgn`, and
 Example commands:
 ```bash
 # dry run: write the sbatch script, submit nothing
-python slurm-workflows/scripts/deploy_process.py --pipeline cochlea-net/sgn --json parameter_file.json
+python slurm-workflows/scripts/deploy.py --pipeline cochlea-net/sgn --params parameter_file.json
 # submit the pipeline as a chain of Slurm jobs
-python slurm-workflows/scripts/deploy_process.py --pipeline cochlea-net/sgn --json parameter_file.json --deploy
+python slurm-workflows/scripts/deploy.py --pipeline cochlea-net/sgn --params parameter_file.json --submit
 ```
 
 > [!NOTE]

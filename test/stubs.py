@@ -13,8 +13,8 @@ REPOSITORY_DIR = os.path.dirname(os.path.dirname(os.path.realpath(__file__)))
 SCRIPTS_DIR = os.path.join(REPOSITORY_DIR, "scripts")
 MOCKUP_DIR = os.path.join(REPOSITORY_DIR, "mockup_example")
 
-RUN_SBATCH = os.path.join(SCRIPTS_DIR, "01_run_sbatch.sh")
-ARCHIVE_SCRIPTS = os.path.join(SCRIPTS_DIR, "02_archive_scripts.sh")
+SUBMIT_SCRIPT = os.path.join(SCRIPTS_DIR, "submit_job.sh")
+ARCHIVE_SCRIPT = os.path.join(SCRIPTS_DIR, "archive_job.sh")
 WRITE_METADATA = os.path.join(SCRIPTS_DIR, "write_metadata.py")
 
 # JobIDs start here and count up by one per submission.
@@ -81,7 +81,7 @@ def stub_env(
     write_executable(os.path.join(bin_dir, "sbatch"), SBATCH_STUB)
     if reportseff:
         write_executable(os.path.join(bin_dir, "reportseff"), REPORTSEFF_STUB)
-    # 01_run_sbatch.sh calls 'python', which is not on every PATH.
+    # submit_job.sh calls 'python', which is not on every PATH.
     os.symlink(sys.executable, os.path.join(bin_dir, "python"))
 
     env = dict(os.environ)

@@ -1,7 +1,7 @@
 #!/usr/bin/python
 # -- coding: utf-8 --
-"""Tests of the placeholder replacement: `slurm_workflows/templates.py`, `slurm_workflows/settings.py`,
-the default deployment of `scripts/deploy_process.py` on the mockup, and the species templates."""
+"""Tests of the placeholder filling: `slurm_workflows/templates.py`, `slurm_workflows/settings.py`,
+the default deployment of `scripts/deploy.py` on the mockup, and the species templates."""
 import contextlib
 import glob
 import io
@@ -9,18 +9,22 @@ import json
 import os
 import sys
 import tempfile
+import types
 import unittest
+from unittest import mock
 
+from slurm_workflows import deploy
+from slurm_workflows.deployment import default_deployment
 from slurm_workflows.pipelines import TEMPLATE_ROOT, TEMPLATE_SUFFIX
-from slurm_workflows.settings import load_settings, settings_to_replacements
-from slurm_workflows.templates import extract_substrings, replace_substrings_in_file
+from slurm_workflows.settings import load_settings, settings_to_placeholders
+from slurm_workflows.templates import placeholders_in, render_template
 from stubs import MOCKUP_DIR, REPOSITORY_DIR, read_file, run, write_file
 
 MOCKUP_TEMPLATE = os.path.join(MOCKUP_DIR, "templates", "mockup", "mockup.template")
 MOCKUP_SETTINGS = os.path.join(MOCKUP_DIR, "project_settings", "mockup.json")
-MOCKUP_DATASET = os.path.join(MOCKUP_DIR, "dataset.json")
+MOCKUP_PARAMS = os.path.join(MOCKUP_DIR, "params.json")
 MOCKUP_SBATCH = os.path.join(MOCKUP_DIR, "YYYY-MM-DD_sbatch_mockup.sbatch")
-DEPLOY_PROCESS = os.path.join(REPOSITORY_DIR, "scripts", "deploy_process.py")
+DEPLOY_SCRIPT = os.path.join(REPOSITORY_DIR, "scripts", "deploy.py")
 
 SETTINGS = {
     "user_address": "me@example.org",
@@ -37,27 +41,27 @@ class TemplateTest(unittest.TestCase):
     def setUp(self):
         self.tmp = tempfile.TemporaryDirectory()
         self.template = write_file(os.path.join(self.tmp.name, "job.template"),
-                                   "#SBATCH --mail-user=<user_address>\npython <tool>/run.py <dataset>\n")
+                                   "#SBATCH --mail-user=<user_address>\npython <repo:tool>/run.py <dataset>\n")
         self.output = os.path.join(self.tmp.name, "job.sbatch")
 
     def tearDown(self):
         self.tmp.cleanup()
 
-    def test_extract_substrings(self):
-        self.assertEqual(extract_substrings("a <b> c <d-e> f"), ["b", "d-e"])
+    def test_placeholders_in(self):
+        self.assertEqual(placeholders_in("a <b> c <d-e> f <repo:g>"), ["b", "d-e", "repo:g"])
 
     def test_all_placeholders_filled(self):
-        replacements = {"user_address": "me@example.org", "tool": "/opt/tool", "dataset": "cifar10"}
+        values = {"user_address": "me@example.org", "repo:tool": "/opt/tool", "dataset": "cifar10"}
 
         with contextlib.redirect_stdout(io.StringIO()):
-            replace_substrings_in_file(self.template, self.output, replacements)
+            render_template(self.template, self.output, values)
 
         self.assertEqual(read_file(self.output),
                          "#SBATCH --mail-user=me@example.org\npython /opt/tool/run.py cifar10\n")
 
     def test_missing_placeholder_raises_and_writes_nothing(self):
         with self.assertRaises(ValueError) as context:
-            replace_substrings_in_file(self.template, self.output, {"user_address": "me@example.org"})
+            render_template(self.template, self.output, {"user_address": "me@example.org"})
 
         self.assertIn("dataset", str(context.exception))
         self.assertIn("tool", str(context.exception))
@@ -66,10 +70,10 @@ class TemplateTest(unittest.TestCase):
     def test_missing_placeholder_not_strict(self):
         stdout = io.StringIO()
         with contextlib.redirect_stdout(stdout):
-            replace_substrings_in_file(self.template, self.output, {"user_address": "a", "tool": "b"}, strict=False)
+            render_template(self.template, self.output, {"user_address": "a", "repo:tool": "b"}, strict=False)
 
         self.assertIn("<dataset>", read_file(self.output))
-        self.assertIn("no replacement for placeholder <dataset>", stdout.getvalue())
+        self.assertIn("no value for placeholder <dataset>", stdout.getvalue())
 
 
 class SettingsTest(unittest.TestCase):
@@ -80,17 +84,18 @@ class SettingsTest(unittest.TestCase):
     def tearDown(self):
         self.tmp.cleanup()
 
-    def test_settings_to_replacements(self):
-        replacements = settings_to_replacements(SETTINGS)
+    def test_settings_to_placeholders(self):
+        values = settings_to_placeholders(SETTINGS)
 
-        self.assertEqual(replacements["cores"], "4")
-        self.assertEqual(replacements["tool"], "/path/to/tool")
-        self.assertNotIn("models", replacements)
-        self.assertNotIn("repositories", replacements)
+        self.assertEqual(values["cores"], "4")
+        self.assertEqual(values["repo:tool"], "/path/to/tool")
+        self.assertNotIn("models", values)
+        self.assertNotIn("repositories", values)
 
-    def test_repository_name_collision(self):
-        with self.assertRaises(ValueError):
-            settings_to_replacements({"tool": "x", "repositories": {"tool": "/path"}})
+    def test_repository_and_setting_of_same_name(self):
+        values = settings_to_placeholders({"tool": "x", "repositories": {"tool": "/path"}})
+
+        self.assertEqual(values, {"tool": "x", "repo:tool": "/path"})
 
     def test_load_settings_missing_keys(self):
         path = write_file(os.path.join(self.tmp.name, "s.json"), json.dumps({"hpc_user": "u1"}))
@@ -112,7 +117,7 @@ class SettingsTest(unittest.TestCase):
 
 
 class MockupTest(unittest.TestCase):
-    """The mockup has no deployment module, so `deploy_process.py` uses the default deployment."""
+    """The mockup has no deployment module, so `scripts/deploy.py` uses the default deployment."""
 
     def setUp(self):
         self.tmp = tempfile.TemporaryDirectory()
@@ -121,22 +126,22 @@ class MockupTest(unittest.TestCase):
         self.tmp.cleanup()
 
     def deploy(self, parameter_file):
-        cmd = [sys.executable, DEPLOY_PROCESS, "-i", MOCKUP_TEMPLATE, "-j", parameter_file, "-s", MOCKUP_SETTINGS]
+        cmd = [sys.executable, DEPLOY_SCRIPT, "-i", MOCKUP_TEMPLATE, "-j", parameter_file, "-s", MOCKUP_SETTINGS]
         return run(cmd, cwd=self.tmp.name)
 
     def test_render_matches_committed_sbatch(self):
-        replacements = settings_to_replacements(load_settings(MOCKUP_SETTINGS))
-        with open(MOCKUP_DATASET) as myfile:
-            replacements.update(json.load(myfile))
+        values = settings_to_placeholders(load_settings(MOCKUP_SETTINGS))
+        with open(MOCKUP_PARAMS) as myfile:
+            values.update(json.load(myfile))
         output = os.path.join(self.tmp.name, "mockup.sbatch")
 
         with contextlib.redirect_stdout(io.StringIO()):
-            replace_substrings_in_file(MOCKUP_TEMPLATE, output, replacements)
+            render_template(MOCKUP_TEMPLATE, output, values)
 
         self.assertEqual(read_file(output), read_file(MOCKUP_SBATCH))
 
     def test_default_deployment(self):
-        result = self.deploy(MOCKUP_DATASET)
+        result = self.deploy(MOCKUP_PARAMS)
 
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertIn("has no deployment module", result.stdout)
@@ -145,7 +150,7 @@ class MockupTest(unittest.TestCase):
         self.assertEqual(read_file(os.path.join(self.tmp.name, sbatch_files[0])), read_file(MOCKUP_SBATCH))
 
     def test_default_deployment_missing_parameter(self):
-        with open(MOCKUP_DATASET) as myfile:
+        with open(MOCKUP_PARAMS) as myfile:
             parameters = json.load(myfile)
         del parameters["dataset"]
         parameter_file = write_file(os.path.join(self.tmp.name, "params.json"), json.dumps(parameters))
@@ -156,6 +161,20 @@ class MockupTest(unittest.TestCase):
         self.assertIn("dataset", result.stderr)
         self.assertNotIn("has no deployment module", result.stdout)
         self.assertEqual(os.listdir(self.tmp.name), ["params.json"])
+
+
+class ProjectModuleTest(unittest.TestCase):
+
+    def test_missing_function_comes_from_default_deployment(self):
+        module = types.ModuleType("slurm_workflows.deployment.partial_deployment")
+        module.prepare_step = lambda *args: None
+
+        with mock.patch.dict(sys.modules, {module.__name__: module}), \
+                mock.patch.object(deploy.os.path, "isfile", return_value=True):
+            functions = deploy.project_module("partial")
+
+        self.assertIs(functions.prepare_step, module.prepare_step)
+        self.assertIs(functions.check_steps, default_deployment.check_steps)
 
 
 class SpeciesTemplateTest(unittest.TestCase):

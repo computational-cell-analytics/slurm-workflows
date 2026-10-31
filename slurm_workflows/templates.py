@@ -9,79 +9,79 @@ import re
 PLACEHOLDER_PATTERN = re.compile(r"<([^>]+)>")
 
 
-def extract_substrings(
-    input_string: str,
+def placeholders_in(
+    text: str,
 ) -> list:
     """Return the placeholder names of a string.
 
     Args:
-        input_string: Text with placeholders in the format `<name>`.
+        text: Text with placeholders in the format `<name>`.
 
     Returns:
         list: The names without `<` and `>`.
     """
-    return PLACEHOLDER_PATTERN.findall(input_string)
+    return PLACEHOLDER_PATTERN.findall(text)
 
 
-def replace_substrings(
+def fill_placeholders(
     lines: list,
-    replacement_dict: dict,
+    placeholder_values: dict,
 ) -> tuple:
     """Fill the placeholders of the lines.
 
     Args:
         lines: Lines of the template.
-        replacement_dict: Dictionary mapping placeholder names to their replacements.
+        placeholder_values: Dictionary mapping placeholder names to their values.
 
     Returns:
         tuple of:
             list - the filled lines
-            set  - the placeholders without a replacement
+            set  - the placeholders without a value
     """
     processed = []
     missing = set()
 
     for line in lines:
-        for substr in extract_substrings(line):
-            if substr in replacement_dict:
-                line = line.replace(f"<{substr}>", str(replacement_dict[substr]))
+        for name in placeholders_in(line):
+            if name in placeholder_values:
+                line = line.replace(f"<{name}>", str(placeholder_values[name]))
             else:
-                missing.add(substr)
+                missing.add(name)
         processed.append(line)
 
     return processed, missing
 
 
-def replace_substrings_in_file(
-    input_filename: str,
-    output_filename: str,
-    replacement_dict: dict,
+def render_template(
+    template_file: str,
+    sbatch_file: str,
+    placeholder_values: dict,
     strict: bool = True,
 ) -> None:
-    """Fill the placeholders of a template file and write the result to a new file.
+    """Fill the placeholders of a template file and write the result to an sbatch script.
 
-    The output file is written only after all lines are processed. An incomplete sbatch script must
+    The sbatch script is written only after all lines are processed. An incomplete sbatch script must
     never reach the disk, because a later call could submit it.
 
     Args:
-        input_filename: Path of the template.
-        output_filename: Path of the sbatch script.
-        replacement_dict: Dictionary mapping placeholder names to their replacements.
-        strict: Raise an error instead of a warning if a placeholder has no replacement.
+        template_file: Path of the template.
+        sbatch_file: Path of the sbatch script.
+        placeholder_values: Dictionary mapping placeholder names to their values.
+        strict: Raise an error instead of a warning if a placeholder has no value.
     """
-    with open(input_filename, "r") as input_file:
-        lines = input_file.readlines()
+    with open(template_file, "r") as myfile:
+        lines = myfile.readlines()
 
-    processed, missing = replace_substrings(lines, replacement_dict)
+    processed, missing = fill_placeholders(lines, placeholder_values)
 
     if missing:
         if strict:
-            raise ValueError(f"Unresolved placeholders in template {input_filename}: {sorted(missing)}. "
+            raise ValueError(f"Unresolved placeholders in template {template_file}: {sorted(missing)}. "
                              "Add them to the parameter file or to the settings file.")
-        for substr in sorted(missing):
-            print(f"Warning: no replacement for placeholder <{substr}>.")
+        for name in sorted(missing):
+            print(f"Warning: no value for placeholder <{name}>.")
 
-    with open(output_filename, "w") as output_file:
-        output_file.writelines(processed)
+    with open(sbatch_file, "w") as myfile:
+        myfile.writelines(processed)
 
-    print(f"Successfully processed {input_filename} and saved output to {output_filename}")
+    print(f"Successfully processed {template_file} and saved output to {sbatch_file}")

@@ -158,7 +158,7 @@ def load_pipeline(
     return pipeline
 
 
-def steps_from(
+def steps_starting_at(
     steps: list,
     start_at: str,
 ) -> list:

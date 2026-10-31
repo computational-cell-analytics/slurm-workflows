@@ -11,7 +11,7 @@ import tempfile
 import unittest
 
 from slurm_workflows.pipelines import load_pipeline, project_of_template, resolve_pipeline, step_template
-from slurm_workflows.templates import replace_substrings_in_file
+from slurm_workflows.templates import render_template
 from stubs import cochlea_net_module, run, write_executable, write_file
 from test_mobie import RCLONE_STUB, REMOTE
 
@@ -98,12 +98,12 @@ class S3TemplateTest(unittest.TestCase):
         write_file(os.path.join(self.bucket, self.COCHLEA, "dataset.json"), json.dumps({"sources": self.sources}))
 
     def run_step(self, step, stain, cochlea_data="", input_key=""):
-        replacements = {"cochlea_job_name": "job", "user_address": "a", "account_name": "b",
-                        "data_dir": self.data_dir, "cochlea": self.COCHLEA, "cochlea_data": cochlea_data,
-                        "input_key": input_key, "s3_remote": REMOTE, "stain": stain}
+        values = {"cochlea_job_name": "job", "user_address": "a", "account_name": "b",
+                  "data_dir": self.data_dir, "cochlea": self.COCHLEA, "cochlea_data": cochlea_data,
+                  "input_key": input_key, "s3_remote": REMOTE, "stain": stain}
         sbatch_file = os.path.join(self.tmp.name, f"{step}.sbatch")
         with contextlib.redirect_stdout(io.StringIO()):
-            replace_substrings_in_file(step_template("cochlea-net", step), sbatch_file, replacements)
+            render_template(step_template("cochlea-net", step), sbatch_file, values)
         return run(["bash", sbatch_file], env=self.env).returncode
 
     def test_download(self):

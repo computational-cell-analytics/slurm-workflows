@@ -48,5 +48,5 @@ rclone --progress copyto "$TABLE_FILE" <s3_remote>/<cochlea>/tables/<prediction_
 # The dataset.json of the S3 bucket lists the sources of every local MoBIE project. The local file
 # must not replace it, so only this segmentation is added. dataset.json comes last, so that the
 # bucket lists the source only after its data is complete.
-python <slurm-workflows>/scripts/add_s3_dataset.py -p "$MOBIE_PROJECT" -r <s3_remote> -d <cochlea> \
+python <repo:slurm-workflows>/scripts/add_s3_dataset.py -p "$MOBIE_PROJECT" -r <s3_remote> -d <cochlea> \
 	--source <prediction_dir>

@@ -1,6 +1,6 @@
 #!/usr/bin/python
 # -- coding: utf-8 --
-"""Tests of `scripts/01_run_sbatch.sh` and of the submission step of `slurm_workflows/deploy.py`.
+"""Tests of `scripts/submit_job.sh` and of the submission step of `slurm_workflows/deploy.py`.
 
 `sbatch` and `reportseff` are stubs, see `test/stubs.py`.
 """
@@ -13,7 +13,7 @@ import unittest
 from unittest import mock
 
 from slurm_workflows import deploy
-from stubs import FIRST_JOBID, RUN_SBATCH, read_file, run, sbatch_calls, stub_env, write_file
+from stubs import FIRST_JOBID, SUBMIT_SCRIPT, read_file, run, sbatch_calls, stub_env, write_file
 
 DATE = "2025-01-01"
 SBATCH_NAME = f"{DATE}_sbatch_x.sbatch"
@@ -38,7 +38,7 @@ class RunSbatchTest(unittest.TestCase):
     def submit(self, *options):
         if not os.path.isfile(self.sbatch_file):
             write_file(self.sbatch_file, "#!/bin/bash\n#SBATCH -t 01:00:00\n")
-        return run(["bash", RUN_SBATCH] + list(options) + [self.sbatch_file], env=self.env)
+        return run(["bash", SUBMIT_SCRIPT] + list(options) + [self.sbatch_file], env=self.env)
 
     def test_first_submission_writes_log(self):
         result = self.submit()
@@ -95,7 +95,7 @@ class SubmitStepTest(unittest.TestCase):
         self.tmp.cleanup()
 
     def submit_step(self, stub):
-        with mock.patch.object(deploy, "RUN_SBATCH_SCRIPT", stub), \
+        with mock.patch.object(deploy, "SUBMIT_SCRIPT", stub), \
                 contextlib.redirect_stdout(io.StringIO()), contextlib.redirect_stderr(io.StringIO()):
             return deploy.submit_step("job.sbatch", "", "repositories.txt")
 

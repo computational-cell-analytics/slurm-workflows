@@ -1,12 +1,12 @@
 #!/usr/bin/python
 # -- coding: utf-8 --
-"""Tests of `scripts/02_archive_scripts.sh`: the transfer of the job files and the log merge."""
+"""Tests of `scripts/archive_job.sh`: the transfer of the job files and the log merge."""
 import os
 import sys
 import tempfile
 import unittest
 
-from stubs import ARCHIVE_SCRIPTS, REPOSITORY_DIR, read_file, run, stub_env, write_file
+from stubs import ARCHIVE_SCRIPT, REPOSITORY_DIR, read_file, run, stub_env, write_file
 
 DATE = "2025-01-01"
 
@@ -28,7 +28,7 @@ class ArchiveTest(unittest.TestCase):
         return write_file(os.path.join(self.input_dir, f"{DATE}_{middle}_{suffix}.{extension}"), content)
 
     def archive(self, suffix, move=False):
-        cmd = ["bash", ARCHIVE_SCRIPTS] + (["-m"] if move else [])
+        cmd = ["bash", ARCHIVE_SCRIPT] + (["-m"] if move else [])
         cmd += ["-i", self.input_dir, "-a", self.archive_dir, DATE, suffix]
         return run(cmd, env=self.env)
 
@@ -36,7 +36,7 @@ class ArchiveTest(unittest.TestCase):
         return os.path.join(self.archive_dir, f"{DATE}_{suffix}")
 
     def submit(self, jobid, suffix="x"):
-        """Add a JobID to the log file of the input directory, as `01_run_sbatch.sh` does."""
+        """Add a JobID to the log file of the input directory, as `submit_job.sh` does."""
         self.job_file("sbatch", suffix, "sbatch", "#!/bin/bash\n")
         log_file = os.path.join(self.input_dir, f"{DATE}_log_{suffix}.txt")
         with open(log_file, "a") as myfile:
@@ -103,7 +103,7 @@ class ArchiveTest(unittest.TestCase):
 
     def test_missing_archive_dir(self):
         self.job_file("sbatch", "x", "sbatch")
-        cmd = ["bash", ARCHIVE_SCRIPTS, "-i", self.input_dir, "-a", os.path.join(self.tmp.name, "none"), DATE, "x"]
+        cmd = ["bash", ARCHIVE_SCRIPT, "-i", self.input_dir, "-a", os.path.join(self.tmp.name, "none"), DATE, "x"]
 
         result = run(cmd, env=self.env)
 
@@ -112,11 +112,11 @@ class ArchiveTest(unittest.TestCase):
 
     def test_cli_wrapper_runs_script(self):
         # `slurm_wf.archive` hands its arguments to the bash script.
-        cmd = [sys.executable, "-c", "from slurm_workflows.cli import archive; archive()", "-h"]
+        cmd = [sys.executable, "-c", "from slurm_workflows.cli import main_archive; main_archive()", "-h"]
         result = run(cmd, cwd=REPOSITORY_DIR)
 
         self.assertEqual(result.returncode, 0, result.stderr)
-        self.assertIn("02_archive_scripts.sh", result.stdout)
+        self.assertIn("archive_job.sh", result.stdout)
 
 
 if __name__ == "__main__":

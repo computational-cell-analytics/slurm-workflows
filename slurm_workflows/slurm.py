@@ -62,15 +62,15 @@ def jobids_from_log(
     return jobids
 
 
-def sbatch_parameters_to_dict(
-    sbatch_file: str,
+def add_sbatch_parameters(
     metadict: dict,
+    sbatch_file: str,
 ) -> None:
     """Add the #SBATCH parameters of an sbatch script to the metadata.
 
     Args:
-        sbatch_file: Path of the sbatch script.
         metadict: Metadata of the job.
+        sbatch_file: Path of the sbatch script.
     """
     with open(sbatch_file, "rt", encoding="utf8", errors="ignore") as myfile:
         for line in myfile:

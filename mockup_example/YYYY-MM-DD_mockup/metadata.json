@@ -13,11 +13,13 @@
 	"Repositories": [
 		{
 			"repo_name": "cochlea-net",
-			"repo_version": "230b80699e90787b9562e27a8662a2842d61b2ee"
+			"repo_version": "230b80699e90787b9562e27a8662a2842d61b2ee",
+			"status": "clean"
 		},
 		{
 			"repo_name": "slurm-workflows",
-			"repo_version": "84c497e2df51a34e296e2abd5b81d921cf4dfa57"
+			"repo_version": "84c497e2df51a34e296e2abd5b81d921cf4dfa57",
+			"status": "clean"
 		}
 	],
 	"Project": "mockup"

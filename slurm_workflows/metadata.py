@@ -9,9 +9,9 @@ import json
 import os
 from typing import List, Optional
 
-from slurm_workflows.repositories import repository_status_to_dict
+from slurm_workflows.repositories import add_repository_status
 from slurm_workflows.settings import USER_SETTINGS, load_settings
-from slurm_workflows.slurm import reportseff_from_jobid, sbatch_parameters_to_dict
+from slurm_workflows.slurm import reportseff_from_jobid, add_sbatch_parameters
 
 METADATA_FILE = "metadata.json"
 SBATCH_FILE = "sbatch.sbatch"
@@ -105,7 +105,7 @@ def init_metadict(
     return {"date": contents[0], "task": "_".join(contents[1:])}
 
 
-def user_to_metadict(
+def add_user(
     metadict: dict,
     settings_file: str = None,
 ) -> None:
@@ -164,11 +164,11 @@ def write_job_metadata(
     else:
         metadict = init_metadict(input_dir)
 
-    user_to_metadict(metadict, settings_file)
-    sbatch_parameters_to_dict(sbatch_file, metadict=metadict)
+    add_user(metadict, settings_file)
+    add_sbatch_parameters(metadict, sbatch_file)
     reportseff_from_jobid(log_file, metadict=metadict, jobid=jobid)
     # A resubmission can run on a newer commit, so the hash is refreshed for an existing file too.
     if repository_file is not None:
-        repository_status_to_dict(repository_file, metadict=metadict)
+        add_repository_status(metadict, repository_file)
 
     write_metadata(metadict, output_file)

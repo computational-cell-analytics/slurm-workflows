@@ -12,7 +12,7 @@ import unittest
 from unittest import mock
 
 from slurm_workflows.metadata import init_metadict
-from slurm_workflows.slurm import jobids_from_log, reportseff_from_jobid, sbatch_parameters_to_dict
+from slurm_workflows.slurm import jobids_from_log, reportseff_from_jobid, add_sbatch_parameters
 from stubs import WRITE_METADATA, run, set_reportseff_output, stub_env, write_file
 
 REPORT_LINES = [
@@ -60,7 +60,7 @@ class SbatchParameterTest(unittest.TestCase):
     def parameters(self, *lines):
         sbatch = write_file(os.path.join(self.tmp.name, "sbatch.sbatch"), "#!/bin/bash\n" + "\n".join(lines) + "\n")
         metadict = {}
-        sbatch_parameters_to_dict(sbatch, metadict)
+        add_sbatch_parameters(metadict, sbatch)
         return metadict
 
     def test_formats(self):

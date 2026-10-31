@@ -73,27 +73,25 @@ def load_settings(
     return settings
 
 
-def settings_to_replacements(
+def settings_to_placeholders(
     settings: dict,
 ) -> dict:
     """Flatten the settings into template placeholders.
 
-    Every scalar entry becomes a placeholder under its own key. The 'repositories' entry is flattened
-    by one level, so that each repository name becomes a placeholder. All other nested entries,
-    such as 'models', give no placeholder.
+    Every scalar entry becomes a placeholder under its own key. Each repository of the 'repositories'
+    entry becomes the placeholder `repo:<name>` with its path. All other nested entries, such as
+    'models', give no placeholder.
 
     Args:
         settings: Output of `load_settings()`.
 
     Returns:
-        dict: Dictionary mapping placeholder names to their replacements.
+        dict: Dictionary mapping placeholder names to their values.
     """
-    replacements = {key: str(value) for key, value in settings.items()
-                    if isinstance(value, (str, int, float))}
+    placeholder_values = {key: str(value) for key, value in settings.items()
+                          if isinstance(value, (str, int, float))}
 
     for name, path in settings.get("repositories", {}).items():
-        if name in replacements:
-            raise ValueError(f"Repository name '{name}' collides with a top-level key of the settings file.")
-        replacements[name] = str(path)
+        placeholder_values[f"repo:{name}"] = str(path)
 
-    return replacements
+    return placeholder_values

@@ -17,7 +17,7 @@ micromamba activate <mobie_environment>
 
 MOBIE_PROJECT=<mobie_project>
 
-INPUT=<mobie_project>/<cochlea>/tables/<marker_prediction>/default.tsv
+INPUT=<mobie_project>/<cochlea>/tables/<synapse_ihc_prediction>/default.tsv
 DATASET_FILE=<mobie_project>/<cochlea>/dataset.json
 
 # The check before the submission reads the rclone remote from this variable.
@@ -36,10 +36,10 @@ done
 # A spot source holds no image data in the bucket, so it needs no remote metadata. Adding it would
 # rewrite the dataset.json of every dataset of the project.
 module load rclone
-rclone --progress copyto "$INPUT" "$S3_REMOTE"/<cochlea>/tables/<marker_prediction>/default.tsv || exit 1
+rclone --progress copyto "$INPUT" "$S3_REMOTE"/<cochlea>/tables/<synapse_ihc_prediction>/default.tsv || exit 1
 
 # The dataset.json of the S3 bucket lists the sources of every local MoBIE project. The local file
 # must not replace it, so only this spot source is added. dataset.json comes last, so that the
 # bucket lists the source only after its table is complete.
-python <slurm-workflows>/scripts/add_s3_dataset.py -p "$MOBIE_PROJECT" -r "$S3_REMOTE" -d <cochlea> \
-	--source <marker_prediction>
+python <repo:slurm-workflows>/scripts/add_s3_dataset.py -p "$MOBIE_PROJECT" -r "$S3_REMOTE" -d <cochlea> \
+	--source <synapse_ihc_prediction>

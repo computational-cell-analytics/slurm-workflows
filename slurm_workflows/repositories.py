@@ -12,7 +12,7 @@ def write_repository_file(
     repositories: dict,
     output_file: str,
 ) -> None:
-    """Write the repositories of the settings in the tab-separated format read by `repository_status_to_dict()`.
+    """Write the repositories of the settings in the tab-separated format read by `add_repository_status()`.
 
     Args:
         repositories: Dictionary mapping repository names to their local paths.
@@ -23,9 +23,9 @@ def write_repository_file(
             myfile.write(f"{name}\t{path}\n")
 
 
-def repository_status_to_dict(
-    repository_file: str,
+def add_repository_status(
     metadict: dict,
+    repository_file: str,
 ) -> None:
     """Add the git hash and the status of each repository to the metadata.
 
@@ -33,8 +33,8 @@ def repository_status_to_dict(
     status is 'clean' or 'dirty'.
 
     Args:
-        repository_file: Path of the repository file.
         metadict: Metadata of the job.
+        repository_file: Path of the repository file.
     """
     repo_list = []
 

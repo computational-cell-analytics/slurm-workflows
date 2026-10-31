@@ -113,6 +113,6 @@ fi
 
 if [ "$ARCHIVE_DIR" ] ; then
 	echo "writing metadata"
-	bash "$SCRIPT_DIR"/02_archive_scripts.sh "${MOVE_OPTION[@]}" -a "$ARCHIVE_DIR" -i "$INPUT_DIR" "$DATE" "$SUFFIX_STR"
+	bash "$SCRIPT_DIR"/archive_job.sh "${MOVE_OPTION[@]}" -a "$ARCHIVE_DIR" -i "$INPUT_DIR" "$DATE" "$SUFFIX_STR"
 	python "$SCRIPT_DIR"/write_metadata.py "${REPO_OPTION[@]}" "${SETTINGS_OPTION[@]}" "$ARCHIVE_DIR"/"$DATE"_"$SUFFIX_STR"/
 fi

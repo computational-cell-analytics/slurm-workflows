@@ -9,7 +9,7 @@ import sys
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.realpath(__file__))))
 
-from slurm_workflows.cli import deploy  # noqa: E402
+from slurm_workflows.cli import main_deploy  # noqa: E402
 
 if __name__ == "__main__":
-    deploy()
+    main_deploy()

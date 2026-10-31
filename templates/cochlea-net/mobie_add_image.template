@@ -1,18 +1,16 @@
 #!/bin/bash
 #SBATCH --job-name=mobie_<cochlea_job_name>
 #SBATCH -t <time>
-#SBATCH --mail-user=<user_address> # change this to your mailaddress
-#SBATCH --mail-type=FAIL        # send mail when job begins and ends
+#SBATCH --mail-user=<user_address>
+#SBATCH --mail-type=FAIL
 
-#SBATCH -p standard96s:shared         # the partition
+#SBATCH -p standard96s:shared
 #SBATCH -A <account_name>
 #SBATCH -c 4
 #SBATCH --mem <mem>
 
 source ~/.bashrc
 micromamba activate <mobie_environment>
-
-# Run the script
 
 MOBIE_PROJECT=<mobie_project>
 

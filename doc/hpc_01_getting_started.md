@@ -50,6 +50,10 @@ micromamba activate cochlea-net
 pip install -e .
 ```
 
+The processing jobs call the commands of cochlea-net, e.g. `flamingo_tools.run_unet_prediction_slurm`.
+The editable install runs the code of the clone, so the git hash in the job archive matches it.
+Run `pip install -e .` again after a pull which adds a command.
+
 3) Install the [MoBIE utils](https://github.com/mobie/mobie-utils-python) in the same environment:
 ```bash
 pip install mobie_utils

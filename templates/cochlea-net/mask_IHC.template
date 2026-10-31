@@ -1,21 +1,16 @@
 #!/bin/bash
 #SBATCH --job-name=mask-IHC_<cochlea_job_name>
 #SBATCH -t <time>
-#SBATCH --mail-user=<user_address> # change this to your mailaddress
-#SBATCH --mail-type=FAIL        # send mail when job begins and ends
+#SBATCH --mail-user=<user_address>
+#SBATCH --mail-type=FAIL
 
-#SBATCH -p standard96s:shared         # the partition
+#SBATCH -p standard96s:shared
 #SBATCH -A <account_name>
 #SBATCH -c 4
 #SBATCH --mem <mem>
 
 source ~/.bashrc
 micromamba activate <cochlea-net_environment>
-
-# Run the script
-
-SCRIPT_REPO=<repo:cochlea-net>
-cd "$SCRIPT_REPO"/flamingo_tools/segmentation/ || exit
 
 export INPUT=<data_dir>/<cochlea>/<cochlea_data>
 export OUTPUT_FOLDER=<data_dir>/predictions/<cochlea>/<prediction_dir>
@@ -38,12 +33,6 @@ if [ ! -d "$OUTPUT_FOLDER" ] ; then
 	mkdir -p "$OUTPUT_FOLDER"
 fi
 
-cmd_array=(	'import os;'
-	'import unet_prediction;'
-	'unet_prediction.run_unet_prediction_preprocess_slurm(input_path=os.environ["INPUT"],'
-	'output_folder=os.environ["OUTPUT_FOLDER"],seg_class=os.environ["SEG_MASKING"],'
-	'absolute_threshold=os.environ["ABSOLUTE_THRESHOLD"],'
-	'input_key=os.environ["INPUT_KEY"])')
-cmd="${cmd_array[*]}"
-python -c "$cmd"
+flamingo_tools.run_unet_prediction_preprocess_slurm --input_path "$INPUT" --input_key "$INPUT_KEY" \
+	--output_folder "$OUTPUT_FOLDER" --seg_class "$SEG_MASKING" --absolute_threshold "$ABSOLUTE_THRESHOLD"
 

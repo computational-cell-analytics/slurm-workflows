@@ -115,7 +115,7 @@ A template is an sbatch script with placeholders in the format `<name>`.
 The deploy step takes the value of a placeholder from these sources:
 
 1. A scalar key of the settings file, e.g. `<data_dir>`.
-2. An entry of `repositories` in the settings file, as `<repo:name>`. The value is the path of the repository, e.g. `<repo:cochlea-net>`.
+2. An entry of `repositories` in the settings file, as `<repo:name>`. The value is the path of the repository, e.g. `<repo:slurm-workflows>`.
 3. A key of the parameter file. A parameter overrides the setting of the same key.
 4. A value which the deployment module of the project adds, e.g. `<prediction_dir>` of `cochlea-net`.
 

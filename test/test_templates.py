@@ -15,7 +15,7 @@ from unittest import mock
 from slurm_workflows import deploy
 from slurm_workflows.projects import default
 from slurm_workflows.settings import load_settings, settings_to_placeholders
-from slurm_workflows.templates import placeholders_in, render_template
+from slurm_workflows.templates import fill_placeholders, placeholders_in, render_template
 from stubs import (MOCKUP_DIR, MOCKUP_PARAMS, MOCKUP_SETTINGS, MOCKUP_TEMPLATE, REPOSITORY_DIR, read_file, run,
                    write_file)
 
@@ -45,6 +45,15 @@ class TemplateTest(unittest.TestCase):
 
     def test_placeholders_in(self):
         self.assertEqual(placeholders_in("a <b> c <d-e> f <repo:g>"), ["b", "d-e", "repo:g"])
+
+    def test_shell_code_and_escape_are_no_placeholders(self):
+        self.assertEqual(placeholders_in("cmd < in > out; cat <<EOF >> log; echo \\<b>"), [])
+
+    def test_escape_and_value_with_brackets(self):
+        lines, missing = fill_placeholders(["echo \\<b> <a>\n"], {"a": "<b>", "b": "x"})
+
+        self.assertEqual(lines, ["echo <b> <b>\n"])
+        self.assertEqual(missing, set())
 
     def test_all_placeholders_filled(self):
         values = {"user_address": "me@example.org", "repo:tool": "/opt/tool", "dataset": "cifar10"}

@@ -121,8 +121,8 @@ The deploy step takes the value of a placeholder from these sources:
 
 A placeholder without a value raises an error, so that no incomplete sbatch script is written.
 The option `--allow-missing` changes the error into a warning.
-Every text `<...>` in one line is a placeholder, and there is no escape.
-Do not put a `<` and a `>` in the same line of shell code, e.g. `cmd < in > out`.
+A placeholder name holds no space, `<` or `>`, so shell code such as `cmd < in > out` is no placeholder.
+Write `\<name>` for the literal text `<name>`.
 
 The deploy step writes the sbatch script `<date>_sbatch_<name>.sbatch` into the current directory.
 `<name>` is the name of the template, or the name which the deployment module gives.
@@ -140,9 +140,9 @@ The deploy step reads these shell variables from the sbatch script before the su
 | `EXISTING_OUTPUT` | A result which the job builds again does not exist yet. |
 | `OUTPUT_FOLDER`, `INPUT_KEY`, `S3_REMOTE` | The deployment module can check them. `cochlea-net` checks for an earlier prediction and for the rclone remote. |
 
-Write each variable on its own line as `VAR=value` or `export VAR=value`.
-The value must not contain a space.
-The deploy step does not check a value which is not an absolute path.
+Write a variable as `VAR=value` or `export VAR=value`, as in the shell.
+A quoted value can contain a space, and one line can hold several assignments.
+The deploy step does not expand a variable in a value, and does not check a value which is not an absolute path.
 A template without these variables gets no check before the submission.
 
 ### Warnings

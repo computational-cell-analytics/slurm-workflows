@@ -9,7 +9,9 @@ import re
 
 TEMPLATE_SUFFIX = ".template"
 
-PLACEHOLDER_PATTERN = re.compile(r"<([^>]+)>")
+# A placeholder name holds no whitespace, '<' or '>'. A backslash before it gives the literal text,
+# e.g. '\<name>' gives '<name>'.
+PLACEHOLDER_PATTERN = re.compile(r"(\\?)<([^<>\s]+)>")
 
 
 def project_of_template(
@@ -51,16 +53,18 @@ def placeholders_in(
         text: Text with placeholders in the format `<name>`.
 
     Returns:
-        list: The names without `<` and `>`.
+        list: The names without `<` and `>`. An escaped placeholder is left out.
     """
-    return PLACEHOLDER_PATTERN.findall(text)
+    return [name for escape, name in PLACEHOLDER_PATTERN.findall(text) if not escape]
 
 
 def fill_placeholders(
     lines: list,
     placeholder_values: dict,
 ) -> tuple:
-    """Fill the placeholders of the lines.
+    """Fill the placeholders of the lines, and remove the backslash of an escaped placeholder.
+
+    A value is not searched for placeholders, so a value which holds `<name>` stays as it is.
 
     Args:
         lines: Lines of the template.
@@ -71,18 +75,18 @@ def fill_placeholders(
             list - the filled lines
             set  - the placeholders without a value
     """
-    processed = []
     missing = set()
 
-    for line in lines:
-        for name in placeholders_in(line):
-            if name in placeholder_values:
-                line = line.replace(f"<{name}>", str(placeholder_values[name]))
-            else:
-                missing.add(name)
-        processed.append(line)
+    def fill(match):
+        escape, name = match.groups()
+        if escape:
+            return f"<{name}>"
+        if name in placeholder_values:
+            return str(placeholder_values[name])
+        missing.add(name)
+        return match.group(0)
 
-    return processed, missing
+    return [PLACEHOLDER_PATTERN.sub(fill, line) for line in lines], missing
 
 
 def render_template(

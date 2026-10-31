@@ -8,14 +8,18 @@ job would rebuild exists already.
 import glob
 import os
 import re
+import shlex
 
-# Matches 'INPUT=<path>' and 'export OUTPUT_FOLDER=<path>' in a rendered sbatch script.
+# The variables of a rendered sbatch script which the deploy step reads:
+# 'INPUT' and 'OUTPUT_FOLDER' name the input and the result folder of the job.
 # 'EXTERNAL_INPUT' names an input which no step of the pipeline produces, see 'check_external_input()'.
 # 'EXISTING_OUTPUT' names a result which the job would rebuild, see 'check_output_absent()'.
 # 'S3_REMOTE' names the rclone remote of a transfer job in the form remote:bucket.
 # 'INPUT_KEY' names the dataset inside INPUT, which a project can check.
-ASSIGNMENT_PATTERN = re.compile(
-    r"^\s*(?:export\s+)?(INPUT|INPUT_KEY|OUTPUT_FOLDER|EXTERNAL_INPUT|EXISTING_OUTPUT|S3_REMOTE)=(\S+)")
+JOB_VARIABLES = ("INPUT", "INPUT_KEY", "OUTPUT_FOLDER", "EXTERNAL_INPUT", "EXISTING_OUTPUT", "S3_REMOTE")
+
+# A line which starts with an assignment, optionally after 'export'.
+ASSIGNMENT_PATTERN = re.compile(r"^\s*(?:export\s+)?[A-Za-z_][A-Za-z0-9_]*=")
 
 WILDCARD_CHARACTERS = "*?["
 
@@ -23,9 +27,12 @@ WILDCARD_CHARACTERS = "*?["
 def job_variables(
     sbatch_file: str,
 ) -> dict:
-    """Read the INPUT, INPUT_KEY, OUTPUT_FOLDER, EXTERNAL_INPUT, EXISTING_OUTPUT and S3_REMOTE assignments of a job.
+    """Read the assignments of the `JOB_VARIABLES` in a job.
 
-    A variable which is assigned more than once keeps the value of the last assignment.
+    A line is split like a shell line, so a quoted value can hold a space, a comment is dropped, and
+    one line can hold several assignments, e.g. `export INPUT=/a OUTPUT_FOLDER=/b`. A variable which
+    is assigned more than once keeps the value of the last assignment. A variable in a value is not
+    expanded.
 
     Args:
         sbatch_file: Path of an sbatch script with all placeholders filled in.
@@ -37,9 +44,16 @@ def job_variables(
 
     with open(sbatch_file, "rt", encoding="utf8", errors="ignore") as myfile:
         for line in myfile:
-            match = ASSIGNMENT_PATTERN.match(line)
-            if match:
-                variables[match.group(1)] = match.group(2).strip("\"'")
+            if not ASSIGNMENT_PATTERN.match(line):
+                continue
+            try:
+                tokens = shlex.split(line, comments=True)
+            except ValueError:
+                continue
+            for token in tokens:
+                name, separator, value = token.partition("=")
+                if separator and name in JOB_VARIABLES:
+                    variables[name] = value
 
     return variables
 

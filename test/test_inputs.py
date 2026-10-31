@@ -36,6 +36,12 @@ class InputCheckTest(unittest.TestCase):
 
         self.assertEqual(job_variables(sbatch), {"INPUT": "/second", "OUTPUT_FOLDER": "/out"})
 
+    def test_job_variables_like_the_shell(self):
+        sbatch = self.sbatch('export INPUT="/a b/c.n5"  # the input', "OUTPUT_FOLDER=/out INPUT_KEY=s0",
+                             "INPUT_DIR=/ignored", "EXTERNAL_INPUT='unbalanced")
+
+        self.assertEqual(job_variables(sbatch), {"INPUT": "/a b/c.n5", "OUTPUT_FOLDER": "/out", "INPUT_KEY": "s0"})
+
     def test_no_input(self):
         self.assertEqual(check_job_input(self.sbatch("echo hi")), [])
 

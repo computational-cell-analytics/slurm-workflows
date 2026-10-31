@@ -112,6 +112,7 @@ def deploy_jobs(
     # Render every step before anything is submitted, so that an unresolved placeholder of a later
     # step cannot leave the earlier steps of the chain queued.
     sbatch_files = []
+    step_values = []
     for template_file in template_files:
         # A parameter of the job overrides the corresponding setting.
         placeholder_values = settings_to_placeholders(settings)
@@ -122,6 +123,7 @@ def deploy_jobs(
         sbatch_file = f"{str(date.today())}_sbatch_{script_name}.sbatch"
         render_template(template_file, sbatch_file, placeholder_values, strict=not args.allow_missing)
         sbatch_files.append(sbatch_file)
+        step_values.append(placeholder_values)
 
     if module is default:
         print(f"Note: project '{project}' has no deployment module. "
@@ -143,10 +145,9 @@ def deploy_jobs(
             print(f"The input of {sbatch_file} is verified when the job runs.")
 
     if not args.submit:
-        if args.pipeline is None:
-            print(placeholder_values)
-        else:
-            print("The pipeline is not submitted. Use --submit to submit the chain.")
+        for sbatch_file, placeholder_values in zip(sbatch_files, step_values):
+            print(f"Placeholder values of {sbatch_file}: {placeholder_values}")
+        print("Nothing is submitted. Use --submit to submit the jobs.")
         return
 
     if warnings and not args.force:

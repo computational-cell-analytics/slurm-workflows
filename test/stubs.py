@@ -4,7 +4,6 @@
 
 The stubs replace `sbatch` and `reportseff`, so the tests run on any machine.
 """
-import importlib
 import os
 import subprocess
 import sys
@@ -144,15 +143,6 @@ def run(
     """
     return subprocess.run(cmd, env=env, cwd=cwd, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
                           universal_newlines=True)
-
-
-def cochlea_net_module():
-    """Import the deployment module of cochlea-net, whose name holds a hyphen.
-
-    Returns:
-        module: `slurm_workflows/deployment/cochlea-net_deployment.py`.
-    """
-    return importlib.import_module("slurm_workflows.deployment.cochlea-net_deployment")
 
 
 def write_file(

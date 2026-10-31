@@ -2,13 +2,14 @@
 # -- coding: utf-8 --
 """author: Martin Schilling (martin.schilling@med.uni-goettingen.de), 2025
 
-Deployment of a project without its own module `slurm_workflows/deployment/<project>_deployment.py`.
+Deployment of a project without its own module `slurm_workflows/projects/<project>/deployment.py`.
 The placeholders are filled from the settings and the job parameters only. A project module takes
 each function which it does not define from this module.
 """
 import os
 
-from slurm_workflows.pipelines import STEPS_KEY, TEMPLATE_SUFFIX, step_template
+from slurm_workflows.pipelines import STEPS_KEY
+from slurm_workflows.templates import TEMPLATE_SUFFIX, step_template
 
 
 def add_arguments(
@@ -27,12 +28,12 @@ def select_steps(
 
 
 def resolve_template(
-    project: str,
+    template_dir: str,
     step: str,
     parameters: dict,
 ) -> str:
     """Return the template of the step."""
-    return step_template(project, step)
+    return step_template(template_dir, step)
 
 
 def prepare_step(

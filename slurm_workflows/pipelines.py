@@ -2,56 +2,21 @@
 # -- coding: utf-8 --
 """author: Martin Schilling (martin.schilling@med.uni-goettingen.de), 2025
 
-Access to the projects, their templates and their pipeline definitions. A pipeline is an ordered
-list of templates which is submitted as a chain of Slurm jobs.
+Access to the pipeline definitions. A pipeline is an ordered list of templates which is submitted as
+a chain of Slurm jobs.
 """
 import glob
 import json
 import os
 
-REPOSITORY_DIR = os.path.dirname(os.path.dirname(os.path.realpath(__file__)))
+from slurm_workflows import REPOSITORY_DIR
+from slurm_workflows.templates import step_template
 
-# Each project has one subfolder of the same name in both directories.
+# Each project has one subfolder of the same name in this directory.
 PIPELINE_ROOT = os.path.join(REPOSITORY_DIR, "pipelines")
-TEMPLATE_ROOT = os.path.join(REPOSITORY_DIR, "templates")
-
-TEMPLATE_SUFFIX = ".template"
 
 # Steps of a pipeline, in the order in which they are submitted.
 STEPS_KEY = "steps"
-
-
-def projects() -> list:
-    """List the names of the projects.
-
-    Returns:
-        list: Sorted names of the subfolders of the template directory.
-    """
-    return sorted(name for name in os.listdir(TEMPLATE_ROOT)
-                  if os.path.isdir(os.path.join(TEMPLATE_ROOT, name)))
-
-
-def project_of_template(
-    template_file: str,
-) -> str:
-    """Return the project of a template.
-
-    A template in `templates/` belongs to the first folder below it, so a template in the species
-    folder `templates/<project>/<species>/` belongs to the project as well. Any other template
-    belongs to the name of its folder.
-
-    Args:
-        template_file: Path of the template.
-
-    Returns:
-        str: Name of the project.
-    """
-    template_path = os.path.realpath(template_file)
-    relative_path = os.path.relpath(template_path, TEMPLATE_ROOT)
-    if not relative_path.startswith(os.pardir):
-        return relative_path.split(os.sep)[0]
-
-    return os.path.basename(os.path.dirname(template_path))
 
 
 def pipeline_names() -> list:
@@ -76,7 +41,7 @@ def resolve_pipeline(
         tuple of str: the project, and the path of the pipeline file.
     """
     if os.path.isfile(name):
-        return project_of_template(name), name
+        return os.path.basename(os.path.dirname(os.path.realpath(name))), name
 
     project, _, pipeline = name.partition("/")
     pipeline_file = os.path.join(PIPELINE_ROOT, project, f"{pipeline}.json")
@@ -87,40 +52,42 @@ def resolve_pipeline(
     return project, pipeline_file
 
 
-def step_template(
-    project: str,
-    step: str,
-) -> str:
-    """Return the template path of a pipeline step.
-
-    Args:
-        project: Name of the project.
-        step: Name of the step, which is the template name without the suffix.
-
-    Returns:
-        str: Path of the template file.
-    """
-    return os.path.join(TEMPLATE_ROOT, project, f"{step}{TEMPLATE_SUFFIX}")
-
-
 def missing_templates(
-    project: str,
+    template_dir: str,
     steps: list,
 ) -> list:
     """Return the steps which have no template.
 
     Args:
-        project: Name of the project.
+        template_dir: Template folder of the project.
         steps: Names of the steps.
 
     Returns:
         list: Steps without a template file.
     """
-    return [step for step in steps if not os.path.isfile(step_template(project, step))]
+    return [step for step in steps if not os.path.isfile(step_template(template_dir, step))]
+
+
+def pipeline_template_dir(
+    pipeline_file: str,
+) -> str:
+    """Return the template folder of a pipeline.
+
+    A pipeline `<root>/pipelines/<project>/<name>.json` reads its templates from
+    `<root>/templates/<project>/`, so a project outside of this repository can bring its own templates.
+
+    Args:
+        pipeline_file: Path of the pipeline file.
+
+    Returns:
+        str: Path of the template folder.
+    """
+    project_dir = os.path.dirname(os.path.realpath(pipeline_file))
+    root = os.path.dirname(os.path.dirname(project_dir))
+    return os.path.join(root, "templates", os.path.basename(project_dir))
 
 
 def load_pipeline(
-    project: str,
     pipeline_file: str,
 ) -> dict:
     """Read and validate a pipeline definition.
@@ -129,11 +96,10 @@ def load_pipeline(
     earlier steps of the chain submitted. A project can add its own keys to the definition.
 
     Args:
-        project: Name of the project.
         pipeline_file: Path of the pipeline file.
 
     Returns:
-        dict: Content of the pipeline file, with the key 'name' added.
+        dict: Content of the pipeline file, with the keys 'name' and 'template_dir' added.
     """
     with open(pipeline_file, "r") as myfile:
         try:
@@ -149,11 +115,14 @@ def load_pipeline(
     if not steps:
         raise ValueError(f"Pipeline file {pipeline_file} has no steps.")
 
-    missing = missing_templates(project, steps)
+    template_dir = pipeline_template_dir(pipeline_file)
+    missing = missing_templates(template_dir, steps)
     if missing:
-        raise ValueError(f"Pipeline file {pipeline_file} refers to steps without a template: {missing}.")
+        raise ValueError(f"Pipeline file {pipeline_file} refers to steps without a template in {template_dir}: "
+                         f"{missing}.")
 
     pipeline["name"] = os.path.basename(pipeline_file)[:-len(".json")]
+    pipeline["template_dir"] = template_dir
 
     return pipeline
 

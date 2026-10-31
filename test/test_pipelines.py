@@ -10,20 +10,23 @@ import os
 import tempfile
 import unittest
 
-from slurm_workflows.pipelines import load_pipeline, project_of_template, resolve_pipeline, step_template
-from slurm_workflows.templates import render_template
-from stubs import cochlea_net_module, run, write_executable, write_file
+from slurm_workflows.pipelines import load_pipeline, resolve_pipeline
+from slurm_workflows.projects.cochlea_net import deployment
+from slurm_workflows.templates import TEMPLATE_ROOT, project_of_template, render_template, step_template
+from stubs import run, write_executable, write_file
 from test_mobie import RCLONE_STUB, REMOTE
 
 SETTINGS = {"mobie_project": "/path/to/mobie_project"}
+
+TEMPLATE_DIR = os.path.join(TEMPLATE_ROOT, "cochlea-net")
 
 
 class SelectStepsTest(unittest.TestCase):
 
     def setUp(self):
-        self.module = cochlea_net_module()
-        project, pipeline_file = resolve_pipeline("cochlea-net/sgn")
-        self.definition = load_pipeline(project, pipeline_file)
+        self.module = deployment
+        _, pipeline_file = resolve_pipeline("cochlea-net/sgn")
+        self.definition = load_pipeline(pipeline_file)
 
     def select(self, settings=SETTINGS, no_mobie=False, no_cleanup=False, download=False, cleanup_input=False):
         args = argparse.Namespace(no_mobie=no_mobie, no_cleanup=no_cleanup, download=download,
@@ -103,7 +106,7 @@ class S3TemplateTest(unittest.TestCase):
                   "input_key": input_key, "s3_remote": REMOTE, "stain": stain}
         sbatch_file = os.path.join(self.tmp.name, f"{step}.sbatch")
         with contextlib.redirect_stdout(io.StringIO()):
-            render_template(step_template("cochlea-net", step), sbatch_file, values)
+            render_template(step_template(TEMPLATE_DIR, step), sbatch_file, values)
         return run(["bash", sbatch_file], env=self.env).returncode
 
     def test_download(self):
@@ -155,22 +158,22 @@ class S3TemplateTest(unittest.TestCase):
 class ResolveTemplateTest(unittest.TestCase):
 
     def setUp(self):
-        self.module = cochlea_net_module()
+        self.module = deployment
 
     def resolve(self, cochlea, step):
         with contextlib.redirect_stdout(io.StringIO()):
-            return self.module.resolve_template("cochlea-net", step, {"cochlea": cochlea})
+            return self.module.resolve_template(TEMPLATE_DIR, step, {"cochlea": cochlea})
 
     def test_species_template(self):
         self.assertEqual(self.resolve("G_EK_000071_L", "apply_SGN"),
-                         step_template("cochlea-net", os.path.join("G", "apply_SGN")))
+                         step_template(TEMPLATE_DIR, os.path.join("G", "apply_SGN")))
 
     def test_default_template(self):
-        self.assertEqual(self.resolve("M_AMD_000137_L", "apply_SGN"), step_template("cochlea-net", "apply_SGN"))
-        self.assertEqual(self.resolve("G_EK_000071_L", "cleanup_IHC"), step_template("cochlea-net", "cleanup_IHC"))
+        self.assertEqual(self.resolve("M_AMD_000137_L", "apply_SGN"), step_template(TEMPLATE_DIR, "apply_SGN"))
+        self.assertEqual(self.resolve("G_EK_000071_L", "cleanup_IHC"), step_template(TEMPLATE_DIR, "cleanup_IHC"))
 
     def test_project_of_species_template(self):
-        species_template = step_template("cochlea-net", os.path.join("G", "apply_SGN"))
+        species_template = step_template(TEMPLATE_DIR, os.path.join("G", "apply_SGN"))
 
         self.assertEqual(project_of_template(species_template), "cochlea-net")
 

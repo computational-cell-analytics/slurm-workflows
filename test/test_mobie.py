@@ -1,7 +1,7 @@
 #!/usr/bin/python
 # -- coding: utf-8 --
-"""Tests of `slurm_workflows/mobie.py`: the dataset list of the project.json, in the S3 bucket and local, and
-the sources of the dataset.json in the S3 bucket."""
+"""Tests of `slurm_workflows/projects/cochlea_net/mobie.py`: the dataset list of the project.json, in the S3
+bucket and local, and the sources of the dataset.json in the S3 bucket."""
 import json
 import os
 import tempfile
@@ -10,7 +10,7 @@ from unittest import mock
 
 from stubs import read_file, write_executable, write_file
 
-from slurm_workflows import mobie
+from slurm_workflows.projects.cochlea_net import mobie
 
 REMOTE = "remote:bucket"
 
@@ -88,7 +88,7 @@ class ProjectTest(RcloneStubTest):
 
     def test_copy_of_a_slurm_job_holds_the_jobid(self):
         with mock.patch.dict(os.environ, {"SLURM_JOB_ID": "123"}):
-            with mock.patch("slurm_workflows.mobie.rclone", wraps=mobie.rclone) as rclone_mock:
+            with mock.patch("slurm_workflows.projects.cochlea_net.mobie.rclone", wraps=mobie.rclone) as rclone_mock:
                 mobie.add_s3_dataset(self.mobie_project, REMOTE, "M_AMD_000058_L")
 
         local_file = os.path.join(self.mobie_project, "tmp_123_project.json")
@@ -104,7 +104,7 @@ class ProjectTest(RcloneStubTest):
                 write_file(self.remote_file, concurrent)
             return real_rclone(args)
 
-        with mock.patch("slurm_workflows.mobie.rclone", side_effect=rclone_with_concurrent_write):
+        with mock.patch("slurm_workflows.projects.cochlea_net.mobie.rclone", side_effect=rclone_with_concurrent_write):
             with self.assertRaises(ValueError):
                 mobie.add_s3_dataset(self.mobie_project, REMOTE, "M_AMD_000058_L")
 

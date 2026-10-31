@@ -2,11 +2,57 @@
 # -- coding: utf-8 --
 """author: Martin Schilling (martin.schilling@med.uni-goettingen.de), 2025
 
-Filling of the placeholders of an sbatch template.
+Access to the templates of the projects, and filling of their placeholders.
 """
+import os
 import re
 
+from slurm_workflows import REPOSITORY_DIR
+
+TEMPLATE_ROOT = os.path.join(REPOSITORY_DIR, "templates")
+
+TEMPLATE_SUFFIX = ".template"
+
 PLACEHOLDER_PATTERN = re.compile(r"<([^>]+)>")
+
+
+def project_of_template(
+    template_file: str,
+) -> str:
+    """Return the project of a template.
+
+    A template in `templates/` belongs to the first folder below it, so a template in the species
+    folder `templates/<project>/<species>/` belongs to the project as well. Any other template
+    belongs to the name of its folder.
+
+    Args:
+        template_file: Path of the template.
+
+    Returns:
+        str: Name of the project.
+    """
+    template_path = os.path.realpath(template_file)
+    relative_path = os.path.relpath(template_path, TEMPLATE_ROOT)
+    if not relative_path.startswith(os.pardir):
+        return relative_path.split(os.sep)[0]
+
+    return os.path.basename(os.path.dirname(template_path))
+
+
+def step_template(
+    template_dir: str,
+    step: str,
+) -> str:
+    """Return the template path of a pipeline step.
+
+    Args:
+        template_dir: Template folder of the project.
+        step: Name of the step, which is the template name without the suffix.
+
+    Returns:
+        str: Path of the template file.
+    """
+    return os.path.join(template_dir, f"{step}{TEMPLATE_SUFFIX}")
 
 
 def placeholders_in(

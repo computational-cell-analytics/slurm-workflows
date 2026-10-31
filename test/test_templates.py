@@ -14,10 +14,9 @@ import unittest
 from unittest import mock
 
 from slurm_workflows import deploy
-from slurm_workflows.deployment import default_deployment
-from slurm_workflows.pipelines import TEMPLATE_ROOT, TEMPLATE_SUFFIX
+from slurm_workflows.projects import default
 from slurm_workflows.settings import load_settings, settings_to_placeholders
-from slurm_workflows.templates import placeholders_in, render_template
+from slurm_workflows.templates import TEMPLATE_ROOT, TEMPLATE_SUFFIX, placeholders_in, render_template
 from stubs import MOCKUP_DIR, REPOSITORY_DIR, read_file, run, write_file
 
 MOCKUP_TEMPLATE = os.path.join(MOCKUP_DIR, "templates", "mockup", "mockup.template")
@@ -166,7 +165,7 @@ class MockupTest(unittest.TestCase):
 class ProjectModuleTest(unittest.TestCase):
 
     def test_missing_function_comes_from_default_deployment(self):
-        module = types.ModuleType("slurm_workflows.deployment.partial_deployment")
+        module = types.ModuleType("slurm_workflows.projects.partial.deployment")
         module.prepare_step = lambda *args: None
 
         with mock.patch.dict(sys.modules, {module.__name__: module}), \
@@ -174,7 +173,7 @@ class ProjectModuleTest(unittest.TestCase):
             functions = deploy.project_module("partial")
 
         self.assertIs(functions.prepare_step, module.prepare_step)
-        self.assertIs(functions.check_steps, default_deployment.check_steps)
+        self.assertIs(functions.check_steps, default.check_steps)
 
 
 class SpeciesTemplateTest(unittest.TestCase):

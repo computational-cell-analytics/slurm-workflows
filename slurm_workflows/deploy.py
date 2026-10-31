@@ -15,10 +15,11 @@ import tempfile
 import types
 from datetime import date
 
-from slurm_workflows.deployment import default_deployment
+from slurm_workflows import REPOSITORY_DIR
 from slurm_workflows.inputs import check_external_input, check_job_input, check_output_absent
 from slurm_workflows.metadata import METADATA_FILE, read_metadata, write_metadata
-from slurm_workflows.pipelines import REPOSITORY_DIR, load_pipeline, resolve_pipeline, steps_starting_at
+from slurm_workflows.pipelines import load_pipeline, resolve_pipeline, steps_starting_at
+from slurm_workflows.projects import default
 from slurm_workflows.repositories import write_repository_file
 from slurm_workflows.settings import blueprint_settings_file, load_settings, settings_file, settings_to_placeholders
 from slurm_workflows.templates import render_template
@@ -166,19 +167,19 @@ def project_module(
     default deployment supplies the other functions of `DEPLOYMENT_FUNCTIONS`.
 
     Args:
-        project: Name of the project.
+        project: Name of the project. A hyphen becomes an underscore in the package name.
 
     Returns:
-        `slurm_workflows/deployment/default_deployment.py` if the project has no module, else a
-        namespace with the functions of `DEPLOYMENT_FUNCTIONS`.
+        `slurm_workflows/projects/default.py` if the project has no module, else a namespace with the
+        functions of `DEPLOYMENT_FUNCTIONS`.
     """
-    module_file = os.path.join(REPOSITORY_DIR, "slurm_workflows", "deployment", f"{project}_deployment.py")
+    package = project.replace("-", "_")
+    module_file = os.path.join(REPOSITORY_DIR, "slurm_workflows", "projects", package, "deployment.py")
     if not os.path.isfile(module_file):
-        return default_deployment
+        return default
 
-    # The module name contains the project name, which may hold a hyphen, so it needs importlib.
-    module = importlib.import_module(f"slurm_workflows.deployment.{project}_deployment")
-    return types.SimpleNamespace(**{name: getattr(module, name, getattr(default_deployment, name))
+    module = importlib.import_module(f"slurm_workflows.projects.{package}.deployment")
+    return types.SimpleNamespace(**{name: getattr(module, name, getattr(default, name))
                                     for name in DEPLOYMENT_FUNCTIONS})
 
 
@@ -233,14 +234,15 @@ def deploy_jobs(
         definition = None
     else:
         _, pipeline_file = resolve_pipeline(args.pipeline)
-        definition = load_pipeline(project, pipeline_file)
+        definition = load_pipeline(pipeline_file)
         if definition.get("description") is not None:
             print(f"Pipeline {definition['name']}: {definition['description']}")
         # The steps are selected before '--start-at', so that a step which the project adds can be resumed.
         step_names = module.select_steps(definition, settings, args)
         if args.start_at is not None:
             step_names = steps_starting_at(step_names, args.start_at)
-        template_files = [module.resolve_template(project, step, parameters) for step in step_names]
+        template_files = [module.resolve_template(definition["template_dir"], step, parameters)
+                          for step in step_names]
 
     # Render every step before anything is submitted, so that an unresolved placeholder of a later
     # step cannot leave the earlier steps of the chain queued.
@@ -256,7 +258,7 @@ def deploy_jobs(
         render_template(template_file, sbatch_file, placeholder_values, strict=not args.allow_missing)
         sbatch_files.append(sbatch_file)
 
-    if module is default_deployment:
+    if module is default:
         print(f"Note: project '{project}' has no deployment module. "
               "The placeholders were filled from the settings and the parameters only.")
 

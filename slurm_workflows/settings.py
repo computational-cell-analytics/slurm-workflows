@@ -7,7 +7,7 @@ Access to the settings of a project: the paths and names which are specific to a
 import json
 import os
 
-REPOSITORY_DIR = os.path.dirname(os.path.dirname(os.path.realpath(__file__)))
+from slurm_workflows import REPOSITORY_DIR
 
 SETTINGS_DIR = os.path.join(REPOSITORY_DIR, "project_settings")
 

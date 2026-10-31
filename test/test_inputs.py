@@ -11,9 +11,9 @@ import tempfile
 import unittest
 from unittest import mock
 
-from slurm_workflows import mobie
+from slurm_workflows.projects.cochlea_net import deployment, mobie
 from slurm_workflows.inputs import check_external_input, check_job_input, check_output_absent, job_variables
-from stubs import cochlea_net_module, write_file
+from stubs import write_file
 
 
 class InputCheckTest(unittest.TestCase):
@@ -77,7 +77,7 @@ class ResolveInputTest(unittest.TestCase):
     def setUp(self):
         self.tmp = tempfile.TemporaryDirectory()
         self.cochlea_dir = os.path.join(self.tmp.name, self.COCHLEA)
-        self.module = cochlea_net_module()
+        self.module = deployment
 
     def tearDown(self):
         self.tmp.cleanup()
@@ -190,7 +190,7 @@ class SynapseNameTest(unittest.TestCase):
     """The name of the synapse jobs is also the MoBIE source, so `add_s3_dataset --check` must accept it."""
 
     def test_synapse_ihc_prediction_name(self):
-        module = cochlea_net_module()
+        module = deployment
         cases = [(("CTBP2", "synapses_v3", "Vglut3", "IHC_v11"), "synapse_v3_ihc_v11"),
                  (("Homer1", "synapse_v3", "Vglut3", "IHC_v4b"), "Homer1_synapse_v3_ihc_v4b"),
                  (("CTBP2", "synapse_v3", "Myo7a", "IHC_v11"), "synapse_v3_ihc_myo7a_v11")]
@@ -204,7 +204,7 @@ class PreviousRunTest(unittest.TestCase):
 
     def setUp(self):
         self.tmp = tempfile.TemporaryDirectory()
-        self.module = cochlea_net_module()
+        self.module = deployment
         self.sbatch = write_file(os.path.join(self.tmp.name, "job.sbatch"),
                                  f"#!/bin/bash\nexport OUTPUT_FOLDER={self.tmp.name}\n")
 
@@ -225,7 +225,7 @@ class RcloneRemoteTest(unittest.TestCase):
     def setUp(self):
         self.tmp = tempfile.TemporaryDirectory()
         self.config = os.path.join(self.tmp.name, "rclone.conf")
-        self.module = cochlea_net_module()
+        self.module = deployment
 
     def tearDown(self):
         self.tmp.cleanup()

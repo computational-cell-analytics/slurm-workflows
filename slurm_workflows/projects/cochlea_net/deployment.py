@@ -11,10 +11,9 @@ import shlex
 import sys
 
 from slurm_workflows.inputs import job_variables, path_exists
-from slurm_workflows.mobie import DATASET_FILE, IMAGE_DIR, OME_ZARR, rclone, s3_datasets
-from slurm_workflows.pipelines import missing_templates, step_template
-
-PROJECT = "cochlea-net"
+from slurm_workflows.pipelines import missing_templates
+from slurm_workflows.projects.cochlea_net.mobie import DATASET_FILE, IMAGE_DIR, OME_ZARR, rclone, s3_datasets
+from slurm_workflows.templates import step_template
 
 # Written by the apply step. It is the input of the segmentation step.
 SEGMENTATION_INPUT = "predictions.zarr"
@@ -137,7 +136,7 @@ def select_steps(
         if not isinstance(definition.get(key, []), list):
             raise ValueError(f"Pipeline {definition['name']} needs a list of steps for '{key}'.")
 
-        missing = missing_templates(PROJECT, definition.get(key, []))
+        missing = missing_templates(definition["template_dir"], definition.get(key, []))
         if missing:
             raise ValueError(f"Pipeline {definition['name']} refers to steps without a template: {missing}.")
 
@@ -175,28 +174,28 @@ def select_steps(
 
 
 def species_template(
-    project: str,
+    template_dir: str,
     step: str,
     species: str,
 ) -> str:
     """Return the template of a step in the folder of a species.
 
     Args:
-        project: Name of the project.
+        template_dir: Template folder of the project.
         step: Name of the step.
         species: Species code of the cochlea, e.g. `G`.
 
     Returns:
         str: Path of the template, or None if the species folder has no template for the step.
     """
-    template = step_template(project, os.path.join(species, step))
+    template = step_template(template_dir, os.path.join(species, step))
     if species and os.path.isfile(template):
         return template
     return None
 
 
 def resolve_template(
-    project: str,
+    template_dir: str,
     step: str,
     parameters: dict,
 ) -> str:
@@ -207,7 +206,7 @@ def resolve_template(
     without a template in that folder uses the default template.
 
     Args:
-        project: Name of the project.
+        template_dir: Template folder of the project.
         step: Name of the step.
         parameters: Job parameters, which name the cochlea.
 
@@ -215,9 +214,9 @@ def resolve_template(
         str: Path of the template.
     """
     species = parameters.get("cochlea", "").split("_")[0]
-    template = species_template(project, step, species)
+    template = species_template(template_dir, step, species)
     if template is None:
-        return step_template(project, step)
+        return step_template(template_dir, step)
 
     print(f"Step {step} uses the template of species {species}: {template}")
     return template
@@ -555,7 +554,7 @@ def prepare_step(
 
     # A single job uses the given template as it is. A pipeline selects the species template.
     if definition is None:
-        template = species_template(PROJECT, template_name.split(".template")[0], species)
+        template = species_template(os.path.dirname(template_file), template_name.split(".template")[0], species)
         if template is not None and os.path.realpath(template) != os.path.realpath(template_file):
             print(f"Note: {template} fits species {species}. Pass it with -i to use its resources.")
     cochlea_dir = os.path.join(placeholder_values["data_dir"], cochlea)

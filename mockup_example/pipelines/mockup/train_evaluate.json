@@ -1,0 +1,7 @@
+{
+    "description": "Train a network, then evaluate it. The pipeline reads its templates from mockup_example/templates/mockup/.",
+    "steps": [
+        "mockup",
+        "evaluate"
+    ]
+}

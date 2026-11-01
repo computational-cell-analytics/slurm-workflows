@@ -1,18 +1,16 @@
 #!/bin/bash
 #SBATCH --job-name=mobie-detection_<cochlea_job_name>
-#SBATCH -t 00:10:00             # estimated time, adapt to your needs
-#SBATCH --mail-user=<user_address> # change this to your mailaddress
-#SBATCH --mail-type=FAIL        # send mail when job begins and ends
+#SBATCH -t <time>
+#SBATCH --mail-user=<user_address>
+#SBATCH --mail-type=FAIL
 
-#SBATCH -p standard96s:shared         # the partition
+#SBATCH -p standard96s:shared
 #SBATCH -A <account_name>
 #SBATCH -c 1
-#SBATCH --mem 2G
+#SBATCH --mem <mem>
 
 source ~/.bashrc
 micromamba activate <mobie_environment>
-
-# Run the script
 
 MOBIE_PROJECT=<mobie_project>
 
@@ -20,7 +18,7 @@ COCHLEA=<cochlea>
 
 # Result of 'detect_synapses': the detections which were matched to an IHC. The unfiltered table
 # beside it covers only the dilated mask around the IHCs, so it is no full-cochlea detection.
-INPUT=<data_dir>/predictions/<cochlea>/<marker_prediction>/synapse_detection_filtered.tsv
+INPUT=<data_dir>/predictions/<cochlea>/<synapse_ihc_prediction>/synapse_detection_filtered.tsv
 
 # A spot source holds no image data, so 'mobie.add_spots' cannot create the dataset and fails with
 # an assertion if it is absent. The image data of the cochlea has to be in MoBIE already.
@@ -37,4 +35,4 @@ done
 echo "Adding the detections of <cochlea> to MoBIE project ""$MOBIE_PROJECT"
 
 mobie.add_spots --input_table "$INPUT" --root "$MOBIE_PROJECT" \
-	--dataset_name "$COCHLEA" --name "<marker_prediction>"
+	--dataset_name "$COCHLEA" --name "<synapse_ihc_prediction>"

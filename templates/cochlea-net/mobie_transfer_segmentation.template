@@ -1,19 +1,17 @@
 #!/bin/bash
 #SBATCH --job-name=mobie-transfer-segmentation_<cochlea_job_name>
-#SBATCH -t 00:15:00             # estimated time, adapt to your needs
-#SBATCH --mail-user=<user_address> # change this to your mailaddress
-#SBATCH --mail-type=FAIL        # send mail when job begins and ends
+#SBATCH -t <time>
+#SBATCH --mail-user=<user_address>
+#SBATCH --mail-type=FAIL
 
-#SBATCH -p standard96s:shared         # the partition
+#SBATCH -p standard96s:shared
 #SBATCH -A <account_name>
 #SBATCH -c 1
-#SBATCH --mem 2G
+#SBATCH --mem <mem>
 #SBATCH --constraint=inet
 
 source ~/.bashrc
 micromamba activate <mobie_environment>
-
-# Run the script
 
 MOBIE_PROJECT=<mobie_project>
 
@@ -48,5 +46,5 @@ rclone --progress copyto "$TABLE_FILE" <s3_remote>/<cochlea>/tables/<prediction_
 # The dataset.json of the S3 bucket lists the sources of every local MoBIE project. The local file
 # must not replace it, so only this segmentation is added. dataset.json comes last, so that the
 # bucket lists the source only after its data is complete.
-python <slurm-workflows>/scripts/add_s3_dataset.py -p "$MOBIE_PROJECT" -r <s3_remote> -d <cochlea> \
+python <repo:slurm-workflows>/scripts/add_s3_dataset.py -p "$MOBIE_PROJECT" -r <s3_remote> -d <cochlea> \
 	--source <prediction_dir>

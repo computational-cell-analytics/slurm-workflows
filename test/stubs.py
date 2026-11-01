@@ -2,19 +2,22 @@
 # -- coding: utf-8 --
 """Shared helpers of the tests: stub commands for the cluster tools, and access to the scripts.
 
-The stubs replace `sbatch` and `reportseff`, so the tests run on any machine.
+The stubs replace `sbatch`, `reportseff` and `micromamba`, so the tests run on any machine.
 """
-import importlib
 import os
 import subprocess
-import sys
 
 REPOSITORY_DIR = os.path.dirname(os.path.dirname(os.path.realpath(__file__)))
 SCRIPTS_DIR = os.path.join(REPOSITORY_DIR, "scripts")
 MOCKUP_DIR = os.path.join(REPOSITORY_DIR, "mockup_example")
+TEMPLATE_DIR = os.path.join(REPOSITORY_DIR, "templates", "cochlea-net")
+MOCKUP_TEMPLATE = os.path.join(MOCKUP_DIR, "templates", "mockup", "mockup.template")
+MOCKUP_SETTINGS = os.path.join(MOCKUP_DIR, "project_settings", "mockup.json")
+MOCKUP_PARAMS = os.path.join(MOCKUP_DIR, "params.json")
+MOCKUP_PIPELINE = os.path.join(MOCKUP_DIR, "pipelines", "mockup", "train_evaluate.json")
 
-RUN_SBATCH = os.path.join(SCRIPTS_DIR, "01_run_sbatch.sh")
-ARCHIVE_SCRIPTS = os.path.join(SCRIPTS_DIR, "02_archive_scripts.sh")
+SUBMIT_SCRIPT = os.path.join(SCRIPTS_DIR, "submit_job.py")
+ARCHIVE_SCRIPT = os.path.join(SCRIPTS_DIR, "archive_job.py")
 WRITE_METADATA = os.path.join(SCRIPTS_DIR, "write_metadata.py")
 
 # JobIDs start here and count up by one per submission.
@@ -41,6 +44,11 @@ cat "$STUB_STATE"/reportseff 2>/dev/null
 exit 0
 """
 
+# Prints a minimal export of the environment named by 'env export -n <name>'.
+MICROMAMBA_STUB = """#!/bin/bash
+echo "name: $4"
+"""
+
 
 def write_executable(
     path: str,
@@ -63,8 +71,8 @@ def stub_env(
 ) -> dict:
     """Create the stub commands and return an environment which finds them first.
 
-    The PATH holds only the stubs and the system directories, so a real `sbatch` or `reportseff`
-    of the cluster is never called.
+    The PATH holds only the stubs and the system directories, so a real `sbatch`, `reportseff` or
+    `micromamba` is never called.
 
     Args:
         tmp_dir: Temporary directory of the test.
@@ -81,11 +89,12 @@ def stub_env(
     write_executable(os.path.join(bin_dir, "sbatch"), SBATCH_STUB)
     if reportseff:
         write_executable(os.path.join(bin_dir, "reportseff"), REPORTSEFF_STUB)
-    # 01_run_sbatch.sh calls 'python', which is not on every PATH.
-    os.symlink(sys.executable, os.path.join(bin_dir, "python"))
+    micromamba = os.path.join(bin_dir, "micromamba")
+    write_executable(micromamba, MICROMAMBA_STUB)
 
     env = dict(os.environ)
     env["PATH"] = os.pathsep.join([bin_dir, "/usr/bin", "/bin"])
+    env["MAMBA_EXE"] = micromamba
     env["STUB_STATE"] = state_dir
     env.pop("WORK", None)
     env.pop("JOB_ARCHIVE", None)
@@ -144,15 +153,6 @@ def run(
     """
     return subprocess.run(cmd, env=env, cwd=cwd, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
                           universal_newlines=True)
-
-
-def cochlea_net_module():
-    """Import the deployment module of cochlea-net, whose name holds a hyphen.
-
-    Returns:
-        module: `slurm_workflows/deployment/cochlea-net_deployment.py`.
-    """
-    return importlib.import_module("slurm_workflows.deployment.cochlea-net_deployment")
 
 
 def write_file(

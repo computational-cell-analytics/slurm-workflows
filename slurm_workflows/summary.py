@@ -18,10 +18,10 @@ except ImportError:  # openpyxl is optional. The login node does not have it.
 from slurm_workflows.metadata import METADATA_FILE, archive_folders, as_list, read_metadata
 from slurm_workflows.update import UNFINISHED_STATES
 
-METADATA_COLUMNS = ["date", "task", "jobid", "job-name", "partition", "gpu", "cpus-per-task", "Memory-per-node",
+METADATA_COLUMNS = ["date", "task", "jobid", "job_name", "partition", "gpu", "cpus_per_task", "memory_per_node",
                     "runtime"]
-EFFICIENCIES = ["CPUEff", "MemEff", "TimeEff"]
-COLUMNS = METADATA_COLUMNS + ["tasks", "State"] + EFFICIENCIES + ["core_hours"]
+EFFICIENCIES = ["cpu_eff", "mem_eff", "time_eff"]
+COLUMNS = METADATA_COLUMNS + ["tasks", "state"] + EFFICIENCIES + ["core_hours"]
 
 
 def parse_percent(value: str) -> Optional[float]:
@@ -46,13 +46,13 @@ def efficiencies(metadict: dict, key: str) -> List[float]:
 
     Args:
         metadict: Metadata of the job.
-        key: 'CPUEff', 'MemEff' or 'TimeEff'.
+        key: 'cpu_eff', 'mem_eff' or 'time_eff'.
 
     Returns:
         list: The efficiencies in percent. A task without a value is left out.
     """
-    values = [parse_percent(report.get(key)) for report in as_list(metadict.get("Reportseff", []))
-              if report.get("State") not in UNFINISHED_STATES]
+    values = [parse_percent(report.get(key)) for report in as_list(metadict.get("reportseff", []))
+              if report.get("state") not in UNFINISHED_STATES]
     return [value for value in values if value is not None]
 
 
@@ -63,9 +63,9 @@ def core_hours(metadict: dict) -> Optional[float]:
         metadict: Metadata of the job.
 
     Returns:
-        float: The core hours of the 'SlurmOutput' entry, or None if it has no value.
+        float: The core hours of the 'slurm_output' entry, or None if it has no value.
     """
-    hours = [output["core_hours"] for output in as_list(metadict.get("SlurmOutput", []))
+    hours = [output["core_hours"] for output in as_list(metadict.get("slurm_output", []))
              if output.get("core_hours") is not None]
     return sum(hours) if hours else None
 
@@ -102,8 +102,8 @@ def select_jobs(
             continue
         if until is not None and metadict["date"] > until:
             continue
-        if states is not None and not any(report.get("State") in states
-                                          for report in as_list(metadict.get("Reportseff", []))):
+        if states is not None and not any(report.get("state") in states
+                                          for report in as_list(metadict.get("reportseff", []))):
             continue
         if partitions is not None and metadict.get("partition") not in partitions:
             continue
@@ -121,8 +121,8 @@ def job_row(metadict: dict) -> list:
     Returns:
         list: The values. A missing value is None.
     """
-    reports = as_list(metadict.get("Reportseff", []))
-    states = ",".join(sorted({report["State"] for report in reports}))
+    reports = as_list(metadict.get("reportseff", []))
+    states = ",".join(sorted({report["state"] for report in reports}))
     means = []
     for key in EFFICIENCIES:
         values = efficiencies(metadict, key)
@@ -143,7 +143,7 @@ def print_summary(jobs: List[dict]):
     """
     print(f"Efficiency summary for {len(jobs)} job(s):")
 
-    for key, name in (("CPUEff", "CPU"), ("MemEff", "Memory"), ("TimeEff", "Time")):
+    for key, name in (("cpu_eff", "CPU"), ("mem_eff", "Memory"), ("time_eff", "Time")):
         values = [value for metadict in jobs for value in efficiencies(metadict, key)]
         label = f"Average {name} Efficiency:"
         if values:

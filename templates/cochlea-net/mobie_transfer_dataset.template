@@ -1,19 +1,17 @@
 #!/bin/bash
 #SBATCH --job-name=mobie_transfer_<cochlea_job_name>
-#SBATCH -t 12:00:00             # estimated time, adapt to your needs
-#SBATCH --mail-user=<user_address> # change this to your mailaddress
-#SBATCH --mail-type=FAIL        # send mail when job begins and ends
+#SBATCH -t <time>
+#SBATCH --mail-user=<user_address>
+#SBATCH --mail-type=FAIL
 
-#SBATCH -p standard96s:shared         # the partition
+#SBATCH -p standard96s:shared
 #SBATCH -A <account_name>
 #SBATCH -c 1
-#SBATCH --mem 3G
+#SBATCH --mem <mem>
 #SBATCH --constraint=inet
 
 source ~/.bashrc
 micromamba activate <mobie_environment>
-
-# Run the script
 
 MOBIE_PROJECT=<mobie_project>
 
@@ -55,5 +53,5 @@ rclone --progress copyto "$MOBIE_PROJECT"/<cochlea>/images/ome-zarr <s3_remote>/
 # local MoBIE project. The local files must not replace them, so only the stains and the name of
 # this cochlea are added. dataset.json comes last, so that the bucket lists a source only after its
 # data is complete.
-python <slurm-workflows>/scripts/add_s3_dataset.py -p "$MOBIE_PROJECT" -r <s3_remote> -d <cochlea> \
+python <repo:slurm-workflows>/scripts/add_s3_dataset.py -p "$MOBIE_PROJECT" -r <s3_remote> -d <cochlea> \
 	--source "${CHANNEL_ARR[@]}"

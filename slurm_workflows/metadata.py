@@ -9,9 +9,9 @@ import json
 import os
 from typing import List, Optional
 
-from slurm_workflows.repositories import repository_status_to_dict
+from slurm_workflows.repositories import add_repository_status
 from slurm_workflows.settings import USER_SETTINGS, load_settings
-from slurm_workflows.slurm import reportseff_from_jobid, sbatch_parameters_to_dict
+from slurm_workflows.slurm import reportseff_from_jobid, add_sbatch_parameters
 
 METADATA_FILE = "metadata.json"
 SBATCH_FILE = "sbatch.sbatch"
@@ -105,7 +105,7 @@ def init_metadict(
     return {"date": contents[0], "task": "_".join(contents[1:])}
 
 
-def user_to_metadict(
+def add_user(
     metadict: dict,
     settings_file: str = None,
 ) -> None:
@@ -136,10 +136,11 @@ def user_to_metadict(
 def write_job_metadata(
     input_dir: str,
     output_file: str = None,
-    jobid: int = None,
-    repository_file: str = None,
+    jobid: str = None,
+    repositories: dict = None,
     overwrite: bool = False,
     settings_file: str = None,
+    metadata: dict = None,
 ):
     """Create or update the `metadata.json` of an archive folder.
 
@@ -147,9 +148,10 @@ def write_job_metadata(
         input_dir: Archive folder.
         output_file: Metadata file. Default: `<input_dir>/metadata.json`.
         jobid: JobID, or None for the last JobID of `log.txt`.
-        repository_file: Git repositories to record, or None.
+        repositories: Names and paths of the git repositories to track, or None.
         overwrite: Replace an existing `metadata.json`.
         settings_file: Settings file of the project, which names the HPC user.
+        metadata: Entries to add, e.g. the project of the job, or None.
     """
     if output_file is None:
         output_file = os.path.join(input_dir, METADATA_FILE)
@@ -164,11 +166,14 @@ def write_job_metadata(
     else:
         metadict = init_metadict(input_dir)
 
-    user_to_metadict(metadict, settings_file)
-    sbatch_parameters_to_dict(sbatch_file, metadict=metadict)
+    add_user(metadict, settings_file)
+    add_sbatch_parameters(metadict, sbatch_file)
     reportseff_from_jobid(log_file, metadict=metadict, jobid=jobid)
-    # A resubmission can run on a newer commit, so the hash is refreshed for an existing file too.
-    if repository_file is not None:
-        repository_status_to_dict(repository_file, metadict=metadict)
+    # A resubmission can run on a newer commit, so an existing file gets the new hashes too.
+    # Without repositories, e.g. of a missing repository file, the recorded hashes stay.
+    if repositories:
+        add_repository_status(metadict, repositories)
+    if metadata is not None:
+        metadict.update(metadata)
 
     write_metadata(metadict, output_file)

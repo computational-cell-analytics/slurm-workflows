@@ -16,19 +16,19 @@ from stubs import write_file
 
 
 def report(state, cpu):
-    return {"JobID": "1", "State": state, "Elapsed": "00:01:00", "TimeEff": "10.0%", "CPUEff": cpu,
-            "MemEff": "20.0%"}
+    return {"jobid": "1", "state": state, "elapsed": "00:01:00", "time_eff": "10.0%", "cpu_eff": cpu,
+            "mem_eff": "20.0%"}
 
 
 # Folder name -> metadata. The dates are not in the order of the folder names.
 JOBS = {
     "b_array": {"date": "2026-02-01", "task": "array", "partition": "grete:shared",
-                "Reportseff": [report("COMPLETED", "40.0%"), report("FAILED", "20.0%")],
-                "SlurmOutput": [{"core_hours": 1.5}, {"core_hours": 2.5}]},
+                "reportseff": [report("COMPLETED", "40.0%"), report("FAILED", "20.0%")],
+                "slurm_output": [{"core_hours": 1.5}, {"core_hours": 2.5}]},
     "a_late": {"date": "2026-03-01", "task": "late", "partition": "standard96",
-               "Reportseff": [report("COMPLETED", "90.0%")]},
+               "reportseff": [report("COMPLETED", "90.0%")]},
     "c_early": {"date": "2026-01-01", "task": "early", "partition": "grete:shared",
-                "Reportseff": [report("RUNNING", "1.0%")], "SlurmOutput": [{"core_hours": 6.0}]},
+                "reportseff": [report("RUNNING", "1.0%")], "slurm_output": [{"core_hours": 6.0}]},
 }
 
 
@@ -75,8 +75,8 @@ class SummaryTest(unittest.TestCase):
 
         self.assertEqual(list(rows[0]), COLUMNS)
         self.assertEqual([row["task"] for row in rows], ["early", "array", "late"])
-        self.assertEqual((rows[0]["State"], rows[0]["CPUEff"], rows[0]["core_hours"]), ("RUNNING", "", "6.0"))
-        self.assertEqual((rows[1]["tasks"], rows[1]["State"], rows[1]["CPUEff"], rows[1]["core_hours"]),
+        self.assertEqual((rows[0]["state"], rows[0]["cpu_eff"], rows[0]["core_hours"]), ("RUNNING", "", "6.0"))
+        self.assertEqual((rows[1]["tasks"], rows[1]["state"], rows[1]["cpu_eff"], rows[1]["core_hours"]),
                          ("2", "COMPLETED,FAILED", "30.0", "4.0"))
         self.assertEqual(rows[2]["core_hours"], "")
 
@@ -88,7 +88,7 @@ class SummaryTest(unittest.TestCase):
         rows = list(summary.openpyxl.load_workbook(table).active.iter_rows(values_only=True))
 
         self.assertEqual(list(rows[0]), COLUMNS)
-        self.assertEqual(rows[2][COLUMNS.index("CPUEff")], 30.0)
+        self.assertEqual(rows[2][COLUMNS.index("cpu_eff")], 30.0)
 
     def test_xlsx_without_openpyxl(self):
         with mock.patch.object(summary, "openpyxl", None):

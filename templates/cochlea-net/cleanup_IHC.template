@@ -1,13 +1,13 @@
 #!/bin/bash
 #SBATCH --job-name=cleanup-IHC_<cochlea_job_name>
-#SBATCH -t 00:10:00             # estimated time, adapt to your needs
-#SBATCH --mail-user=<user_address> # change this to your mailaddress
-#SBATCH --mail-type=FAIL        # send mail when job begins and ends
+#SBATCH -t <time>
+#SBATCH --mail-user=<user_address>
+#SBATCH --mail-type=FAIL
 
-#SBATCH -p standard96s:shared         # the partition
+#SBATCH -p standard96s:shared
 #SBATCH -A <account_name>
 #SBATCH -c 1
-#SBATCH --mem 2G
+#SBATCH --mem <mem>
 
 # Remove the intermediate data of the segmentation. A zarr holds one file per chunk, so it takes up
 # many inodes. segmentation.zarr stays.

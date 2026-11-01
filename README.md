@@ -17,9 +17,10 @@ cp project_settings/cochlea-net.blueprint.json project_settings/cochlea-net.json
 ```
 
 The settings file of `cochlea-net` contains the mail address and the Slurm account for the sbatch header, the identifiers of the HPC user, the directories of the data and of the job archive, the names of the micromamba environments, the local paths of the git repositories, and the paths of the trained models.
-The keys `academic_id` and `hpc_user` name the person who runs a job, so that the archive records who spent the computing time of the HPC project. Both may stay blank.
-Every settings file needs the keys `repositories`, `academic_id` and `hpc_user`. A project can require more keys.
-`scripts/deploy_process.py` reads the settings file of the project and fills the values into the templates.
+The keys `academic_id` and `hpc_user` name the person who runs a job, so that the archive records who spent the computing time of the HPC project. Both may stay empty.
+Every settings file needs the keys `academic_id` and `hpc_user`. A project can require more keys.
+The optional entry `repositories` lists the git repositories of the project. Their hashes are archived with each job, together with the hash of slurm-workflows.
+`scripts/deploy.py` reads the settings file of the project and fills the values into the templates.
 Use the option `-s` to select a different settings file.
 
 The scripts need no installation.
@@ -34,21 +35,22 @@ Each command runs the same code as its script:
 
 | Command | Script |
 |---|---|
-| `slurm_wf.deploy` | `scripts/deploy_process.py` |
+| `slurm_wf.deploy` | `scripts/deploy.py` |
 | `slurm_wf.write_metadata` | `scripts/write_metadata.py` |
 | `slurm_wf.update_metadata` | `scripts/update_metadata.py` |
 | `slurm_wf.summary` | `scripts/summary.py` |
-| `slurm_wf.submit` | `scripts/01_run_sbatch.sh` |
-| `slurm_wf.archive` | `scripts/02_archive_scripts.sh` |
+| `slurm_wf.submit` | `scripts/submit_job.py` |
+| `slurm_wf.archive` | `scripts/archive_job.py` |
+| `slurm_wf.add_s3_dataset` | `scripts/add_s3_dataset.py`, only for `cochlea-net` |
 
 ## Repository structure
 
 The directory `scripts` contains the entry points which are run from the command line.
 The package `slurm_workflows` contains the logic of the Python scripts and the utility functions which they share.
-Its module `cli` contains the command line interface of every command.
-Its subpackage `deployment` contains one deployment module per project.
+Its module `cli` contains the command line interface of the generic commands.
+Its subpackage `projects` contains one package per project, with the deployment module and the code which only that project uses.
 The directory `templates` contains one subfolder per project with one template per processing step.
-A subfolder named after a species code, such as `templates/cochlea-net/G`, holds the templates with other resources for that species, which a pipeline selects from the cochlea name.
+The file `templates/cochlea-net/steps.json` holds the group and the resources of each cochlea-net template, with the deviations of a species such as the gerbil `G`.
 The directory `pipelines` contains one subfolder per project with the definitions which chain those steps.
 The directory `project_settings` contains the settings file of each project.
 The directory `doc` contains the documentation of the work on the HPC:
@@ -71,6 +73,14 @@ Further scripts might be connected to this script by using the same date and suf
 ## Archiving metadata
 The job information of an sbatch script is monitored and can be looked up using `reportseff -u <user_id>` for around one week after the initial submission.
 This information, among other pieces of information from the sbatch script, are extracted using `scripts/write_metadata.py`.
+The keys of `metadata.json` are lower case with underscores, e.g. `job_name` and `reportseff`.
+An archive which was written before this rule still has keys such as `job-name` and `Reportseff`.
+Rename them once, then `scripts/summary.py` reads the archive again:
+
+```bash
+python scripts/migrate_metadata_keys.py --dry-run <archive_dir>   # list the files which change
+python scripts/migrate_metadata_keys.py <archive_dir>
+```
 
 ## Projects
 A project is a set of templates, pipelines, settings and deployment logic which share one name.
@@ -78,16 +88,17 @@ The current project is `cochlea-net`.
 The folder of a template, or the first part of a pipeline name, selects the project:
 
 ```bash
-python scripts/deploy_process.py -i templates/cochlea-net/apply_SGN.template -j <params.json>
-python scripts/deploy_process.py -p cochlea-net/sgn -j <params.json>
+python scripts/deploy.py -i templates/cochlea-net/apply_SGN.template -j <params.json>
+python scripts/deploy.py -p cochlea-net/sgn -j <params.json>
 ```
 
 To add a project `<project>`, add these four parts:
 
 - `templates/<project>/` with one `.template` file per step.
 - `pipelines/<project>/` with the pipeline definitions, if the project chains steps.
-- `project_settings/<project>.blueprint.json` with the keys `repositories`, `academic_id`, `hpc_user` and the keys of the project.
-- `slurm_workflows/deployment/<project>_deployment.py` with the logic which is specific to the project, if the project needs it.
+- `project_settings/<project>.blueprint.json` with the keys `academic_id`, `hpc_user` and the keys of the project. Add `repositories` if the jobs use other git repositories.
+- `slurm_workflows/projects/<project>/deployment.py` with the logic which is specific to the project, if the project needs it.
+  A hyphen of the project name becomes an underscore in the package name, e.g. `slurm_workflows/projects/cochlea_net/`.
 
 `slurm_workflows/deploy.py` calls four functions of the deployment module:
 
@@ -95,27 +106,92 @@ To add a project `<project>`, add these four parts:
 |---|---|
 | `add_arguments(parser)` | Add the command line options of the project. |
 | `select_steps(definition, settings, args)` | Return the steps of a pipeline to submit. |
-| `prepare_step(settings, replacements, template_file, args, definition)` | Add the placeholder values of one job and return them together with the name of the sbatch script. |
-| `check_steps(template_files, sbatch_files)` | Return warnings which stop the deployment unless `--force` is given. |
+| `prepare_step(settings, placeholder_values, template_file, args, definition)` | Add the placeholder values of one job and return them together with the name of the sbatch script. |
+| `check_steps(template_files, sbatch_files)` | Return warnings, see [Warnings](#warnings). |
 
-A project without a deployment module uses `slurm_workflows/deployment/default_deployment.py`.
+A deployment module defines only the functions which differ from `slurm_workflows/projects/default.py`.
+The default deployment supplies the other functions.
+A project without a deployment module uses `slurm_workflows/projects/default.py`.
 It fills the placeholders only from the settings file and the parameter file, and names the sbatch script after the template.
 A placeholder without a value raises an error.
 If all placeholders are filled, a note tells that the default deployment was used.
 
-The deploy step records the project as `Project` in the `metadata.json` of every job.
+The deploy step records the project as `project` in the `metadata.json` of every job.
+
+## Template contract
+
+A template is an sbatch script with placeholders in the format `<name>`.
+The deploy step takes the value of a placeholder from these sources:
+
+1. A scalar key of the settings file, e.g. `<data_dir>`.
+2. An entry of `repositories` in the settings file, as `<repo:name>`. The value is the path of the repository, e.g. `<repo:cochlea-net>`.
+   `<repo:slurm-workflows>` is always the path of this repository.
+3. A key of the parameter file. A parameter overrides the setting of the same key.
+4. A value which the deployment module of the project adds, e.g. `<prediction_dir>` of `cochlea-net`.
+
+A placeholder without a value raises an error, so that no incomplete sbatch script is written.
+The option `--allow-missing` changes the error into a warning.
+A placeholder name holds no space, `<` or `>`, so shell code such as `cmd < in > out` is no placeholder.
+Write `\<name>` for the literal text `<name>`.
+
+The deploy step writes the sbatch script `<date>_sbatch_<name>.sbatch` into the current directory.
+`<name>` is the name of the template, or the name which the deployment module gives.
+With `--submit`, the deploy step submits the sbatch script and moves it into the archive folder `<archive_dir>/<date>_<name>/`.
+The archive folder also gets `metadata.json` and `environment.yml`, the export of the micromamba environment which the job activates.
+
+### Variables which the deploy step checks
+
+The deploy step reads these shell variables from the sbatch script before the submission:
+
+| Variable | Check |
+|---|---|
+| `INPUT` | The input of the job exists. The deploy step checks only the first step of a pipeline. |
+| `EXTERNAL_INPUT` | An input which no step of the pipeline produces exists. The deploy step checks every step. |
+| `EXISTING_OUTPUT` | A result which the job builds again does not exist yet. |
+| `OUTPUT_FOLDER`, `INPUT_KEY`, `S3_REMOTE` | The deployment module can check them. `cochlea-net` checks for an earlier prediction and for the rclone remote. |
+
+Write a variable as `VAR=value` or `export VAR=value`, as in the shell.
+A quoted value can contain a space, and one line can hold several assignments.
+The deploy step does not expand a variable in a value, and does not check a value which is not an absolute path.
+A template without these variables gets no check before the submission.
+
+### Warnings
+
+Every `check_*` function of `slurm_workflows/inputs.py` and of a deployment module returns a list of warning messages.
+An empty list means that the check found no problem.
+The deploy step prints every warning.
+A warning stops `--submit`, unless `--force` is given.
+
+### The guard of a step
+
+The steps of a pipeline form a linear chain.
+A step starts only after the previous step completed successfully (`--dependency=afterok`).
+The steps share data only through the file system.
+Two steps use the same path if their templates build it from the same placeholders, e.g. `<data_dir>/predictions/<cochlea>/<prediction_dir>`.
+
+Before the submission, the input of a later step does not exist yet, so the deploy step cannot check it.
+Thus each template checks its own input when the job runs.
+A missing input ends the job with an error, and Slurm cancels the rest of the chain:
+
+```bash
+# Verify the input of the job. A missing input stops the rest of the pipeline.
+for path in "$INPUT" "$OUTPUT_FOLDER"/mask.zarr ; do
+	if [ ! -e "$path" ] ; then
+		echo "Missing input of the job: $path"
+		exit 1
+	fi
+done
+```
 
 ## Template concept
 The templates of `cochlea-net` are located in `templates/cochlea-net`.
 They include the application of trained neural networks for the segmentation of IHCs and SGNs, the detection of synapses, and the conversion of the image data to the MoBIE data format and its transfer to the S3 bucket.
 The MoBIE templates cover the image data of a cochlea, a segmentation of SGNs or IHCs, and the ribbon synapse detections.
-Using `scripts/deploy_process.py` a JSON dictionary with parameters can be given as an input to fill blanks in the templates and use the resulting scripts for job submission.
 The templates contain no absolute path.
-A blank which is specific to a cluster account is filled from the settings file of the project, a blank which is specific to a job is filled from the parameter dictionary.
-A blank without a value raises an error, so that no incomplete sbatch script is written.
+A placeholder which is specific to a cluster account is filled from the settings file of the project, a placeholder which is specific to a job is filled from the parameter file.
 
-The input data of the job is checked before the job is deployed.
-A missing input gives a warning, and the option `--deploy` stops before the submission.
+The input data of the job is checked before the job is submitted.
+A missing input gives a warning, and the option `--submit` stops before the submission.
 Use the option `--force` to submit the job for data which does not exist yet.
 
 For `cochlea-net`, the deploy step also decides which file the job reads.
@@ -141,10 +217,10 @@ The stain does not change the model, which is selected by the model version alon
 Several processing steps can be submitted as a chain of Slurm jobs:
 
 ```bash
-python scripts/deploy_process.py -p cochlea-net/mobie -j <params.json> --deploy      # add image data to MoBIE, transfer to the S3 bucket
-python scripts/deploy_process.py -p cochlea-net/sgn -j <params.json> --deploy        # mask, apply, segment SGN
-python scripts/deploy_process.py -p cochlea-net/ihc -j <params.json> --deploy        # mask, apply, segment IHC
-python scripts/deploy_process.py -p cochlea-net/synapses -j <params.json> --deploy   # mask, apply, detect synapses
+python scripts/deploy.py -p cochlea-net/mobie -j <params.json> --submit      # add image data to MoBIE, transfer to the S3 bucket
+python scripts/deploy.py -p cochlea-net/sgn -j <params.json> --submit        # mask, apply, segment SGN
+python scripts/deploy.py -p cochlea-net/ihc -j <params.json> --submit        # mask, apply, segment IHC
+python scripts/deploy.py -p cochlea-net/synapses -j <params.json> --submit   # mask, apply, detect synapses
 ```
 
 The whole chain is submitted at once.
@@ -221,31 +297,43 @@ The sbatch script was adapted from the [GWDG](https://docs.hpc.gwdg.de/how_to_us
 |---|---|
 | `project_settings/mockup.json` | Settings of the project: mail address, environment, HPC user, git repositories. |
 | `templates/mockup/mockup.template` | Template of the job, with the placeholders `<job_name>`, `<user_address>`, `<environment>`, `<module>` and `<dataset>`. |
-| `dataset.json` | Parameters of the job: job name, debug module, dataset name. |
+| `templates/mockup/evaluate.template` | Template of the second step of the mockup pipeline. |
+| `pipelines/mockup/train_evaluate.json` | Pipeline which chains `mockup` and `evaluate`. |
+| `params.json` | Parameter file of the job: job name, debug module, dataset name. |
 | `YYYY-MM-DD_sbatch_mockup.sbatch` | The sbatch script which is generated from the template. |
 | `YYYY-MM-DD_log_mockup.txt` | The log file with the fictional JobID 1234567. |
-| `repository_list.txt` | The git repositories whose hash is archived, one per line as `<Repository-name>	<Path-to-repository>`. |
+| `repository_list.txt` | The git repositories whose hash is archived. Each line holds a name and a path, separated by a tab. |
 | `YYYY-MM-DD_mockup/` | The archive folder with the sbatch script, the log file and `metadata.json`. |
 
 The mockup files are kept in `mockup_example`, and not in the top-level directories `templates` and `project_settings`.
 So the mockup is not listed as a project, and its settings file can be tracked by git.
 
+A pipeline reads its templates from the folder `templates/<project>/` beside its folder `pipelines/<project>/`.
+So the mockup pipeline runs from its own folder.
+The dry run writes one sbatch script per step into the working directory and submits nothing:
+
+```bash
+python scripts/deploy.py -p mockup_example/pipelines/mockup/train_evaluate.json \
+    -j mockup_example/params.json -s mockup_example/project_settings/mockup.json
+```
+
 ### From the template to the archive
 
 1. The settings file and the parameter file fill the placeholders of the template.
    A parameter overrides a setting with the same key.
-   The mockup has no deployment module, so `scripts/deploy_process.py` uses the default deployment:
+   The mockup has no deployment module, so `scripts/deploy.py` uses the default deployment:
    ```bash
-   python scripts/deploy_process.py -i mockup_example/templates/mockup/mockup.template \
-       -j mockup_example/dataset.json -s mockup_example/project_settings/mockup.json
+   python scripts/deploy.py -i mockup_example/templates/mockup/mockup.template \
+       -j mockup_example/params.json -s mockup_example/project_settings/mockup.json
    ```
-   Without `--deploy`, the command writes `<date>_sbatch_mockup.sbatch` with the current date into the working directory and submits nothing.
-2. `scripts/01_run_sbatch.sh` submits the sbatch script and writes the JobID into the log file.
+   Without `--submit`, the command writes `<date>_sbatch_mockup.sbatch` with the current date into the working directory and submits nothing.
+2. `scripts/submit_job.py` submits the sbatch script and writes the JobID into the log file.
    If the script is submitted again, the new JobID is appended in a new line.
    If the log file was moved into the archive before, the archive merges the new JobID into the archived log file.
-3. `scripts/02_archive_scripts.sh` copies the script and the log file into the archive folder:
+   With `-a`, it also runs the next two steps and writes `environment.yml`, the export of the micromamba environment of the job.
+3. `scripts/archive_job.py` copies the script and the log file into the archive folder:
    ```bash
-   bash scripts/02_archive_scripts.sh -i mockup_example/ -a mockup_example/ YYYY-MM-DD mockup
+   python scripts/archive_job.py -i mockup_example/ -a mockup_example/ YYYY-MM-DD mockup
    ```
 4. `scripts/write_metadata.py` creates `metadata.json` from the `#SBATCH` parameters, the JobID, the efficiency report of `reportseff`, the HPC user of the settings file, and the git hash of each repository:
    ```bash
@@ -253,16 +341,17 @@ So the mockup is not listed as a project, and its settings file can be tracked b
        mockup_example/YYYY-MM-DD_mockup/ -o mockup_example/YYYY-MM-DD_mockup/metadata.json
    ```
    `reportseff` is available only on the cluster.
-   `scripts/deploy_process.py` passes the settings file on by itself and adds the key `Project`.
+   `scripts/deploy.py` passes the settings file on by itself and adds the key `project`.
 
 ### Create your own project
 
 1. Copy the mockup template to `templates/<project>/<step>.template`.
    Replace every value which is specific to a cluster account or to a job with a placeholder `<key>`.
 2. Copy the mockup settings to `project_settings/<project>.blueprint.json` and commit it.
-   Keep the keys `repositories`, `academic_id` and `hpc_user`, and add a key for every account-specific placeholder.
+   Keep the keys `academic_id` and `hpc_user`, and add a key for every account-specific placeholder.
+   List the other git repositories of the project under `repositories`.
    Copy the blueprint to `project_settings/<project>.json` and fill in the values of your account.
-3. If the settings and the parameters cannot fill every placeholder, add `slurm_workflows/deployment/<project>_deployment.py` with the four functions of the table in [Projects](#projects).
+3. If the settings and the parameters cannot fill every placeholder, add `slurm_workflows/projects/<project>/deployment.py` with the functions of the table in [Projects](#projects) which you need.
 4. To chain several steps, add `pipelines/<project>/<name>.json` with the ordered template names under the key `steps`:
    ```json
    {
@@ -270,15 +359,34 @@ So the mockup is not listed as a project, and its settings file can be tracked b
        "steps": ["train", "evaluate"]
    }
    ```
-5. Write the parameters of a job into a JSON file such as `dataset.json`, and deploy:
+   The two steps share the run folder through the same placeholders.
+   The second step checks its input with the guard of the [Template contract](#the-guard-of-a-step).
+   These are the bodies of the two templates, without the `#SBATCH` header:
    ```bash
-   python scripts/deploy_process.py -i templates/<project>/<step>.template -j dataset.json --deploy
-   python scripts/deploy_process.py -p <project>/<name> -j dataset.json --deploy
+   # templates/<project>/train.template
+   export INPUT=<data_dir>/<dataset>
+   export OUTPUT_FOLDER=<data_dir>/runs/<run_name>
+   python -u <repo:my-tool>/train.py --input "$INPUT" --output "$OUTPUT_FOLDER"
+
+   # templates/<project>/evaluate.template
+   export INPUT=<data_dir>/runs/<run_name>/model.pt
+   for path in "$INPUT" ; do
+   	if [ ! -e "$path" ] ; then
+   		echo "Missing input of the job: $path"
+   		exit 1
+   	fi
+   done
+   python -u <repo:my-tool>/evaluate.py --model "$INPUT"
+   ```
+5. Write the parameters of a job into a parameter file such as `params.json`, and submit:
+   ```bash
+   python scripts/deploy.py -i templates/<project>/<step>.template -j params.json --submit
+   python scripts/deploy.py -p <project>/<name> -j params.json --submit
    ```
 
 ## Tests
 
-The directory `test` contains unit tests for the transfer of the job files, the log files, the replacement of the placeholders, and the check of missing files.
+The directory `test` contains unit tests for the transfer of the job files, the log files, the filling of the placeholders, and the check of missing files.
 Stub commands replace `sbatch` and `reportseff`, so the tests run on every machine and submit nothing.
 The tests use only the standard library, so they also run with the Python 3.6 of the login node.
 Run them from the root of the repository:

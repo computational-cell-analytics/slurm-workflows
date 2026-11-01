@@ -11,10 +11,9 @@ import shlex
 import sys
 
 from slurm_workflows.inputs import job_variables, path_exists
-from slurm_workflows.mobie import DATASET_FILE, IMAGE_DIR, OME_ZARR, rclone, s3_datasets
-from slurm_workflows.pipelines import missing_templates, step_template
-
-PROJECT = "cochlea-net"
+from slurm_workflows.pipelines import missing_templates
+from slurm_workflows.projects.cochlea_net.mobie import DATASET_FILE, IMAGE_DIR, OME_ZARR, rclone, s3_datasets
+from slurm_workflows.templates import TEMPLATE_SUFFIX, placeholders_in
 
 # Written by the apply step. It is the input of the segmentation step.
 SEGMENTATION_INPUT = "predictions.zarr"
@@ -39,8 +38,20 @@ MOBIE_STEPS_KEY = "mobie_steps"
 CLEANUP_STEPS_KEY = "cleanup_steps"
 MOBIE_CLEANUP_STEPS_KEY = "mobie_cleanup_steps"
 
-# Key of the group which a step without a group in its template name belongs to.
+# Key of the group of a pipeline, and of a row of the steps file. A step without a group gets the
+# group of the pipeline.
 GROUP_KEY = "group"
+
+# One row per template in its folder: the group of the step and its resources, with the deviations
+# of a species under the species code, e.g. {"group": "SGN", "time": "00:25:00", "mem": "96G",
+# "G": {"time": "01:30:00"}}. The default resources fit mice.
+STEPS_FILE = "steps.json"
+
+# Keys of a row of the steps file which become placeholders. A job parameter overrides them.
+RESOURCE_KEYS = ("time", "mem")
+
+# The segmentation step needs the watershed parameters of its model.
+WATERSHED_PLACEHOLDER = "center_distance_threshold"
 
 # First step of a pipeline with '--download'. It copies the OME-Zarr of the stain from the S3 bucket.
 DOWNLOAD_STEP = "download_image"
@@ -137,7 +148,7 @@ def select_steps(
         if not isinstance(definition.get(key, []), list):
             raise ValueError(f"Pipeline {definition['name']} needs a list of steps for '{key}'.")
 
-        missing = missing_templates(PROJECT, definition.get(key, []))
+        missing = missing_templates(definition["template_dir"], definition.get(key, []))
         if missing:
             raise ValueError(f"Pipeline {definition['name']} refers to steps without a template: {missing}.")
 
@@ -174,55 +185,6 @@ def select_steps(
     return steps + cleanup_steps
 
 
-def species_template(
-    project: str,
-    step: str,
-    species: str,
-) -> str:
-    """Return the template of a step in the folder of a species.
-
-    Args:
-        project: Name of the project.
-        step: Name of the step.
-        species: Species code of the cochlea, e.g. `G`.
-
-    Returns:
-        str: Path of the template, or None if the species folder has no template for the step.
-    """
-    template = step_template(project, os.path.join(species, step))
-    if species and os.path.isfile(template):
-        return template
-    return None
-
-
-def resolve_template(
-    project: str,
-    step: str,
-    parameters: dict,
-) -> str:
-    """Return the template of a pipeline step for the species of the cochlea.
-
-    The default templates fit mice. A species whose cochleae need other resources has a folder
-    `templates/<project>/<species>/`, named after the species code of the cochlea, e.g. `G`. A step
-    without a template in that folder uses the default template.
-
-    Args:
-        project: Name of the project.
-        step: Name of the step.
-        parameters: Job parameters, which name the cochlea.
-
-    Returns:
-        str: Path of the template.
-    """
-    species = parameters.get("cochlea", "").split("_")[0]
-    template = species_template(project, step, species)
-    if template is None:
-        return step_template(project, step)
-
-    print(f"Step {step} uses the template of species {species}: {template}")
-    return template
-
-
 def watershed_parameters(
     model_path: str,
     group: str,
@@ -250,27 +212,44 @@ def watershed_parameters(
             ("center_distance_threshold", "boundary_distance_threshold", "distance_smoothing")}
 
 
-def template_group(
-    input_file: str,
-) -> str:
-    """Return the group of a template.
+def step_row(
+    template_file: str,
+    species: str,
+) -> tuple:
+    """Return the group and the resources of a template from the steps file in its folder.
+
+    The file has one row per template, so a renamed or a new template without a row fails here
+    instead of being treated as another step.
 
     Args:
-        input_file: Path of the template.
+        template_file: Path of the template.
+        species: Species code of the cochlea, e.g. `G`.
 
     Returns:
-        str: Key of `GROUPS`, or None for a template which reads every stain, such as a MoBIE step.
+        tuple of:
+            str  - the key of `GROUPS`, or None for a template which serves every group, such as a MoBIE step
+            dict - the values of `RESOURCE_KEYS`, with the deviations of the species applied
     """
-    template_name = os.path.basename(input_file)
+    steps_file = os.path.join(os.path.dirname(template_file), STEPS_FILE)
+    step = os.path.basename(template_file)[:-len(TEMPLATE_SUFFIX)]
 
-    if "SGN" in template_name:
-        return "SGN"
-    if "IHC" in template_name:
-        return "IHC"
-    if "synapse" in template_name:
-        return "synapses"
+    if not os.path.isfile(steps_file):
+        raise FileNotFoundError(f"The steps file {steps_file} of the template {template_file} does not exist.")
+    with open(steps_file, "r") as myfile:
+        steps = json.load(myfile)
 
-    return None
+    if step not in steps:
+        raise ValueError(f"The template {template_file} has no row in {steps_file}. Add its group and resources.")
+
+    row = steps[step]
+    group = row.get(GROUP_KEY)
+    if group is not None and group not in GROUPS:
+        raise ValueError(f"Unknown group '{group}' of {step} in {steps_file}. Available groups: {sorted(GROUPS)}.")
+
+    resources = {key: row[key] for key in RESOURCE_KEYS if key in row}
+    resources.update(row.get(species, {}))
+
+    return group, resources
 
 
 def n5_name(
@@ -335,7 +314,7 @@ def version_part(
     return version.split("_", 1)[-1].lower()
 
 
-def marker_prediction_name(
+def synapse_ihc_prediction_name(
     stain_synapses: str,
     synapse_version: str,
     stain_ihc: str,
@@ -469,7 +448,7 @@ def note_s3_image(
           f"of the chain, run:\n    {command}")
 
 
-def get_model_path(
+def model_path(
     settings: dict,
     group: str,
     version: str,
@@ -493,25 +472,25 @@ def get_model_path(
 
 def prepare_step(
     settings: dict,
-    replacements: dict,
-    input_file: str,
+    placeholder_values: dict,
+    template_file: str,
     args,
     definition: dict = None,
 ) -> tuple:
-    """Add the placeholder replacements of one job, and name its sbatch script.
+    """Add the placeholder values of one job, and name its sbatch script.
 
     Args:
         settings: Output of `load_settings()`.
-        replacements: The settings and the job parameters as placeholder replacements. The dictionary
-            is changed in place.
-        input_file: Path of the template. Its name selects the watershed step, and the model
-            group unless the pipeline or '--group' supplies it.
+        placeholder_values: The settings and the job parameters as placeholder values. The dictionary is
+            changed in place.
+        template_file: Path of the template. Its row of the steps file gives the group and the
+            resources. A template without a group gets the group of the pipeline or of '--group'.
         args: Parsed command line options.
         definition: Output of `load_pipeline()`, or None for a single job.
 
     Returns:
         tuple of:
-            dict - the placeholder replacements
+            dict - the placeholder values
             str  - the name of the sbatch script, without the date and the extension
     """
     missing = [key for key in REQUIRED_SETTINGS if key not in settings]
@@ -526,15 +505,13 @@ def prepare_step(
     if pipeline_group is not None and pipeline_group not in GROUPS:
         raise ValueError(f"Unknown group '{pipeline_group}'. Available groups: {sorted(GROUPS)}.")
 
-    replacement_dict = replacements
-
     # The stain of every group is known to a template of any group, because a job can read the
     # result of another group. The mask of the synapse jobs is the IHC segmentation.
     for group_name, group_spec in GROUPS.items():
-        replacement_dict.setdefault(f"stain_{group_name}", group_spec["stain"])
+        placeholder_values.setdefault(f"stain_{group_name}", group_spec["stain"])
 
-    cochlea = replacement_dict["cochlea"]
-    replacement_dict["cochlea_job_name"] = "-".join(cochlea.split("_"))
+    cochlea = placeholder_values["cochlea"]
+    placeholder_values["cochlea_job_name"] = "-".join(cochlea.split("_"))
 
     cochlea_content = cochlea.split("_")
     version = ""
@@ -550,18 +527,17 @@ def prepare_step(
     experimenter = cochlea_content[1]
     number = cochlea_content[2]
     side = cochlea_content[3]
-    stains = replacement_dict.get("stains")
+    stains = placeholder_values.get("stains")
 
     prefix = "".join([species, experimenter])
-    template_name = os.path.basename(input_file)
+    template_name = os.path.basename(template_file)
 
-    # A single job uses the given template as it is. A pipeline selects the species template.
-    if definition is None:
-        template = species_template(PROJECT, template_name.split(".template")[0], species)
-        if template is not None and os.path.realpath(template) != os.path.realpath(input_file):
-            print(f"Note: {template} fits species {species}. Pass it with -i to use its resources.")
-    cochlea_dir = os.path.join(replacement_dict["data_dir"], cochlea)
-    group = template_group(input_file)
+    step_group, resources = step_row(template_file, species)
+    for key, value in resources.items():
+        placeholder_values.setdefault(key, value)
+
+    cochlea_dir = os.path.join(placeholder_values["data_dir"], cochlea)
+    group = step_group
     if group is None:
         group = pipeline_group
 
@@ -574,15 +550,15 @@ def prepare_step(
         inputs = [resolve_input(cochlea_dir, n5_candidates(prefix, number, side, stains, stain, version))
                   for stain in stains]
         # The lists become bash arrays, so they are separated by spaces. A file name contains '_'.
-        replacement_dict["cochlea_data"] = inputs[0][0]
-        replacement_dict["cochlea_data_multi"] = " ".join(name for name, _ in inputs)
-        replacement_dict["input_key_multi"] = " ".join(key for _, key in inputs)
-        replacement_dict["channel_multi"] = " ".join(stains)
+        placeholder_values["cochlea_data"] = inputs[0][0]
+        placeholder_values["cochlea_data_multi"] = " ".join(name for name, _ in inputs)
+        placeholder_values["input_key_multi"] = " ".join(key for _, key in inputs)
+        placeholder_values["channel_multi"] = " ".join(stains)
 
     else:
         group_spec = GROUPS[group]
-        stain = replacement_dict[f"stain_{group}"]
-        replacement_dict["stain"] = stain
+        stain = placeholder_values[f"stain_{group}"]
+        placeholder_values["stain"] = stain
 
         # The OME-Zarr of the S3 bucket is the fallback, because the n5 is deleted after a cochlea
         # is processed. The download step writes it only when the chain runs, so with '--download'
@@ -591,69 +567,69 @@ def prepare_step(
         candidates.append((f"{stain}.ome.zarr", OME_ZARR_KEY))
         if args.download:
             candidates = candidates[-1:]
-        replacement_dict["cochlea_data"], replacement_dict["input_key"] = resolve_input(cochlea_dir, candidates)
+        placeholder_values["cochlea_data"], placeholder_values["input_key"] = resolve_input(cochlea_dir, candidates)
 
         # The first step of a pipeline reads the image data and is rendered once per chain.
         if (definition is not None and not args.download and
                 template_name.split(".template")[0] == definition["steps"][0] and
-                not path_exists(os.path.join(cochlea_dir, replacement_dict["cochlea_data"],
-                                             replacement_dict["input_key"]))):
-            note_s3_image(replacement_dict.get("s3_remote"), cochlea, stain)
+                not path_exists(os.path.join(cochlea_dir, placeholder_values["cochlea_data"],
+                                             placeholder_values["input_key"]))):
+            note_s3_image(placeholder_values.get("s3_remote"), cochlea, stain)
 
         if group_spec["masking"] is not None:
-            replacement_dict["masking"] = group_spec["masking"]
+            placeholder_values["masking"] = group_spec["masking"]
 
         if group == "synapses":
-            replacement_dict.setdefault(group_spec["version"], DEFAULT_SYNAPSE_VERSION)
+            placeholder_values.setdefault(group_spec["version"], DEFAULT_SYNAPSE_VERSION)
 
-        if group_spec["version"] not in replacement_dict:
+        if group_spec["version"] not in placeholder_values:
             raise ValueError(f"The template {template_name} needs the '{group_spec['version']}' parameter.")
 
-        replacement_dict["model"] = get_model_path(settings, group_spec["models"],
-                                                   replacement_dict[group_spec["version"]])
+        placeholder_values["model"] = model_path(settings, group_spec["models"],
+                                                 placeholder_values[group_spec["version"]])
 
     # The prediction folder of every group whose model version is known, so that a template can
     # name the result of another group.
     for group_name, group_spec in GROUPS.items():
-        model_version = replacement_dict.get(group_spec["version"])
+        model_version = placeholder_values.get(group_spec["version"])
         if model_version is not None:
-            replacement_dict[f"{group_name.lower()}_prediction"] = prediction_name(
-                group_name, replacement_dict[f"stain_{group_name}"], model_version)
+            placeholder_values[f"{group_name.lower()}_prediction"] = prediction_name(
+                group_name, placeholder_values[f"stain_{group_name}"], model_version)
 
     if group is not None:
-        replacement_dict["prediction_dir"] = replacement_dict[f"{group.lower()}_prediction"]
+        placeholder_values["prediction_dir"] = placeholder_values[f"{group.lower()}_prediction"]
 
     # The folder of the synapse jobs depends on two model versions. It is derived for every template,
     # so that a later step, such as the MoBIE export, can name their result.
-    if "synapse_version" in replacement_dict and "ihc_version" in replacement_dict:
-        replacement_dict["marker_prediction"] = marker_prediction_name(
-            replacement_dict["stain_synapses"], replacement_dict["synapse_version"],
-            replacement_dict["stain_IHC"], replacement_dict["ihc_version"])
+    if "synapse_version" in placeholder_values and "ihc_version" in placeholder_values:
+        placeholder_values["synapse_ihc_prediction"] = synapse_ihc_prediction_name(
+            placeholder_values["stain_synapses"], placeholder_values["synapse_version"],
+            placeholder_values["stain_IHC"], placeholder_values["ihc_version"])
 
     # The prediction is masked with the IHC segmentation, so every step of the group depends on the
     # IHC model version as well and writes into the joined folder.
     if group == "synapses":
-        if "marker_prediction" not in replacement_dict:
+        if "synapse_ihc_prediction" not in placeholder_values:
             raise ValueError(f"The template {template_name} needs the 'ihc_version' parameter, "
                              "which selects the IHC segmentation the prediction is masked with.")
-        replacement_dict["prediction_dir"] = replacement_dict["marker_prediction"]
+        placeholder_values["prediction_dir"] = placeholder_values["synapse_ihc_prediction"]
 
-    # 'mobie_add_segmentation' also contains 'segment', but it needs no model and no watershed.
-    if template_name.startswith("segment"):
-        replacement_dict.update(watershed_parameters(replacement_dict["model"], group))
+    with open(template_file, "r") as myfile:
+        if WATERSHED_PLACEHOLDER in placeholders_in(myfile.read()):
+            placeholder_values.update(watershed_parameters(placeholder_values["model"], group))
 
     # The group enters the name of a template which serves more than one group, so that the runs
     # of two groups do not share an archive folder.
     script_str = template_name.split(".template")[0]
-    if pipeline_group is not None and template_group(input_file) is None:
+    if pipeline_group is not None and step_group is None:
         script_str = f"{script_str}_{pipeline_group}"
 
-    return replacement_dict, f"{script_str}_{prefix}{number.lstrip('0')}{side}"
+    return placeholder_values, f"{script_str}_{prefix}{number.lstrip('0')}{side}"
 
 
 def check_prediction_absent(
-    input_file: str,
-    output_file: str,
+    template_file: str,
+    sbatch_file: str,
 ) -> list:
     """Return a message if a mask or an apply step finds the result of a previous run.
 
@@ -662,13 +638,13 @@ def check_prediction_absent(
     keeps an existing 'mask.zarr', so a mask which a timeout left incomplete is never rebuilt.
 
     Args:
-        input_file: Path of the template.
-        output_file: Path of the generated sbatch script.
+        template_file: Path of the template.
+        sbatch_file: Path of the generated sbatch script.
 
     Returns:
         list: Warning messages. The list is empty if the step may run.
     """
-    step = os.path.basename(input_file).split("_")[0]
+    step = os.path.basename(template_file).split("_")[0]
     if step == "apply":
         result, message = SEGMENTATION_INPUT, "the prediction of a previous run exists: {}"
     elif step == "mask":
@@ -677,7 +653,7 @@ def check_prediction_absent(
     else:
         return []
 
-    output_folder = job_variables(output_file).get("OUTPUT_FOLDER")
+    output_folder = job_variables(sbatch_file).get("OUTPUT_FOLDER")
     if output_folder is None:
         return []
 
@@ -689,19 +665,19 @@ def check_prediction_absent(
 
 
 def check_rclone_remotes(
-    output_files: list,
+    sbatch_files: list,
 ) -> list:
     """Return a message for each rclone remote of a transfer job which the rclone config does not hold.
 
     Without the remote, the transfer fails only after the steps before it have run.
 
     Args:
-        output_files: Paths of the generated sbatch scripts.
+        sbatch_files: Paths of the generated sbatch scripts.
 
     Returns:
         list: Warning messages. The list is empty if the rclone config holds every remote.
     """
-    remotes = {job_variables(output_file).get("S3_REMOTE", "").split(":")[0] for output_file in output_files}
+    remotes = {job_variables(sbatch_file).get("S3_REMOTE", "").split(":")[0] for sbatch_file in sbatch_files}
     remotes.discard("")
     if not remotes:
         return []
@@ -717,8 +693,8 @@ def check_rclone_remotes(
 
 
 def check_steps(
-    input_files: list,
-    output_files: list,
+    template_files: list,
+    sbatch_files: list,
 ) -> list:
     """Return the warnings of the project for the steps of a chain.
 
@@ -727,15 +703,15 @@ def check_steps(
     is produced by its predecessor.
 
     Args:
-        input_files: Paths of the templates.
-        output_files: Paths of the generated sbatch scripts, in the same order.
+        template_files: Paths of the templates.
+        sbatch_files: Paths of the generated sbatch scripts, in the same order.
 
     Returns:
         list: Warning messages. The list is empty if every step may run.
     """
     messages = []
 
-    variables = job_variables(output_files[0])
+    variables = job_variables(sbatch_files[0])
     output_folder = variables.get("OUTPUT_FOLDER")
     if "INPUT" not in variables and output_folder is not None:
         prediction = os.path.join(output_folder, SEGMENTATION_INPUT)
@@ -749,9 +725,9 @@ def check_steps(
             path_exists(input_path) and not path_exists(os.path.join(input_path, input_key))):
         messages.append(f"the input of the job holds no {input_key}: {input_path}")
 
-    for input_file, output_file in zip(input_files, output_files):
-        messages += check_prediction_absent(input_file, output_file)
+    for template_file, sbatch_file in zip(template_files, sbatch_files):
+        messages += check_prediction_absent(template_file, sbatch_file)
 
-    messages += check_rclone_remotes(output_files)
+    messages += check_rclone_remotes(sbatch_files)
 
     return messages

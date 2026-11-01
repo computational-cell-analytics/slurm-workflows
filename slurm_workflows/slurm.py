@@ -14,22 +14,22 @@ SBATCH_PARAMETERS = [
      "descr": "account"},
 
     {"param": ["-a", "--array"],
-     "descr": "Job array"},
+     "descr": "job_array"},
 
     {"param": ["-c", "--cpus-per-task"],
-     "descr": "cpus-per-task"},
+     "descr": "cpus_per_task"},
 
     {"param": ["-G", "--gpus"],
      "descr": "gpu"},
 
     {"param": ["--job-name"],
-     "descr": "job-name"},
+     "descr": "job_name"},
 
     {"param": ["--mail-user"],
-     "descr": "mail-user"},
+     "descr": "mail_user"},
 
     {"param": ["--mem"],
-     "descr": "Memory-per-node"},
+     "descr": "memory_per_node"},
 
     {"param": ["-t", "--time"],
      "descr": "runtime"},
@@ -62,15 +62,15 @@ def jobids_from_log(
     return jobids
 
 
-def sbatch_parameters_to_dict(
-    sbatch_file: str,
+def add_sbatch_parameters(
     metadict: dict,
+    sbatch_file: str,
 ) -> None:
     """Add the #SBATCH parameters of an sbatch script to the metadata.
 
     Args:
-        sbatch_file: Path of the sbatch script.
         metadict: Metadata of the job.
+        sbatch_file: Path of the sbatch script.
     """
     with open(sbatch_file, "rt", encoding="utf8", errors="ignore") as myfile:
         for line in myfile:
@@ -201,7 +201,6 @@ def reportseff_from_jobid(
         jobid = jobids[-1]
     else:
         jobid = str(jobid)
-        print(f"Using manually provided JobID {jobid}")
 
     metadict["jobid"] = jobid
     user_id = subprocess.run(['whoami'], stdout=subprocess.PIPE).stdout.decode('utf-8').strip()
@@ -221,16 +220,16 @@ def reportseff_from_jobid(
         contents = line.split()
         if len(contents) >= 6 and matches_jobid(contents[0], jobid):
             job_id_found = True
-            reports_eff = {"JobID": contents[0]}
-            reports_eff["State"] = contents[1]
-            reports_eff["Elapsed"] = contents[2]
-            reports_eff["TimeEff"] = contents[3]
-            reports_eff["CPUEff"] = contents[4]
-            reports_eff["MemEff"] = contents[5]
+            reports_eff = {"jobid": contents[0]}
+            reports_eff["state"] = contents[1]
+            reports_eff["elapsed"] = contents[2]
+            reports_eff["time_eff"] = contents[3]
+            reports_eff["cpu_eff"] = contents[4]
+            reports_eff["mem_eff"] = contents[5]
             reports_eff_list.append(reports_eff)
 
-    # do not overwrite Reportseff if JobID is not found and entry already exists
+    # do not overwrite reportseff if JobID is not found and entry already exists
     if job_id_found:
-        metadict["Reportseff"] = reports_eff_list
-    elif "Reportseff" not in metadict:
-        metadict["Reportseff"] = []
+        metadict["reportseff"] = reports_eff_list
+    elif "reportseff" not in metadict:
+        metadict["reportseff"] = []

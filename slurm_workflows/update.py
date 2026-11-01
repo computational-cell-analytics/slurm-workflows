@@ -11,7 +11,7 @@ from typing import List, Optional
 
 from slurm_workflows.metadata import LOG_FILE, METADATA_FILE, SBATCH_FILE
 from slurm_workflows.metadata import archive_folders, as_list, read_metadata, write_metadata
-from slurm_workflows.slurm import jobids_from_log, matches_jobid, reportseff_from_jobid, sbatch_parameters_to_dict
+from slurm_workflows.slurm import jobids_from_log, matches_jobid, reportseff_from_jobid, add_sbatch_parameters
 from slurm_workflows.slurm import slurm_output_files, slurm_output_to_dict
 
 # The efficiency report of a job is available for around one week after the submission.
@@ -35,7 +35,7 @@ def update_sbatch_data(subfolders: List[str]):
 
             sbatch_file = os.path.join(folder, SBATCH_FILE)
             sbatch_dict = {}
-            sbatch_parameters_to_dict(sbatch_file, sbatch_dict)
+            add_sbatch_parameters(sbatch_dict, sbatch_file)
 
             for key, value in sbatch_dict.items():
                 if key not in metadict:
@@ -59,7 +59,7 @@ def update_sbatch_data(subfolders: List[str]):
         print("All directories contain updated sbatch information.")
 
 
-def update_reporteff(subfolders: List[str]):
+def update_reportseff(subfolders: List[str]):
     """Refresh the efficiency report of a recent job that is pending, running, or has no report.
 
     Args:
@@ -79,9 +79,9 @@ def update_reporteff(subfolders: List[str]):
             if days_past.days > REPORTSEFF_MAX_DAYS:
                 continue
 
-            reports = as_list(metadict.get("Reportseff", []))
+            reports = as_list(metadict.get("reportseff", []))
             for report in reports:
-                if report["State"] in UNFINISHED_STATES:
+                if report["state"] in UNFINISHED_STATES:
                     update_dir.append(folder)
                     break
 
@@ -132,11 +132,11 @@ def check_metadata(subfolders: List[str]):
                 update_metadata.append(folder)
 
             # check if JobID of efficiency report is identical with JobID of log
-            reports = as_list(metadict.get("Reportseff", []))
+            reports = as_list(metadict.get("reportseff", []))
             for report in reports:
-                if not matches_jobid(report["JobID"], metadict["jobid"]):
+                if not matches_jobid(report["jobid"], metadict["jobid"]):
                     if metadict["jobid"] not in jobids_from_log(log_file):
-                        metadict["Reportseff"] = []
+                        metadict["reportseff"] = []
                     reportseff_from_jobid(log_file, metadict, jobid=metadict["jobid"])
                     update_metadata.append(folder)
 
@@ -153,7 +153,7 @@ def update_slurm_output(subfolders: List[str], slurm_dir: str):
     """Add the data of the slurm output files of each job to its metadata.
 
     Each file `slurm-<jobid>.out` or `slurm-<jobid>_<array_index>.out` gives one entry of the list
-    'SlurmOutput'.
+    'slurm_output'.
 
     Args:
         subfolders: Archive folders.
@@ -178,10 +178,10 @@ def update_slurm_output(subfolders: List[str], slurm_dir: str):
             continue
 
         new_slurm_output = [slurm_output_to_dict(sf) for sf in slurm_files]
-        if new_slurm_output == metadict.get("SlurmOutput"):
+        if new_slurm_output == metadict.get("slurm_output"):
             continue
 
-        metadict["SlurmOutput"] = new_slurm_output
+        metadict["slurm_output"] = new_slurm_output
         update_dir.append(folder)
 
         write_metadata(metadict, metadata)
@@ -225,4 +225,4 @@ def update_archive(
     if slurm_dir is not None:
         update_slurm_output(subfolders, slurm_dir)
 
-    update_reporteff(subfolders)
+    update_reportseff(subfolders)

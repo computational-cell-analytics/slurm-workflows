@@ -11,9 +11,10 @@ import tempfile
 import unittest
 from unittest import mock
 
-from slurm_workflows import mobie
+from slurm_workflows.projects.cochlea_net import deployment, mobie
 from slurm_workflows.inputs import check_external_input, check_job_input, check_output_absent, job_variables
-from stubs import cochlea_net_module, write_file
+from slurm_workflows.templates import step_template
+from stubs import TEMPLATE_DIR, write_file
 
 
 class InputCheckTest(unittest.TestCase):
@@ -34,6 +35,12 @@ class InputCheckTest(unittest.TestCase):
                              "OTHER=/ignored", "# INPUT=/comment")
 
         self.assertEqual(job_variables(sbatch), {"INPUT": "/second", "OUTPUT_FOLDER": "/out"})
+
+    def test_job_variables_like_the_shell(self):
+        sbatch = self.sbatch('export INPUT="/a b/c.n5"  # the input', "OUTPUT_FOLDER=/out INPUT_KEY=s0",
+                             "INPUT_DIR=/ignored", "EXTERNAL_INPUT='unbalanced")
+
+        self.assertEqual(job_variables(sbatch), {"INPUT": "/a b/c.n5", "OUTPUT_FOLDER": "/out", "INPUT_KEY": "s0"})
 
     def test_no_input(self):
         self.assertEqual(check_job_input(self.sbatch("echo hi")), [])
@@ -77,7 +84,7 @@ class ResolveInputTest(unittest.TestCase):
     def setUp(self):
         self.tmp = tempfile.TemporaryDirectory()
         self.cochlea_dir = os.path.join(self.tmp.name, self.COCHLEA)
-        self.module = cochlea_net_module()
+        self.module = deployment
 
     def tearDown(self):
         self.tmp.cleanup()
@@ -96,11 +103,12 @@ class ResolveInputTest(unittest.TestCase):
         candidates.append((self.OME_ZARR, "s0"))
         return self.module.resolve_input(self.cochlea_dir, candidates)
 
-    def mobie_replacements(self):
-        replacements = {"data_dir": self.tmp.name, "cochlea": self.COCHLEA, "stains": self.STAINS}
-        replacements, _ = self.module.prepare_step({"data_dir": self.tmp.name, "models": {}}, replacements,
-                                                   "mobie_add_image.template", argparse.Namespace(group=None))
-        return replacements
+    def mobie_values(self):
+        values = {"data_dir": self.tmp.name, "cochlea": self.COCHLEA, "stains": self.STAINS}
+        values, _ = self.module.prepare_step({"data_dir": self.tmp.name, "models": {}}, values,
+                                             step_template(TEMPLATE_DIR, "mobie_add_image"),
+                                             argparse.Namespace(group=None))
+        return values
 
     def test_multi_n5_wins(self):
         self.add(self.MULTI, self.SINGLE, self.OME_ZARR)
@@ -136,38 +144,45 @@ class ResolveInputTest(unittest.TestCase):
 
     def test_mobie_image_multi_n5(self):
         self.add(self.MULTI)
-        replacements = self.mobie_replacements()
+        values = self.mobie_values()
 
-        self.assertEqual(replacements["cochlea_data_multi"], " ".join([self.MULTI] * 3))
-        self.assertEqual(replacements["input_key_multi"],
+        self.assertEqual(values["cochlea_data_multi"], " ".join([self.MULTI] * 3))
+        self.assertEqual(values["input_key_multi"],
                          "setup0/timepoint0/s0 setup1/timepoint0/s0 setup2/timepoint0/s0")
-        self.assertEqual(replacements["channel_multi"], "PV Vglut3 CTBP2")
+        self.assertEqual(values["channel_multi"], "PV Vglut3 CTBP2")
 
     def test_mobie_image_n5_per_stain(self):
         files = [f"GLR_301L_{stain}_fused.n5" for stain in self.STAINS]
         self.add(*files)
-        replacements = self.mobie_replacements()
+        values = self.mobie_values()
 
-        self.assertEqual(replacements["cochlea_data"], files[0])
-        self.assertEqual(replacements["cochlea_data_multi"], " ".join(files))
-        self.assertEqual(replacements["input_key_multi"], " ".join(["setup0/timepoint0/s0"] * 3))
+        self.assertEqual(values["cochlea_data"], files[0])
+        self.assertEqual(values["cochlea_data_multi"], " ".join(files))
+        self.assertEqual(values["input_key_multi"], " ".join(["setup0/timepoint0/s0"] * 3))
 
-    def ihc_step(self, download=False, definition=None):
-        replacements = {"data_dir": self.tmp.name, "cochlea": self.COCHLEA, "stains": self.STAINS,
-                        "ihc_version": "IHC_v11", "s3_remote": "remote:bucket"}
+    def ihc_step(self, download=False, definition=None, **parameters):
+        values = {"data_dir": self.tmp.name, "cochlea": self.COCHLEA, "stains": self.STAINS,
+                  "ihc_version": "IHC_v11", "s3_remote": "remote:bucket", **parameters}
         settings = {"data_dir": self.tmp.name, "models": {"IHC": {"IHC_v11": "/path/to/model"}}}
         stdout = io.StringIO()
         with contextlib.redirect_stdout(stdout):
-            replacements, _ = self.module.prepare_step(settings, replacements, "mask_IHC.template",
-                                                       argparse.Namespace(group=None, download=download), definition)
-        return replacements, stdout.getvalue()
+            values, _ = self.module.prepare_step(settings, values, step_template(TEMPLATE_DIR, "mask_IHC"),
+                                                 argparse.Namespace(group=None, download=download), definition)
+        return values, stdout.getvalue()
+
+    def test_resources_of_the_species_and_of_a_parameter(self):
+        values, _ = self.ihc_step()
+        self.assertEqual((values["time"], values["mem"]), ("00:30:00", "32G"))
+
+        values, _ = self.ihc_step(time="09:00:00")
+        self.assertEqual((values["time"], values["mem"]), ("09:00:00", "32G"))
 
     def test_download_reads_the_ome_zarr(self):
         self.add(self.MULTI)
-        replacements, _ = self.ihc_step(download=True)
+        values, _ = self.ihc_step(download=True)
 
-        self.assertEqual((replacements["cochlea_data"], replacements["input_key"]), (self.OME_ZARR, "s0"))
-        self.assertEqual(replacements["stain"], "Vglut3")
+        self.assertEqual((values["cochlea_data"], values["input_key"]), (self.OME_ZARR, "s0"))
+        self.assertEqual(values["stain"], "Vglut3")
 
     def test_s3_note(self):
         definition = {"name": "ihc", "steps": ["mask_IHC", "apply_IHC"]}
@@ -189,13 +204,13 @@ class ResolveInputTest(unittest.TestCase):
 class SynapseNameTest(unittest.TestCase):
     """The name of the synapse jobs is also the MoBIE source, so `add_s3_dataset --check` must accept it."""
 
-    def test_marker_prediction_name(self):
-        module = cochlea_net_module()
+    def test_synapse_ihc_prediction_name(self):
+        module = deployment
         cases = [(("CTBP2", "synapses_v3", "Vglut3", "IHC_v11"), "synapse_v3_ihc_v11"),
                  (("Homer1", "synapse_v3", "Vglut3", "IHC_v4b"), "Homer1_synapse_v3_ihc_v4b"),
                  (("CTBP2", "synapse_v3", "Myo7a", "IHC_v11"), "synapse_v3_ihc_myo7a_v11")]
         for args, name in cases:
-            self.assertEqual(module.marker_prediction_name(*args), name)
+            self.assertEqual(module.synapse_ihc_prediction_name(*args), name)
             self.assertTrue(mobie.SYNAPSE_NAME.fullmatch(name), name)
 
 
@@ -204,7 +219,7 @@ class PreviousRunTest(unittest.TestCase):
 
     def setUp(self):
         self.tmp = tempfile.TemporaryDirectory()
-        self.module = cochlea_net_module()
+        self.module = deployment
         self.sbatch = write_file(os.path.join(self.tmp.name, "job.sbatch"),
                                  f"#!/bin/bash\nexport OUTPUT_FOLDER={self.tmp.name}\n")
 
@@ -225,7 +240,7 @@ class RcloneRemoteTest(unittest.TestCase):
     def setUp(self):
         self.tmp = tempfile.TemporaryDirectory()
         self.config = os.path.join(self.tmp.name, "rclone.conf")
-        self.module = cochlea_net_module()
+        self.module = deployment
 
     def tearDown(self):
         self.tmp.cleanup()

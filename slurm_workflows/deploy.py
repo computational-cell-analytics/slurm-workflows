@@ -8,142 +8,20 @@ and archive it.
 import importlib
 import json
 import os
-import subprocess
-import sys
-import tempfile
+import types
 from datetime import date
 
+from slurm_workflows import REPOSITORY_DIR
 from slurm_workflows.inputs import check_external_input, check_job_input, check_output_absent
-from slurm_workflows.metadata import METADATA_FILE, read_metadata, write_metadata
-from slurm_workflows.pipelines import REPOSITORY_DIR, load_pipeline, resolve_pipeline, steps_from
-from slurm_workflows.repositories import write_repository_file
-from slurm_workflows.settings import blueprint_settings_file, load_settings, settings_file, settings_to_replacements
-from slurm_workflows.templates import replace_substrings_in_file
+from slurm_workflows.pipelines import load_pipeline, resolve_pipeline, steps_starting_at
+from slurm_workflows.projects import default
+from slurm_workflows.repositories import job_repositories
+from slurm_workflows.settings import blueprint_settings_file, load_settings, settings_file, settings_to_placeholders
+from slurm_workflows.submission import archive_submitted_job, submit
+from slurm_workflows.templates import render_template, step_template
 
-SCRIPTS_DIR = os.path.join(REPOSITORY_DIR, "scripts")
-
-RUN_SBATCH_SCRIPT = os.path.join(SCRIPTS_DIR, "01_run_sbatch.sh")
-
-# Printed by 01_run_sbatch.sh for the JobID of the submitted job.
-JOBID_PREFIX = "SUBMITTED_JOBID="
-
-
-def submit_step(
-    output_file: str,
-    archive_dir: str,
-    repository_file: str,
-    settings_path: str = None,
-    dependency: str = None,
-) -> str:
-    """Submit one job through `01_run_sbatch.sh` and return its JobID.
-
-    Args:
-        output_file: Path of the generated sbatch script.
-        archive_dir: Directory to archive the job in. No archive is written for an empty value.
-        repository_file: File listing the git repositories to snapshot.
-        settings_path: Settings file which names the HPC user in the metadata, or None.
-        dependency: JobID which has to complete successfully before this job starts.
-
-    Returns:
-        str: JobID of the submitted job.
-    """
-    cmd = ["bash", RUN_SBATCH_SCRIPT, "-m"]
-    if archive_dir:
-        cmd += ["-a", archive_dir]
-    else:
-        print("Warning: no archive directory is set. The job is not archived.")
-    if dependency is not None:
-        cmd += ["-d", dependency]
-    if settings_path is not None:
-        cmd += ["-s", settings_path]
-    cmd += ["-r", repository_file, output_file]
-
-    print(" ".join(cmd))
-    # 'capture_output' and 'text' need Python 3.7. The login node of the cluster has Python 3.6.
-    result = subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, universal_newlines=True)
-
-    if result.stdout:
-        print(result.stdout, end="")
-    if result.stderr:
-        print(result.stderr, end="", file=sys.stderr)
-
-    jobid = None
-    for line in result.stdout.splitlines():
-        if line.startswith(JOBID_PREFIX):
-            jobid = line[len(JOBID_PREFIX):].strip()
-
-    if jobid is None:
-        if result.returncode != 0:
-            raise ValueError(f"Submission of {output_file} failed with exit code {result.returncode}.")
-        raise ValueError(f"No JobID was reported for {output_file}.")
-
-    # The job is queued, so the chain goes on. Only the archive of the job is incomplete.
-    if result.returncode != 0:
-        print(f"Warning: job {jobid} was submitted, but its archiving failed with exit code {result.returncode}.")
-
-    return jobid
-
-
-def write_job_block(
-    archive_dir: str,
-    output_file: str,
-    project: str,
-    pipeline_name: str = None,
-    step_index: int = None,
-    step_count: int = None,
-    dependency: str = None,
-) -> None:
-    """Add the project and the pipeline information to the archived metadata of one job.
-
-    Args:
-        archive_dir: Directory the job was archived in.
-        output_file: Name of the generated sbatch script.
-        project: Name of the project.
-        pipeline_name: Name of the pipeline, or None for a single job.
-        step_index: Position of the step in the pipeline, starting at 1.
-        step_count: Number of steps of the pipeline.
-        dependency: JobID of the previous step, if there is one.
-    """
-    suffix = os.path.basename(output_file).split(".sbatch")[0].replace("_sbatch_", "_", 1)
-    metadata_file = os.path.join(archive_dir, suffix, METADATA_FILE)
-
-    if not os.path.isfile(metadata_file):
-        print(f"Warning: no metadata found in {metadata_file}. The project information is not stored.")
-        return
-
-    metadict = read_metadata(metadata_file)
-    metadict["Project"] = project
-    if pipeline_name is not None:
-        metadict["Pipeline"] = {"name": pipeline_name, "step": step_index, "of": step_count}
-        if dependency is not None:
-            metadict["Pipeline"]["depends_on"] = dependency
-
-    write_metadata(metadict, metadata_file)
-
-
-def repository_file_of(
-    settings: dict,
-    repository_file: str,
-) -> tuple:
-    """Return the repository file to use, and the temporary file to remove afterwards.
-
-    Args:
-        settings: Output of `load_settings()`.
-        repository_file: Repository file given on the command line, or None.
-
-    Returns:
-        tuple of:
-            str - the repository file to use
-            str - the temporary file to remove, or None
-    """
-    if repository_file is not None:
-        return repository_file, None
-
-    handle, repository_file = tempfile.mkstemp(prefix="repository_list_", suffix=".txt", text=True)
-    os.close(handle)
-    write_repository_file(settings.get("repositories", {}), repository_file)
-
-    return repository_file, repository_file
+# The functions which `deploy_jobs()` calls on the deployment module of a project.
+DEPLOYMENT_FUNCTIONS = ("add_arguments", "select_steps", "prepare_step", "check_steps")
 
 
 def project_module(
@@ -151,19 +29,24 @@ def project_module(
 ):
     """Import the deployment module of a project.
 
+    A project module defines only the functions which differ from the default deployment. The
+    default deployment supplies the other functions of `DEPLOYMENT_FUNCTIONS`.
+
     Args:
-        project: Name of the project.
+        project: Name of the project. A hyphen becomes an underscore in the package name.
 
     Returns:
-        module: `slurm_workflows/deployment/<project>_deployment.py`, or
-            `slurm_workflows/deployment/default_deployment.py` if the project has none.
+        `slurm_workflows/projects/default.py` if the project has no module, else a namespace with the
+        functions of `DEPLOYMENT_FUNCTIONS`.
     """
-    module_file = os.path.join(REPOSITORY_DIR, "slurm_workflows", "deployment", f"{project}_deployment.py")
+    package = project.replace("-", "_")
+    module_file = os.path.join(REPOSITORY_DIR, "slurm_workflows", "projects", package, "deployment.py")
     if not os.path.isfile(module_file):
-        return importlib.import_module("slurm_workflows.deployment.default_deployment")
+        return default
 
-    # The module name contains the project name, which may hold a hyphen, so it needs importlib.
-    return importlib.import_module(f"slurm_workflows.deployment.{project}_deployment")
+    module = importlib.import_module(f"slurm_workflows.projects.{package}.deployment")
+    return types.SimpleNamespace(**{name: getattr(module, name, getattr(default, name))
+                                    for name in DEPLOYMENT_FUNCTIONS})
 
 
 def load_project_settings(
@@ -209,56 +92,62 @@ def deploy_jobs(
     """
     settings, settings_path = load_project_settings(project, args.settings)
 
-    with open(args.json, "r") as myfile:
+    with open(args.params, "r") as myfile:
         parameters = json.load(myfile)
 
     if args.pipeline is None:
-        steps = [args.input]
+        template_files = [args.input]
         definition = None
     else:
         _, pipeline_file = resolve_pipeline(args.pipeline)
-        definition = load_pipeline(project, pipeline_file)
+        definition = load_pipeline(pipeline_file)
         if definition.get("description") is not None:
             print(f"Pipeline {definition['name']}: {definition['description']}")
         # The steps are selected before '--start-at', so that a step which the project adds can be resumed.
         step_names = module.select_steps(definition, settings, args)
         if args.start_at is not None:
-            step_names = steps_from(step_names, args.start_at)
-        steps = [module.resolve_template(project, step, parameters) for step in step_names]
+            step_names = steps_starting_at(step_names, args.start_at)
+        template_files = [step_template(definition["template_dir"], step) for step in step_names]
 
     # Render every step before anything is submitted, so that an unresolved placeholder of a later
     # step cannot leave the earlier steps of the chain queued.
-    output_files = []
-    for step_file in steps:
+    sbatch_files = []
+    step_values = []
+    for template_file in template_files:
         # A parameter of the job overrides the corresponding setting.
-        replacement_dict = settings_to_replacements(settings)
-        replacement_dict.update(parameters)
-        replacement_dict, script_name = module.prepare_step(settings, replacement_dict, step_file, args, definition)
+        placeholder_values = settings_to_placeholders(settings)
+        placeholder_values.update(parameters)
+        placeholder_values, script_name = module.prepare_step(settings, placeholder_values, template_file, args,
+                                                              definition)
 
-        output_file = f"{str(date.today())}_sbatch_{script_name}.sbatch"
-        replace_substrings_in_file(step_file, output_file, replacement_dict, strict=not args.allow_missing)
-        output_files.append(output_file)
+        sbatch_file = f"{str(date.today())}_sbatch_{script_name}.sbatch"
+        render_template(template_file, sbatch_file, placeholder_values, strict=not args.allow_missing)
+        sbatch_files.append(sbatch_file)
+        step_values.append(placeholder_values)
+
+    if module is default:
+        print(f"Note: project '{project}' has no deployment module. "
+              "The placeholders were filled from the settings and the parameters only.")
 
     # Only the first step can be checked here. The input of a later step is produced by its
     # predecessor, so it is verified by the guard inside the job script.
-    warnings = check_job_input(output_files[0])
-    for output_file in output_files:
-        warnings += check_external_input(output_file)
-        warnings += check_output_absent(output_file)
-    warnings += module.check_steps(steps, output_files)
+    warnings = check_job_input(sbatch_files[0])
+    for sbatch_file in sbatch_files:
+        warnings += check_external_input(sbatch_file)
+        warnings += check_output_absent(sbatch_file)
+    warnings += module.check_steps(template_files, sbatch_files)
 
     for message in warnings:
         print(f"Warning: {message}")
 
-    if len(output_files) > 1:
-        for output_file in output_files[1:]:
-            print(f"The input of {output_file} is verified when the job runs.")
+    if len(sbatch_files) > 1:
+        for sbatch_file in sbatch_files[1:]:
+            print(f"The input of {sbatch_file} is verified when the job runs.")
 
-    if not args.deploy:
-        if args.pipeline is None:
-            print(replacement_dict)
-        else:
-            print("The pipeline is not deployed. Use --deploy to submit the chain.")
+    if not args.submit:
+        for sbatch_file, placeholder_values in zip(sbatch_files, step_values):
+            print(f"Placeholder values of {sbatch_file}: {placeholder_values}")
+        print("Nothing is submitted. Use --submit to submit the jobs.")
         return
 
     if warnings and not args.force:
@@ -268,23 +157,27 @@ def deploy_jobs(
     archive_dir = args.archive_dir
     if archive_dir is None:
         archive_dir = settings.get("archive_dir")
+    if not archive_dir:
+        print("Warning: no archive directory is set. The jobs are not archived.")
 
-    repository_file, temporary_repository_file = repository_file_of(settings, args.repository_file)
+    repositories = job_repositories(settings, args.repository_file)
 
-    try:
-        dependency = None
-        for step_index, output_file in enumerate(output_files, start=1):
-            jobid = submit_step(output_file, archive_dir, repository_file, settings_path, dependency)
-            print(f"Step {step_index} of {len(output_files)} submitted as JobID {jobid}.")
+    dependency = None
+    for step_index, sbatch_file in enumerate(sbatch_files, start=1):
+        jobid = submit(sbatch_file, dependency)
+        print(f"Step {step_index} of {len(sbatch_files)} submitted as JobID {jobid}.")
 
-            if archive_dir:
-                if definition is None:
-                    write_job_block(archive_dir, output_file, project)
-                else:
-                    write_job_block(archive_dir, output_file, project, definition["name"],
-                                    step_index, len(output_files), dependency)
+        if archive_dir:
+            metadata = {"project": project}
+            if definition is not None:
+                metadata["pipeline"] = {"name": definition["name"], "step": step_index, "of": len(sbatch_files)}
+                if dependency is not None:
+                    metadata["pipeline"]["depends_on"] = dependency
+            try:
+                archive_submitted_job(sbatch_file, jobid, archive_dir, move=True, repositories=repositories,
+                                      settings_file=settings_path, metadata=metadata)
+            except (OSError, ValueError) as exc:
+                # The job is queued, so the chain goes on. Only the archive of the job is incomplete.
+                print(f"Warning: job {jobid} was submitted, but its archiving failed: {exc}")
 
-            dependency = jobid
-    finally:
-        if temporary_repository_file is not None:
-            os.remove(temporary_repository_file)
+        dependency = jobid

@@ -10,18 +10,18 @@ import os
 import sys
 from datetime import datetime
 
-from slurm_workflows.deploy import RUN_SBATCH_SCRIPT, SCRIPTS_DIR, deploy_jobs, project_module
+from slurm_workflows.deploy import deploy_jobs, project_module
 from slurm_workflows.metadata import write_job_metadata
-from slurm_workflows.mobie import (add_s3_dataset as add_dataset_to_s3, add_s3_sources, check_s3_datasets,
-                                   generate_local_project, generate_s3_project, repair_s3_dataset)
-from slurm_workflows.pipelines import pipeline_names, project_of_template, resolve_pipeline
+from slurm_workflows.pipelines import pipeline_names, resolve_pipeline
+from slurm_workflows.repositories import job_repositories, read_repository_file
+from slurm_workflows.settings import load_settings
+from slurm_workflows.submission import archive_job, archive_submitted_job, submit
 from slurm_workflows.summary import summarize
+from slurm_workflows.templates import project_of_template
 from slurm_workflows.update import update_archive
 
-ARCHIVE_SCRIPT = os.path.join(SCRIPTS_DIR, "02_archive_scripts.sh")
 
-
-def deploy():
+def main_deploy():
     parser = argparse.ArgumentParser(
         description="Fill in a template for an sbatch script using a JSON dictionary. "
         "The new sbatch script is deployed to the cluster and an entry in the archive directory is created. "
@@ -36,17 +36,21 @@ def deploy():
                         help=f"Pipeline to submit as a chain of jobs, as <project>/<pipeline>. "
                              f"Available: {pipeline_names()}")
 
-    parser.add_argument("-j", "--json", type=str, required=True, help="JSON dictionary.")
+    parser.add_argument("-j", "--params", type=str, required=True,
+                        help="Parameter file of the job, a JSON dictionary. "
+                             "A parameter overrides the setting of the same key.")
 
     parser.add_argument("-s", "--settings", type=str, default=None,
                         help="JSON file with the paths and names of your account. "
                              "Default: project_settings/<project>.json")
-    parser.add_argument("-a", "--archive_dir", type=str, default=None,
+    parser.add_argument("-a", "--archive-dir", type=str, default=None,
                         help="Directory to archive scripts and metadata. Default: archive_dir of the settings file.")
-    parser.add_argument("-r", "--repository_file", type=str, default=None,
-                        help="File containing git repositories to track. "
-                             "Default: derived from the repositories of the settings file.")
-    parser.add_argument("--deploy", action="store_true", help="Run script.")
+    parser.add_argument("-r", "--repository-file", type=str, default=None,
+                        help="File of additional git repositories to track. Each line holds a name and a path, "
+                             "separated by a tab. The job also tracks slurm-workflows and the repositories of "
+                             "the settings file.")
+    parser.add_argument("--submit", action="store_true",
+                        help="Submit the jobs. Without this option, the sbatch scripts are only written and checked.")
     parser.add_argument("--allow-missing", dest="allow_missing", action="store_true",
                         help="Print a warning instead of raising an error for an unresolved placeholder.")
     parser.add_argument("--start-at", dest="start_at", type=str, default=None,
@@ -85,39 +89,39 @@ def deploy():
         sys.exit(str(exc))
 
 
-def write_metadata():
+def main_write_metadata():
     parser = argparse.ArgumentParser(
         description="Extract metadata from an sbatch script.")
 
-    parser.add_argument('input_dir', type=str, help="Input directory containing sbatch script.")
+    parser.add_argument("input_dir", type=str, help="Input directory containing sbatch script.")
 
-    parser.add_argument('-o', "--output", type=str, default=None,
+    parser.add_argument("-o", "--output", type=str, default=None,
                         help="Output file for metadata. Default: <input_dir>/metadata.json")
-    parser.add_argument('-j', "--jobid", type=str, default=None, help="JobID")
-    parser.add_argument('-r', "--repository_file",
-                        type=str, default=None,
-                        help="File with information about git repositories in format '<Name>\t<path-to-repository>\n'")
+    parser.add_argument("-j", "--jobid", type=str, default=None, help="JobID")
+    parser.add_argument("-r", "--repository-file", type=str, default=None,
+                        help="File of the git repositories to track. Each line holds a name and a path, "
+                             "separated by a tab. Without it, the recorded hashes stay.")
     parser.add_argument("-s", "--settings", type=str, default=None,
                         help="Settings file of the project, which names the HPC user.")
     parser.add_argument("--overwrite", action="store_true", help="Overwrite existing JSON file.")
     args = parser.parse_args()
 
     try:
-        write_job_metadata(args.input_dir, args.output, args.jobid, args.repository_file, args.overwrite,
-                           args.settings)
+        repositories = None if args.repository_file is None else read_repository_file(args.repository_file)
+        write_job_metadata(args.input_dir, args.output, args.jobid, repositories, args.overwrite, args.settings)
     except (FileNotFoundError, ValueError) as exc:
         sys.exit(str(exc))
 
 
-def update_metadata():
+def main_update_metadata():
     parser = argparse.ArgumentParser(
         description="Update report of job efficiency, if last status was 'PENDING'.")
 
-    parser.add_argument('input_dir', type=str, help="Input directory containing sbatch script.")
+    parser.add_argument("input_dir", type=str, help="Input directory containing sbatch script.")
 
-    parser.add_argument('-p', "--pattern", type=str, default=None,
+    parser.add_argument("-p", "--pattern", type=str, default=None,
                         help="Pattern to match folders in job archive. Supports wildcards.")
-    parser.add_argument('-s', "--slurm_dir", type=str, default=None,
+    parser.add_argument("-s", "--slurm-dir", type=str, default=None,
                         help="Directory containing slurm output files (slurm-<job_id>.out or "
                              "slurm-<job_id>_<array_index>.out) to parse and store in metadata.")
     parser.add_argument("--general", action="store_true", help="Check general info.")
@@ -134,7 +138,7 @@ def iso_date(value: str) -> str:
     return datetime.strptime(value, "%Y-%m-%d").date().isoformat()
 
 
-def summary():
+def main_summary():
     parser = argparse.ArgumentParser(
         description="Print the average efficiency and the core hours of the archived jobs, and optionally "
         "write one row per job, ordered by date. The command only reads the archive. "
@@ -161,79 +165,67 @@ def summary():
         sys.exit(str(exc))
 
 
-def add_s3_dataset():
+def main_submit():
     parser = argparse.ArgumentParser(
-        description="Add a dataset to the MoBIE project in the S3 bucket: its name to the project.json and, with "
-        "--source, its sources to its dataset.json. The S3 files list the datasets and the sources of every local "
-        "MoBIE project, so only the new entries are added and all other entries stay unchanged. Other modes "
-        "rebuild the dataset list of a project.json, check the dataset.json files of the bucket, or repair one.")
+        description="Submit an sbatch script and add its JobID to the log file <date>_log_<suffix>.txt beside it. "
+        "With -a, the files of the job, its environment and its metadata are archived in "
+        "<archive_dir>/<date>_<suffix>/. The sbatch script follows the format <date>_sbatch_<suffix>.sbatch.")
 
-    parser.add_argument("-p", "--mobie_project", type=str, required=True,
-                        help="Root of the local MoBIE project. --source reads the local dataset.json from it. "
-                             "Each upload edits a temporary copy of the S3 file in it: tmp_<JobID>_<file name>, "
-                             "or tmp_<file name> outside of a Slurm job.")
-    parser.add_argument("-r", "--s3_remote", type=str, default=None,
-                        help="rclone remote and bucket, in the form remote:bucket. Not needed for --generate local.")
+    parser.add_argument("sbatch_file", type=str, help="The sbatch script.")
 
-    mode = parser.add_mutually_exclusive_group(required=True)
-    mode.add_argument("-d", "--dataset", type=str, default=None, help="Name of the dataset to add.")
-    mode.add_argument("--generate", choices=["s3", "local"], default=None,
-                      help="Set the dataset list to the dataset folders. 's3' updates the project.json of the "
-                           "S3 bucket from the bucket. 'local' updates the project.json of the local project "
-                           "from the local folders and uploads nothing.")
-    mode.add_argument("--check", action="store_true",
-                      help="Print each mismatch between the dataset.json and the data folders of every dataset "
-                           "in the S3 bucket.")
-
-    dataset_mode = parser.add_mutually_exclusive_group()
-    dataset_mode.add_argument("-s", "--source", type=str, nargs="+", default=None,
-                              help="Copy these sources and their views from the local dataset.json of -d into "
-                                   "the dataset.json of the S3 bucket, before the dataset is added to the "
-                                   "project.json. A source of the same name is replaced.")
-    dataset_mode.add_argument("--repair", action="store_true",
-                              help="Add a source to the S3 dataset.json of -d for each data folder which no "
-                                   "source lists. The entry is built from the data in the bucket.")
-    parser.add_argument("-e", "--service_endpoint", type=str, default=None,
-                        help="URL of the S3 service, e.g. https://s3.fs.gwdg.de. Needed for --repair.")
-    parser.add_argument("--default_view", type=str, default=None,
-                        help="With --repair: the source whose view becomes the default view of the dataset.")
-    parser.add_argument("-o", "--output", type=str, default=None,
-                        help="With --repair: write the repaired dataset.json to this file and upload nothing.")
+    parser.add_argument("-m", "--move", action="store_true",
+                        help="Move the job files into the archive instead of copying them.")
+    parser.add_argument("-a", "--archive-dir", type=str, default=None,
+                        help="Directory to archive the job in. Without it, the job is not archived.")
+    parser.add_argument("-r", "--repository-file", type=str, default=None,
+                        help="File of additional git repositories to track. Each line holds a name and a path, "
+                             "separated by a tab. The job also tracks slurm-workflows and the repositories of "
+                             "the -s settings file.")
+    parser.add_argument("-s", "--settings", type=str, default=None,
+                        help="Settings file of the project. It names the HPC user and the git repositories to track.")
+    parser.add_argument("-d", "--dependency", type=str, default=None,
+                        help="Start the job only after this JobID completed successfully.")
     args = parser.parse_args()
 
-    if args.s3_remote is None and args.generate != "local":
-        parser.error("-r is needed, unless --generate local is given.")
-    if (args.source or args.repair) and args.dataset is None:
-        parser.error("--source and --repair need -d.")
-    if args.repair and args.service_endpoint is None:
-        parser.error("--repair needs -e.")
-    if not args.repair and (args.service_endpoint or args.default_view or args.output):
-        parser.error("-e, --default_view and -o need --repair.")
-
     try:
-        if args.check:
-            check_s3_datasets(args.s3_remote)
-        elif args.generate == "local":
-            generate_local_project(args.mobie_project)
-        elif args.generate == "s3":
-            generate_s3_project(args.mobie_project, args.s3_remote)
-        elif args.repair:
-            repair_s3_dataset(args.mobie_project, args.s3_remote, args.dataset, args.service_endpoint,
-                              args.default_view, args.output)
-        else:
-            # The dataset.json comes first, so that the project.json lists the dataset only with its sources.
-            if args.source:
-                add_s3_sources(args.mobie_project, args.s3_remote, args.dataset, args.source)
-            add_dataset_to_s3(args.mobie_project, args.s3_remote, args.dataset)
+        settings = {} if args.settings is None else load_settings(args.settings)
+        repositories = job_repositories(settings, args.repository_file)
+        jobid = submit(args.sbatch_file, args.dependency)
     except (FileNotFoundError, ValueError) as exc:
         sys.exit(str(exc))
 
+    print(f"Submitted batch job {jobid}")
 
-# The bash scripts stay standalone. exec hands them the process, so their options, output and exit
-# code are unchanged.
-def submit():
-    os.execvp("bash", ["bash", RUN_SBATCH_SCRIPT] + sys.argv[1:])
+    if args.archive_dir is None:
+        return
+
+    try:
+        archive_submitted_job(args.sbatch_file, jobid, args.archive_dir, args.move, repositories, args.settings)
+    except (OSError, ValueError) as exc:
+        sys.exit(f"Job {jobid} was submitted, but its archiving failed: {exc}")
 
 
-def archive():
-    os.execvp("bash", ["bash", ARCHIVE_SCRIPT] + sys.argv[1:])
+def main_archive():
+    parser = argparse.ArgumentParser(
+        description="Copy or move the files of one job into its archive folder <archive_dir>/<date>_<suffix>/. "
+        "Every file of the job follows the format <date>_<middle>_<suffix>.<ext>, with a middle part of one word, "
+        "such as 'sbatch' or 'log', and is archived as <middle>.<ext>.")
+
+    parser.add_argument("date", type=str, help="Date of the job, YYYY-MM-DD.")
+    parser.add_argument("suffix", type=str, help="Suffix of the job.")
+
+    parser.add_argument("-m", "--move", action="store_true", help="Move the files instead of copying them.")
+    parser.add_argument("-i", "--input-dir", type=str, default=os.environ.get("WORK"),
+                        help="Directory of the job files. Default: $WORK")
+    parser.add_argument("-a", "--archive-dir", type=str, default=os.environ.get("JOB_ARCHIVE"),
+                        help="Directory of the archive folders. Default: $JOB_ARCHIVE")
+    args = parser.parse_args()
+
+    if args.input_dir is None or args.archive_dir is None:
+        parser.error("-i and -a are needed, unless WORK and JOB_ARCHIVE are set.")
+
+    try:
+        archive_job(os.path.realpath(args.input_dir), os.path.realpath(args.archive_dir), args.date, args.suffix,
+                    args.move)
+    except (OSError, ValueError) as exc:
+        sys.exit(str(exc))

@@ -7,6 +7,8 @@ Handling of the git repositories which are tracked with a job.
 import os
 import subprocess
 
+from slurm_workflows import REPOSITORY_DIR
+
 
 def read_repository_file(
     repository_file: str,
@@ -14,6 +16,7 @@ def read_repository_file(
     """Read a repository file.
 
     Each line holds a repository name and a path, separated by a tab. The path can contain spaces.
+    A missing file gives a warning and an empty dictionary.
 
     Args:
         repository_file: Path of the repository file.
@@ -22,7 +25,8 @@ def read_repository_file(
         dict: Dictionary mapping repository names to their local paths.
     """
     if not os.path.isfile(repository_file):
-        raise FileNotFoundError(f"Repository file {repository_file} not found.")
+        print(f"Warning: repository file {repository_file} not found. It is ignored.")
+        return {}
 
     repositories = {}
     with open(repository_file, "rt", encoding="utf8", errors="ignore") as myfile:
@@ -34,6 +38,31 @@ def read_repository_file(
                 raise ValueError(f"Ensure that the file containing repositories has the correct format. "
                                  f"Check the line '{line.strip()}' of {repository_file}.")
             repositories[content[0]] = content[1]
+
+    return repositories
+
+
+def job_repositories(
+    settings: dict,
+    repository_file: str = None,
+) -> dict:
+    """Return the git repositories which a job tracks.
+
+    The settings entry 'repositories' and the repository file give the repositories of the project.
+    A repository of the file overrides one of the same name in the settings. slurm-workflows is always
+    the clone of this package.
+
+    Args:
+        settings: Settings of the project, or an empty dictionary.
+        repository_file: Path of a repository file, or None.
+
+    Returns:
+        dict: Dictionary mapping repository names to their local paths.
+    """
+    repositories = dict(settings.get("repositories", {}))
+    if repository_file is not None:
+        repositories.update(read_repository_file(repository_file))
+    repositories["slurm-workflows"] = REPOSITORY_DIR
 
     return repositories
 

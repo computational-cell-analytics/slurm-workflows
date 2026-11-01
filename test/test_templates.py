@@ -100,7 +100,7 @@ class SettingsTest(unittest.TestCase):
     def test_repository_and_setting_of_same_name(self):
         values = settings_to_placeholders({"tool": "x", "repositories": {"tool": "/path"}})
 
-        self.assertEqual(values, {"tool": "x", "repo:tool": "/path"})
+        self.assertEqual(values, {"tool": "x", "repo:tool": "/path", "repo:slurm-workflows": REPOSITORY_DIR})
 
     def test_load_settings_missing_keys(self):
         path = write_file(os.path.join(self.tmp.name, "s.json"), json.dumps({"hpc_user": "u1"}))
@@ -108,7 +108,7 @@ class SettingsTest(unittest.TestCase):
         with self.assertRaises(ValueError) as context:
             load_settings(path)
 
-        self.assertIn("repositories", str(context.exception))
+        self.assertIn("academic_id", str(context.exception))
 
     def test_load_settings_invalid_json(self):
         path = write_file(os.path.join(self.tmp.name, "s.json"), "{")

@@ -12,8 +12,9 @@ import unittest
 from unittest import mock
 
 from slurm_workflows.metadata import init_metadict
+from slurm_workflows.repositories import job_repositories
 from slurm_workflows.slurm import jobids_from_log, reportseff_from_jobid, add_sbatch_parameters
-from stubs import WRITE_METADATA, run, set_reportseff_output, stub_env, write_file
+from stubs import REPOSITORY_DIR, WRITE_METADATA, run, set_reportseff_output, stub_env, write_file
 
 REPORT_LINES = [
     "JobID State Elapsed TimeEff CPUEff MemEff",
@@ -172,6 +173,40 @@ class WriteMetadataTest(unittest.TestCase):
         run([sys.executable, WRITE_METADATA, "-r", repository_file, self.archived], env=env)
 
         self.assertEqual(self.metadata()["repositories"][0]["repo_version"], self.git(repository, "rev-parse", "HEAD"))
+
+    def test_missing_repository_file_keeps_git_hash(self):
+        env = stub_env(self.tmp.name)
+        repository_file = write_file(os.path.join(self.tmp.name, "repositories.txt"), f"tool\t{REPOSITORY_DIR}\n")
+        run([sys.executable, WRITE_METADATA, "-r", repository_file, self.archived], env=env)
+
+        result = run([sys.executable, WRITE_METADATA, "-r", os.path.join(self.tmp.name, "none.txt"), self.archived],
+                     env=env)
+
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(self.metadata()["repositories"][0]["repo_name"], "tool")
+
+
+class RepositoriesTest(unittest.TestCase):
+
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+
+    def tearDown(self):
+        self.tmp.cleanup()
+
+    def test_job_repositories(self):
+        settings = {"repositories": {"tool": "/path/to/tool"}}
+        repository_file = write_file(os.path.join(self.tmp.name, "repositories.txt"), "extra\t/path/with space\n")
+
+        self.assertEqual(job_repositories(settings, repository_file),
+                         {"slurm-workflows": REPOSITORY_DIR, "tool": "/path/to/tool", "extra": "/path/with space"})
+
+        with contextlib.redirect_stdout(io.StringIO()):
+            repositories = job_repositories({}, os.path.join(self.tmp.name, "none.txt"))
+        self.assertEqual(repositories, {"slurm-workflows": REPOSITORY_DIR})
+
+        repositories = job_repositories({"repositories": {"slurm-workflows": "/other"}})
+        self.assertEqual(repositories, {"slurm-workflows": REPOSITORY_DIR})
 
 
 if __name__ == "__main__":

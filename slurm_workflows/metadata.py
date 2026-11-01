@@ -169,8 +169,9 @@ def write_job_metadata(
     add_user(metadict, settings_file)
     add_sbatch_parameters(metadict, sbatch_file)
     reportseff_from_jobid(log_file, metadict=metadict, jobid=jobid)
-    # A resubmission can run on a newer commit, so the hash is refreshed for an existing file too.
-    if repositories is not None:
+    # A resubmission can run on a newer commit, so an existing file gets the new hashes too.
+    # Without repositories, e.g. of a missing repository file, the recorded hashes stay.
+    if repositories:
         add_repository_status(metadict, repositories)
     if metadata is not None:
         metadict.update(metadata)

@@ -33,8 +33,7 @@ The file contains:
     "service_endpoint": "https://s3.fs.gwdg.de",
 
     "repositories": {
-        "cochlea-net": "/path/to/cochlea-net",
-        "slurm-workflows": "/path/to/slurm-workflows"
+        "cochlea-net": "/path/to/cochlea-net"
     },
 
     "models": {

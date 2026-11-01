@@ -15,7 +15,7 @@ from slurm_workflows import REPOSITORY_DIR
 from slurm_workflows.inputs import check_external_input, check_job_input, check_output_absent
 from slurm_workflows.pipelines import load_pipeline, resolve_pipeline, steps_starting_at
 from slurm_workflows.projects import default
-from slurm_workflows.repositories import read_repository_file
+from slurm_workflows.repositories import job_repositories
 from slurm_workflows.settings import blueprint_settings_file, load_settings, settings_file, settings_to_placeholders
 from slurm_workflows.submission import archive_submitted_job, submit
 from slurm_workflows.templates import render_template, step_template
@@ -160,10 +160,7 @@ def deploy_jobs(
     if not archive_dir:
         print("Warning: no archive directory is set. The jobs are not archived.")
 
-    if args.repository_file is not None:
-        repositories = read_repository_file(args.repository_file)
-    else:
-        repositories = settings.get("repositories", {})
+    repositories = job_repositories(settings, args.repository_file)
 
     dependency = None
     for step_index, sbatch_file in enumerate(sbatch_files, start=1):

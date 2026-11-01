@@ -13,7 +13,8 @@ from datetime import datetime
 from slurm_workflows.deploy import deploy_jobs, project_module
 from slurm_workflows.metadata import write_job_metadata
 from slurm_workflows.pipelines import pipeline_names, resolve_pipeline
-from slurm_workflows.repositories import read_repository_file
+from slurm_workflows.repositories import job_repositories, read_repository_file
+from slurm_workflows.settings import load_settings
 from slurm_workflows.submission import archive_job, archive_submitted_job, submit
 from slurm_workflows.summary import summarize
 from slurm_workflows.templates import project_of_template
@@ -45,8 +46,9 @@ def main_deploy():
     parser.add_argument("-a", "--archive-dir", type=str, default=None,
                         help="Directory to archive scripts and metadata. Default: archive_dir of the settings file.")
     parser.add_argument("-r", "--repository-file", type=str, default=None,
-                        help="File containing git repositories to track. "
-                             "Default: derived from the repositories of the settings file.")
+                        help="File of additional git repositories to track. Each line holds a name and a path, "
+                             "separated by a tab. The job also tracks slurm-workflows and the repositories of "
+                             "the settings file.")
     parser.add_argument("--submit", action="store_true",
                         help="Submit the jobs. Without this option, the sbatch scripts are only written and checked.")
     parser.add_argument("--allow-missing", dest="allow_missing", action="store_true",
@@ -176,15 +178,18 @@ def main_submit():
     parser.add_argument("-a", "--archive-dir", type=str, default=None,
                         help="Directory to archive the job in. Without it, the job is not archived.")
     parser.add_argument("-r", "--repository-file", type=str, default=None,
-                        help="File listing the git repositories to snapshot, one '<name>\t<path>' per line.")
+                        help="File of additional git repositories to track. Each line holds a name and a path, "
+                             "separated by a tab. The job also tracks slurm-workflows and the repositories of "
+                             "the -s settings file.")
     parser.add_argument("-s", "--settings", type=str, default=None,
-                        help="Settings file of the project, which names the HPC user in the metadata.")
+                        help="Settings file of the project. It names the HPC user and the git repositories to track.")
     parser.add_argument("-d", "--dependency", type=str, default=None,
                         help="Start the job only after this JobID completed successfully.")
     args = parser.parse_args()
 
     try:
-        repositories = None if args.repository_file is None else read_repository_file(args.repository_file)
+        settings = {} if args.settings is None else load_settings(args.settings)
+        repositories = job_repositories(settings, args.repository_file)
         jobid = submit(args.sbatch_file, args.dependency)
     except (FileNotFoundError, ValueError) as exc:
         sys.exit(str(exc))

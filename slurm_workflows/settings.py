@@ -8,14 +8,13 @@ import json
 import os
 
 from slurm_workflows import REPOSITORY_DIR
+from slurm_workflows.repositories import job_repositories
 
 SETTINGS_DIR = os.path.join(REPOSITORY_DIR, "project_settings")
 
 # Identifiers of the person who ran a job, recorded in the metadata of the archive.
 # Both keys must be present, and both may be blank.
 USER_SETTINGS = ("academic_id", "hpc_user")
-
-REQUIRED_SETTINGS = ("repositories",) + USER_SETTINGS
 
 
 def settings_file(
@@ -66,7 +65,7 @@ def load_settings(
         except json.JSONDecodeError as exc:
             raise ValueError(f"Settings file {settings_file} is not valid JSON: {exc}") from exc
 
-    missing = [key for key in REQUIRED_SETTINGS if key not in settings]
+    missing = [key for key in USER_SETTINGS if key not in settings]
     if missing:
         raise ValueError(f"Settings file {settings_file} is missing the keys: {missing}.")
 
@@ -78,9 +77,9 @@ def settings_to_placeholders(
 ) -> dict:
     """Flatten the settings into template placeholders.
 
-    Every scalar entry becomes a placeholder under its own key. Each repository of the 'repositories'
-    entry becomes the placeholder `repo:<name>` with its path. All other nested entries, such as
-    'models', give no placeholder.
+    Every scalar entry becomes a placeholder under its own key. Each repository of `job_repositories()`
+    becomes the placeholder `repo:<name>` with its path, so `repo:slurm-workflows` always exists. All
+    other nested entries, such as `models`, give no placeholder.
 
     Args:
         settings: Output of `load_settings()`.
@@ -91,7 +90,7 @@ def settings_to_placeholders(
     placeholder_values = {key: str(value) for key, value in settings.items()
                           if isinstance(value, (str, int, float))}
 
-    for name, path in settings.get("repositories", {}).items():
+    for name, path in job_repositories(settings).items():
         placeholder_values[f"repo:{name}"] = str(path)
 
     return placeholder_values

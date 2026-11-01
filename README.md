@@ -18,7 +18,8 @@ cp project_settings/cochlea-net.blueprint.json project_settings/cochlea-net.json
 
 The settings file of `cochlea-net` contains the mail address and the Slurm account for the sbatch header, the identifiers of the HPC user, the directories of the data and of the job archive, the names of the micromamba environments, the local paths of the git repositories, and the paths of the trained models.
 The keys `academic_id` and `hpc_user` name the person who runs a job, so that the archive records who spent the computing time of the HPC project. Both may stay empty.
-Every settings file needs the keys `repositories`, `academic_id` and `hpc_user`. A project can require more keys.
+Every settings file needs the keys `academic_id` and `hpc_user`. A project can require more keys.
+The optional entry `repositories` lists the git repositories of the project. Their hashes are archived with each job, together with the hash of slurm-workflows.
 `scripts/deploy.py` reads the settings file of the project and fills the values into the templates.
 Use the option `-s` to select a different settings file.
 
@@ -95,7 +96,7 @@ To add a project `<project>`, add these four parts:
 
 - `templates/<project>/` with one `.template` file per step.
 - `pipelines/<project>/` with the pipeline definitions, if the project chains steps.
-- `project_settings/<project>.blueprint.json` with the keys `repositories`, `academic_id`, `hpc_user` and the keys of the project.
+- `project_settings/<project>.blueprint.json` with the keys `academic_id`, `hpc_user` and the keys of the project. Add `repositories` if the jobs use other git repositories.
 - `slurm_workflows/projects/<project>/deployment.py` with the logic which is specific to the project, if the project needs it.
   A hyphen of the project name becomes an underscore in the package name, e.g. `slurm_workflows/projects/cochlea_net/`.
 
@@ -123,7 +124,8 @@ A template is an sbatch script with placeholders in the format `<name>`.
 The deploy step takes the value of a placeholder from these sources:
 
 1. A scalar key of the settings file, e.g. `<data_dir>`.
-2. An entry of `repositories` in the settings file, as `<repo:name>`. The value is the path of the repository, e.g. `<repo:slurm-workflows>`.
+2. An entry of `repositories` in the settings file, as `<repo:name>`. The value is the path of the repository, e.g. `<repo:cochlea-net>`.
+   `<repo:slurm-workflows>` is always the path of this repository.
 3. A key of the parameter file. A parameter overrides the setting of the same key.
 4. A value which the deployment module of the project adds, e.g. `<prediction_dir>` of `cochlea-net`.
 
@@ -346,7 +348,8 @@ python scripts/deploy.py -p mockup_example/pipelines/mockup/train_evaluate.json 
 1. Copy the mockup template to `templates/<project>/<step>.template`.
    Replace every value which is specific to a cluster account or to a job with a placeholder `<key>`.
 2. Copy the mockup settings to `project_settings/<project>.blueprint.json` and commit it.
-   Keep the keys `repositories`, `academic_id` and `hpc_user`, and add a key for every account-specific placeholder.
+   Keep the keys `academic_id` and `hpc_user`, and add a key for every account-specific placeholder.
+   List the other git repositories of the project under `repositories`.
    Copy the blueprint to `project_settings/<project>.json` and fill in the values of your account.
 3. If the settings and the parameters cannot fill every placeholder, add `slurm_workflows/projects/<project>/deployment.py` with the functions of the table in [Projects](#projects) which you need.
 4. To chain several steps, add `pipelines/<project>/<name>.json` with the ordered template names under the key `steps`:

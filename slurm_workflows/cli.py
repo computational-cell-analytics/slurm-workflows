@@ -93,14 +93,14 @@ def main_write_metadata():
     parser = argparse.ArgumentParser(
         description="Extract metadata from an sbatch script.")
 
-    parser.add_argument('input_dir', type=str, help="Input directory containing sbatch script.")
+    parser.add_argument("input_dir", type=str, help="Input directory containing sbatch script.")
 
-    parser.add_argument('-o', "--output", type=str, default=None,
+    parser.add_argument("-o", "--output", type=str, default=None,
                         help="Output file for metadata. Default: <input_dir>/metadata.json")
-    parser.add_argument('-j', "--jobid", type=str, default=None, help="JobID")
-    parser.add_argument('-r', "--repository-file",
-                        type=str, default=None,
-                        help="File with information about git repositories in format '<Name>\t<path-to-repository>\n'")
+    parser.add_argument("-j", "--jobid", type=str, default=None, help="JobID")
+    parser.add_argument("-r", "--repository-file", type=str, default=None,
+                        help="File of the git repositories to track. Each line holds a name and a path, "
+                             "separated by a tab. Without it, the recorded hashes stay.")
     parser.add_argument("-s", "--settings", type=str, default=None,
                         help="Settings file of the project, which names the HPC user.")
     parser.add_argument("--overwrite", action="store_true", help="Overwrite existing JSON file.")
@@ -117,11 +117,11 @@ def main_update_metadata():
     parser = argparse.ArgumentParser(
         description="Update report of job efficiency, if last status was 'PENDING'.")
 
-    parser.add_argument('input_dir', type=str, help="Input directory containing sbatch script.")
+    parser.add_argument("input_dir", type=str, help="Input directory containing sbatch script.")
 
-    parser.add_argument('-p', "--pattern", type=str, default=None,
+    parser.add_argument("-p", "--pattern", type=str, default=None,
                         help="Pattern to match folders in job archive. Supports wildcards.")
-    parser.add_argument('-s', "--slurm-dir", type=str, default=None,
+    parser.add_argument("-s", "--slurm-dir", type=str, default=None,
                         help="Directory containing slurm output files (slurm-<job_id>.out or "
                              "slurm-<job_id>_<array_index>.out) to parse and store in metadata.")
     parser.add_argument("--general", action="store_true", help="Check general info.")

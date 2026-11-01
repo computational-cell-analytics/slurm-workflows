@@ -148,7 +148,7 @@ def write_job_metadata(
         input_dir: Archive folder.
         output_file: Metadata file. Default: `<input_dir>/metadata.json`.
         jobid: JobID, or None for the last JobID of `log.txt`.
-        repositories: Dictionary mapping the names of the git repositories to record to their paths, or None.
+        repositories: Names and paths of the git repositories to track, or None.
         overwrite: Replace an existing `metadata.json`.
         settings_file: Settings file of the project, which names the HPC user.
         metadata: Entries to add, e.g. the project of the job, or None.

@@ -302,7 +302,7 @@ The sbatch script was adapted from the [GWDG](https://docs.hpc.gwdg.de/how_to_us
 | `params.json` | Parameter file of the job: job name, debug module, dataset name. |
 | `YYYY-MM-DD_sbatch_mockup.sbatch` | The sbatch script which is generated from the template. |
 | `YYYY-MM-DD_log_mockup.txt` | The log file with the fictional JobID 1234567. |
-| `repository_list.txt` | The git repositories whose hash is archived, one per line as `<Repository-name>	<Path-to-repository>`. |
+| `repository_list.txt` | The git repositories whose hash is archived. Each line holds a name and a path, separated by a tab. |
 | `YYYY-MM-DD_mockup/` | The archive folder with the sbatch script, the log file and `metadata.json`. |
 
 The mockup files are kept in `mockup_example`, and not in the top-level directories `templates` and `project_settings`.

@@ -225,7 +225,7 @@ def archive_submitted_job(
         jobid: JobID of the job.
         archive_dir: Directory of the archive folders.
         move: Move the job files instead of copying them.
-        repositories: Dictionary mapping the names of the git repositories to record to their paths, or None.
+        repositories: Names and paths of the git repositories to track, or None.
         settings_file: Settings file of the project, which names the HPC user, or None.
         metadata: Entries to add to the metadata, or None.
 

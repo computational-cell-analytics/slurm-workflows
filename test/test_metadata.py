@@ -183,12 +183,16 @@ class WriteMetadataTest(unittest.TestCase):
         self.assertEqual(result.returncode, 0, result.stderr)
         return result.stdout.strip()
 
-    def test_resubmission_refreshes_git_hash(self):
-        env = stub_env(self.tmp.name)
+    def repository(self):
         repository = os.path.join(self.tmp.name, "repository")
         os.makedirs(repository)
         self.git(repository, "init", "-q")
         self.git(repository, "commit", "-q", "--allow-empty", "-m", "first")
+        return repository
+
+    def test_resubmission_refreshes_git_hash(self):
+        env = stub_env(self.tmp.name)
+        repository = self.repository()
         repository_file = write_file(os.path.join(self.tmp.name, "repositories.txt"), f"tool\t{repository}\n")
 
         run([sys.executable, WRITE_METADATA, "-r", repository_file, self.archived], env=env)
@@ -199,7 +203,7 @@ class WriteMetadataTest(unittest.TestCase):
 
     def test_missing_repository_file_keeps_git_hash(self):
         env = stub_env(self.tmp.name)
-        repository_file = write_file(os.path.join(self.tmp.name, "repositories.txt"), f"tool\t{REPOSITORY_DIR}\n")
+        repository_file = write_file(os.path.join(self.tmp.name, "repositories.txt"), f"tool\t{self.repository()}\n")
         run([sys.executable, WRITE_METADATA, "-r", repository_file, self.archived], env=env)
 
         result = run([sys.executable, WRITE_METADATA, "-r", os.path.join(self.tmp.name, "none.txt"), self.archived],

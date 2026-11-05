@@ -5,6 +5,7 @@
 Handling of the git repositories which are tracked with a job.
 """
 import os
+import shutil
 import subprocess
 
 from slurm_workflows import REPOSITORY_DIR
@@ -79,6 +80,10 @@ def add_repository_status(
         metadict: Metadata of the job.
         repositories: Dictionary mapping repository names to their local paths.
     """
+    if shutil.which("git") is None:
+        print("Warning: git was not found, so the git hashes of the repositories are not recorded.")
+        return
+
     repo_list = []
 
     for repo_name, repo_path in repositories.items():
@@ -86,8 +91,12 @@ def add_repository_status(
             print("Repository path " + repo_path + " could not be resolved.")
             continue
 
-        repo_version = subprocess.run(["git", "rev-parse", "HEAD"],
-                                      cwd=repo_path, stdout=subprocess.PIPE).stdout.decode("utf-8")
+        result = subprocess.run(["git", "rev-parse", "HEAD"], cwd=repo_path, stdout=subprocess.PIPE,
+                                stderr=subprocess.PIPE, universal_newlines=True)
+        if result.returncode != 0:
+            print(f"Warning: the git hash of {repo_name} is not recorded: {result.stderr.strip()}")
+            continue
+        repo_version = result.stdout
         git_status_out = subprocess.run(["git", "status", "--porcelain"],
                                         cwd=repo_path, stdout=subprocess.PIPE).stdout.decode("utf-8")
         git_status = "clean" if len(git_status_out) == 0 else "dirty"

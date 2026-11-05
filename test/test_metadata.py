@@ -154,6 +154,29 @@ class WriteMetadataTest(unittest.TestCase):
         self.assertEqual(self.metadata()["jobid"], "1234")
         self.assertNotIn("reportseff", self.metadata())
 
+    def test_failing_reportseff(self):
+        env = stub_env(self.tmp.name)
+        env["REPORTSEFF_EXIT"] = "1"
+
+        result = run([sys.executable, WRITE_METADATA, self.archived], env=env)
+
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn("ModuleNotFoundError", result.stdout)
+        self.assertNotIn("reportseff", self.metadata())
+
+    def test_folder_without_git_is_not_recorded(self):
+        env = stub_env(self.tmp.name)
+        env["GIT_CEILING_DIRECTORIES"] = self.tmp.name
+        folder = os.path.join(self.tmp.name, "plain")
+        os.makedirs(folder)
+        repository_file = write_file(os.path.join(self.tmp.name, "repositories.txt"), f"plain\t{folder}\n")
+
+        result = run([sys.executable, WRITE_METADATA, "-r", repository_file, self.archived], env=env)
+
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn("git hash of plain", result.stdout)
+        self.assertNotIn("plain", [entry["repo_name"] for entry in self.metadata()["repositories"]])
+
     def git(self, repository, *args):
         identity = ["-c", "user.name=test", "-c", "user.email=test@example.org"]
         result = run(["git", "-C", repository] + identity + list(args))

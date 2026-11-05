@@ -28,12 +28,6 @@ export MASK_INPUT_KEY="s4"
 export DILATION_ITERATIONS=4
 export MAX_DISTANCE=3.0
 
-# The job reads the IHC segmentation of MASK_PATH from the S3 bucket. The table of the MoBIE
-# project is the local proxy for it, because this repository has no S3 client. It is checked
-# before the submission and not here, so a pruned MoBIE project cannot fail a job whose data is
-# in the bucket.
-export EXTERNAL_INPUT=<mobie_project>/<cochlea>/tables/<ihc_prediction>/default.tsv
-
 echo "Input directory: ${INPUT}"
 echo "Output directory: ${OUTPUT_FOLDER}"
 echo "Mask: ${MASK_PATH}"

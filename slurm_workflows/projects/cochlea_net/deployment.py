@@ -431,9 +431,6 @@ def note_s3_image(
     try:
         found = (cochlea in s3_datasets(s3_remote) and
                  stain in json.loads(rclone(["cat", f"{s3_remote}/{cochlea}/{DATASET_FILE}"]))["sources"])
-    except FileNotFoundError:
-        print("Note: rclone was not found, so the S3 bucket was not checked. Run 'module load rclone' first.")
-        return
     except ValueError as exc:
         print(f"Note: the S3 bucket was not checked: {exc}")
         return

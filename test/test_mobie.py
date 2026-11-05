@@ -95,6 +95,11 @@ class ProjectTest(RcloneStubTest):
         self.assertEqual(rclone_mock.call_args_list[0][0][0], ["copyto", f"{REMOTE}/project.json", local_file])
         self.assertEqual(os.listdir(self.mobie_project), [])
 
+    def test_missing_rclone(self):
+        with mock.patch.dict(os.environ, {"PATH": self.mobie_project}):
+            with self.assertRaisesRegex(ValueError, "module load rclone"):
+                mobie.rclone(["cat", f"{REMOTE}/project.json"])
+
     def test_change_of_the_remote_file_during_the_job_stops_the_upload(self):
         concurrent = json.dumps(dict(PROJECT, datasets=PROJECT["datasets"] + ["M_AMD_000059_R"]))
         real_rclone = mobie.rclone

@@ -10,6 +10,7 @@ import io
 import json
 import os
 import re
+import shutil
 import subprocess
 
 PROJECT_FILE = "project.json"
@@ -54,6 +55,8 @@ def rclone(
     Returns:
         str: The standard output.
     """
+    if shutil.which("rclone") is None:
+        raise ValueError("rclone was not found. Run 'module load rclone' first.")
     result = subprocess.run(["rclone"] + args, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
                             universal_newlines=True)
     if result.returncode != 0:

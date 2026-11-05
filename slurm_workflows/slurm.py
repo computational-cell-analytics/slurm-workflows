@@ -7,6 +7,7 @@ Parsing of sbatch scripts, of slurm output files and of the efficiency report of
 import glob
 import os
 import re
+import shutil
 import subprocess
 
 SBATCH_PARAMETERS = [
@@ -178,6 +179,34 @@ def matches_jobid(
     return entry == jobid or entry.startswith(f"{jobid}_") or entry.startswith(f"{jobid}.")
 
 
+def run_reportseff(
+    user_id: str,
+) -> str:
+    """Run `reportseff -u <user>`.
+
+    A `reportseff` on PATH can still fail, e.g. if its Python module is not installed in the active
+    environment.
+
+    Args:
+        user_id: HPC user.
+
+    Returns:
+        str: The standard output.
+    """
+    executable = shutil.which("reportseff")
+    if executable is None:
+        raise ValueError("reportseff was not found")
+    try:
+        result = subprocess.run([executable, "-u", user_id], stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+                                universal_newlines=True)
+    except OSError as exc:
+        raise ValueError(f"reportseff could not be run: {exc}") from exc
+    if result.returncode != 0:
+        lines = result.stderr.strip().splitlines() or [f"exit code {result.returncode}"]
+        raise ValueError(f"reportseff failed: {lines[-1]}")
+    return result.stdout
+
+
 def reportseff_from_jobid(
     log_file: str,
     metadict: dict,
@@ -206,10 +235,11 @@ def reportseff_from_jobid(
     user_id = subprocess.run(['whoami'], stdout=subprocess.PIPE).stdout.decode('utf-8').strip()
 
     try:
-        result = subprocess.run(['reportseff', '-u', user_id], stdout=subprocess.PIPE).stdout.decode('utf-8')
-    except OSError as exc:
+        result = run_reportseff(user_id)
+    except ValueError as exc:
         # A finished job must still be archived, so the report is left out instead.
-        print(f"Warning: the efficiency report is not recorded. reportseff could not be run: {exc}")
+        print(f"Warning: the efficiency report is not recorded: {exc}. Make reportseff available, then run "
+              f"scripts/update_metadata.py <archive_dir> within one week.")
         return
 
     lines = result.split("\n")

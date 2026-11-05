@@ -39,7 +39,12 @@ echo "$(({FIRST_JOBID} + count));cluster"
 """
 
 # Prints the file 'reportseff' of the state directory, which a test fills with report lines.
+# A non-zero REPORTSEFF_EXIT fails like a wrapper whose Python module is missing.
 REPORTSEFF_STUB = """#!/bin/bash
+if [ "${REPORTSEFF_EXIT:-0}" != 0 ] ; then
+    echo "ModuleNotFoundError: No module named 'reportseff'" >&2
+    exit "$REPORTSEFF_EXIT"
+fi
 cat "$STUB_STATE"/reportseff 2>/dev/null
 exit 0
 """

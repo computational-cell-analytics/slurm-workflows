@@ -31,9 +31,6 @@ export THRESHOLD=0.5
 # against it. A larger distance here matches detections the mask never covered.
 export MAX_DISTANCE=3.0
 
-# See 'mask_synapses' for why the MoBIE table is the local proxy of the segmentation.
-export EXTERNAL_INPUT=<mobie_project>/<cochlea>/tables/<ihc_prediction>/default.tsv
-
 echo "Output directory: ${OUTPUT_FOLDER}"
 echo "Mask: ${MASK_PATH}"
 

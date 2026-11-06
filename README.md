@@ -162,6 +162,8 @@ An empty list means that the check found no problem.
 The deploy step prints every warning.
 A warning stops `--submit`, unless `--force` is given.
 The deploy step prints the notes of `prepare_step` after the warnings.
+A deployment which stops with an error removes the sbatch scripts which it wrote.
+A dry run keeps them.
 
 ### The guard of a step
 

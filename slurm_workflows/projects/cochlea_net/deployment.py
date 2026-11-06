@@ -206,8 +206,6 @@ def watershed_parameters(
     with open(parameter_file, "r") as myfile:
         parameters = json.load(myfile)["params"]
 
-    print(f"Loaded cached best params from {parameter_file}")
-
     return {key: str(parameters[key]) for key in
             ("center_distance_threshold", "boundary_distance_threshold", "distance_smoothing")}
 
@@ -405,25 +403,27 @@ def resolve_input(
     return candidates[0]
 
 
-def note_s3_image(
+def s3_image_note(
     s3_remote: str,
     cochlea: str,
     stain: str,
-) -> None:
-    """Print whether the S3 bucket holds the image data of a stain which is missing locally.
+) -> str:
+    """Return whether the S3 bucket holds the image data of a stain which is missing locally.
 
     If the bucket holds it, the note gives the command with '--download'. The note never stops the
-    deployment, so a failed check is printed and not raised.
+    deployment, so a failed check becomes the note and is not raised.
 
     Args:
         s3_remote: rclone remote and bucket, in the form 'remote:bucket', or None.
         cochlea: Name of the cochlea, which is the dataset in the bucket.
         stain: The stain to read.
+
+    Returns:
+        str: The note, without the 'Note: ' prefix.
     """
     image = f"{IMAGE_DIR}/{stain}{OME_ZARR}"
     if s3_remote is None:
-        print(f"Note: the settings file names no 's3_remote', so the S3 bucket was not checked for {image}.")
-        return
+        return f"the settings file names no 's3_remote', so the S3 bucket was not checked for {image}."
 
     # rclone gives the same error for a missing dataset folder and for a failed listing, so the
     # dataset list comes first. The transfer lists a source only after its data is complete, so a
@@ -432,17 +432,15 @@ def note_s3_image(
         found = (cochlea in s3_datasets(s3_remote) and
                  stain in json.loads(rclone(["cat", f"{s3_remote}/{cochlea}/{DATASET_FILE}"]))["sources"])
     except ValueError as exc:
-        print(f"Note: the S3 bucket was not checked: {exc}")
-        return
+        return f"the S3 bucket was not checked: {exc}"
 
     if not found:
-        print(f"Note: the {DATASET_FILE} of {cochlea} in the S3 bucket lists no source {stain}, so the bucket "
-              f"holds no complete {image} either.")
-        return
+        return (f"the {DATASET_FILE} of {cochlea} in the S3 bucket lists no source {stain}, so the bucket "
+                f"holds no complete {image} either.")
 
     command = " ".join(shlex.quote(arg) for arg in ["python"] + sys.argv + ["--download"])
-    print(f"Note: the S3 bucket holds {s3_remote}/{cochlea}/{image}. To download it in a first step "
-          f"of the chain, run:\n    {command}")
+    return (f"the S3 bucket holds {s3_remote}/{cochlea}/{image}. To download it in a first step "
+            f"of the chain, run:\n    {command}")
 
 
 def model_path(
@@ -489,7 +487,18 @@ def prepare_step(
         tuple of:
             dict - the placeholder values
             str  - the name of the sbatch script, without the date and the extension
+            list - notes, which deploy prints after the warnings
     """
+    notes = []
+
+    if definition is None:
+        given = [option for option, dest in (("--no-mobie", "no_mobie"), ("--no-cleanup", "no_cleanup"),
+                                             ("--download", "download"), ("--cleanup-input", "cleanup_input"))
+                 if getattr(args, dest)]
+        if given:
+            raise ValueError(f"Use {', '.join(given)} together with -p. A single job of -i has no steps "
+                             "to add or drop.")
+
     missing = [key for key in REQUIRED_SETTINGS if key not in settings]
     if missing:
         raise ValueError(f"The settings file is missing the keys: {missing}.")
@@ -518,7 +527,6 @@ def prepare_step(
         if cochlea_content[4][0] != "v":
             raise ValueError("Cochlea parameter does not have the correct format.")
         version = "_" + cochlea_content[4]
-        print(f"Processing version {cochlea_content[4]} of cochlea {''.join(cochlea_content[:3])}.")
 
     species = cochlea_content[0]
     experimenter = cochlea_content[1]
@@ -571,7 +579,7 @@ def prepare_step(
                 template_name.split(".template")[0] == definition["steps"][0] and
                 not path_exists(os.path.join(cochlea_dir, placeholder_values["cochlea_data"],
                                              placeholder_values["input_key"]))):
-            note_s3_image(placeholder_values.get("s3_remote"), cochlea, stain)
+            notes.append(s3_image_note(placeholder_values.get("s3_remote"), cochlea, stain))
 
         if group_spec["masking"] is not None:
             placeholder_values["masking"] = group_spec["masking"]
@@ -621,7 +629,7 @@ def prepare_step(
     if pipeline_group is not None and step_group is None:
         script_str = f"{script_str}_{pipeline_group}"
 
-    return placeholder_values, f"{script_str}_{prefix}{number.lstrip('0')}{side}"
+    return placeholder_values, f"{script_str}_{prefix}{number.lstrip('0')}{side}", notes
 
 
 def check_prediction_absent(

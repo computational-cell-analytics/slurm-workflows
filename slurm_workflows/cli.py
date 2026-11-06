@@ -18,16 +18,18 @@ from slurm_workflows.settings import load_settings
 from slurm_workflows.submission import archive_job, archive_submitted_job, submit
 from slurm_workflows.summary import summarize
 from slurm_workflows.templates import project_of_template
-from slurm_workflows.update import update_archive
+from slurm_workflows.update import REPORTSEFF_MAX_DAYS, update_archive
 
 
 def main_deploy():
     parser = argparse.ArgumentParser(
         description="Fill in a template for an sbatch script using a JSON dictionary. "
-        "The new sbatch script is deployed to the cluster and an entry in the archive directory is created. "
+        "With --submit, the sbatch script is submitted and archived. "
         "A pipeline fills in one template per step and submits the steps as a chain of Slurm jobs, "
         "where each step starts only after its predecessor completed successfully. "
-        "The folder of the template, or the first part of the pipeline name, selects the project.")
+        "The folder of the template, or the first part of the pipeline name, selects the project. "
+        "A project can add its own options. Give -h together with -p or -i to list them, "
+        "e.g. -p cochlea-net/sgn -h.")
 
     source = parser.add_mutually_exclusive_group(required=True)
     source.add_argument("-i", "--input", type=str, default=None,
@@ -56,8 +58,8 @@ def main_deploy():
     parser.add_argument("--start-at", dest="start_at", type=str, default=None,
                         help="Start a pipeline at this step, to resume a chain after a failure.")
     parser.add_argument("--force", action="store_true",
-                        help="Deploy the job even if the input data does not exist, or if a previous "
-                             "result would be overwritten.")
+                        help="Submit the jobs even if a check gives a warning, e.g. because the input data "
+                             "does not exist or a previous result exists.")
 
     # The project adds its own options, so it is resolved before the full parse. The pre-parser
     # has no help and no required option, so that '-h' lists the options of the project as well.
@@ -91,19 +93,21 @@ def main_deploy():
 
 def main_write_metadata():
     parser = argparse.ArgumentParser(
-        description="Extract metadata from an sbatch script.")
+        description="Create or update the metadata.json of an archive folder from its sbatch.sbatch and log.txt.")
 
-    parser.add_argument("input_dir", type=str, help="Input directory containing sbatch script.")
+    parser.add_argument("input_dir", type=str, help="Archive folder of the job, with sbatch.sbatch and log.txt.")
 
     parser.add_argument("-o", "--output", type=str, default=None,
                         help="Output file for metadata. Default: <input_dir>/metadata.json")
-    parser.add_argument("-j", "--jobid", type=str, default=None, help="JobID")
+    parser.add_argument("-j", "--jobid", type=str, default=None,
+                        help="JobID of the efficiency report. Default: the last JobID of log.txt.")
     parser.add_argument("-r", "--repository-file", type=str, default=None,
                         help="File of the git repositories to track. Each line holds a name and a path, "
                              "separated by a tab. Without it, the recorded hashes stay.")
     parser.add_argument("-s", "--settings", type=str, default=None,
                         help="Settings file of the project, which names the HPC user.")
-    parser.add_argument("--overwrite", action="store_true", help="Overwrite existing JSON file.")
+    parser.add_argument("--overwrite", action="store_true",
+                        help="Create the metadata anew, instead of updating an existing file.")
     args = parser.parse_args()
 
     try:
@@ -115,17 +119,22 @@ def main_write_metadata():
 
 def main_update_metadata():
     parser = argparse.ArgumentParser(
-        description="Update report of job efficiency, if last status was 'PENDING'.")
+        description="Update the metadata.json of each archive folder. The efficiency report of a job of the "
+        f"last {REPORTSEFF_MAX_DAYS} days is refreshed if it is missing or shows PENDING or RUNNING. "
+        "The options add more updates.")
 
-    parser.add_argument("input_dir", type=str, help="Input directory containing sbatch script.")
+    parser.add_argument("input_dir", type=str, help="Directory of the archive folders.")
 
     parser.add_argument("-p", "--pattern", type=str, default=None,
                         help="Pattern to match folders in job archive. Supports wildcards.")
     parser.add_argument("-s", "--slurm-dir", type=str, default=None,
                         help="Directory containing slurm output files (slurm-<job_id>.out or "
                              "slurm-<job_id>_<array_index>.out) to parse and store in metadata.")
-    parser.add_argument("--general", action="store_true", help="Check general info.")
-    parser.add_argument("--sbatch", action="store_true", help="Check sbatch information.")
+    parser.add_argument("--general", action="store_true",
+                        help="Correct the date and the task from the folder name, and replace an efficiency "
+                             "report of another JobID.")
+    parser.add_argument("--sbatch", action="store_true",
+                        help="Copy the #SBATCH parameters of sbatch.sbatch into the metadata.")
     args = parser.parse_args()
 
     try:

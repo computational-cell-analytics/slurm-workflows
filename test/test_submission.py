@@ -164,6 +164,14 @@ class DeploySubmissionTest(unittest.TestCase):
 
         self.assertEqual(len(sbatch_calls(self.env)), 1)
 
+    def test_warning_stops_the_chain_and_removes_the_scripts(self):
+        with mock.patch.object(deploy, "check_job_input", return_value=["the input of the job does not exist"]):
+            with self.assertRaisesRegex(ValueError, "--force"):
+                self.deploy(self.archive_dir, MOCKUP_PIPELINE)
+
+        self.assertEqual(sbatch_calls(self.env), [])
+        self.assertEqual([name for name in os.listdir(self.tmp.name) if name.endswith(".sbatch")], [])
+
     def test_failed_submission_raises(self):
         self.env["SBATCH_EXIT"] = "1"
 

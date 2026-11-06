@@ -89,11 +89,7 @@ def check_job_input(
     """
     input_path = job_variables(sbatch_file).get("INPUT")
 
-    if input_path is None:
-        return []
-
-    if not os.path.isabs(input_path):
-        print(f"The input {input_path} is no local path. The check of the input is skipped.")
+    if input_path is None or not os.path.isabs(input_path):
         return []
 
     if not path_exists(input_path):

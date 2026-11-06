@@ -34,8 +34,8 @@ def prepare_step(
     args,
     definition: dict = None,
 ) -> tuple:
-    """Keep the placeholder values, and name the sbatch script after the template."""
-    return placeholder_values, os.path.basename(template_file)[:-len(TEMPLATE_SUFFIX)]
+    """Keep the placeholder values, name the sbatch script after the template, and give no note."""
+    return placeholder_values, os.path.basename(template_file)[:-len(TEMPLATE_SUFFIX)], []
 
 
 def check_steps(

@@ -113,46 +113,56 @@ def deploy_jobs(
     # step cannot leave the earlier steps of the chain queued.
     sbatch_files = []
     step_values = []
-    for template_file in template_files:
-        # A parameter of the job overrides the corresponding setting.
-        placeholder_values = settings_to_placeholders(settings)
-        placeholder_values.update(parameters)
-        placeholder_values, script_name = module.prepare_step(settings, placeholder_values, template_file, args,
-                                                              definition)
+    notes = []
+    try:
+        for template_file in template_files:
+            # A parameter of the job overrides the corresponding setting.
+            placeholder_values = settings_to_placeholders(settings)
+            placeholder_values.update(parameters)
+            placeholder_values, script_name, step_notes = module.prepare_step(
+                settings, placeholder_values, template_file, args, definition)
 
-        sbatch_file = f"{str(date.today())}_sbatch_{script_name}.sbatch"
-        render_template(template_file, sbatch_file, placeholder_values, strict=not args.allow_missing)
-        sbatch_files.append(sbatch_file)
-        step_values.append(placeholder_values)
+            sbatch_file = f"{str(date.today())}_sbatch_{script_name}.sbatch"
+            render_template(template_file, sbatch_file, placeholder_values, strict=not args.allow_missing)
+            sbatch_files.append(sbatch_file)
+            step_values.append(placeholder_values)
+            notes += step_notes
 
-    if module is default:
-        print(f"Note: project '{project}' has no deployment module. "
-              "The placeholders were filled from the settings and the parameters only.")
+        if module is default:
+            notes.append(f"project '{project}' has no deployment module. "
+                         "The placeholders were filled from the settings and the parameters only.")
 
-    # Only the first step can be checked here. The input of a later step is produced by its
-    # predecessor, so it is verified by the guard inside the job script.
-    warnings = check_job_input(sbatch_files[0])
-    for sbatch_file in sbatch_files:
-        warnings += check_external_input(sbatch_file)
-        warnings += check_output_absent(sbatch_file)
-    warnings += module.check_steps(template_files, sbatch_files)
+        # Only the first step can be checked here. The input of a later step is produced by its
+        # predecessor, so it is verified by the guard inside the job script.
+        warnings = check_job_input(sbatch_files[0])
+        for sbatch_file in sbatch_files:
+            warnings += check_external_input(sbatch_file)
+            warnings += check_output_absent(sbatch_file)
+        warnings += module.check_steps(template_files, sbatch_files)
 
-    for message in warnings:
-        print(f"Warning: {message}")
+        if not args.submit:
+            for sbatch_file, placeholder_values in zip(sbatch_files, step_values):
+                print(f"Placeholder values of {sbatch_file}: {placeholder_values}")
+            for sbatch_file in sbatch_files[1:]:
+                print(f"The input of {sbatch_file} is verified when the job runs.")
 
-    if len(sbatch_files) > 1:
-        for sbatch_file in sbatch_files[1:]:
-            print(f"The input of {sbatch_file} is verified when the job runs.")
+        # The warnings and the notes come last, so that the details of the dry run do not hide them.
+        for message in warnings:
+            print(f"Warning: {message}")
+        for message in notes:
+            print(f"Note: {message}")
 
-    if not args.submit:
-        for sbatch_file, placeholder_values in zip(sbatch_files, step_values):
-            print(f"Placeholder values of {sbatch_file}: {placeholder_values}")
-        print("Nothing is submitted. Use --submit to submit the jobs.")
-        return
+        if not args.submit:
+            print("Nothing is submitted. Use --submit to submit the jobs.")
+            return
 
-    if warnings and not args.force:
-        raise ValueError("The input data of the job does not exist, or a previous run would be overwritten. "
-                         "Use --force to submit the job anyway.")
+        if warnings and not args.force:
+            raise ValueError("The checks gave warnings, see above. Use --force to submit the jobs anyway.")
+    except BaseException:
+        # A script of an aborted deployment must not stay, because a later call could submit it.
+        for sbatch_file in sbatch_files:
+            os.remove(sbatch_file)
+        raise
 
     archive_dir = args.archive_dir
     if archive_dir is None:

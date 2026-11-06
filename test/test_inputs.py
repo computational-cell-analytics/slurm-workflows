@@ -17,6 +17,11 @@ from slurm_workflows.templates import step_template
 from stubs import TEMPLATE_DIR, write_file
 
 
+def deploy_args(**options):
+    return argparse.Namespace(**{"group": None, "no_mobie": False, "no_cleanup": False, "download": False,
+                                 "cleanup_input": False, **options})
+
+
 class InputCheckTest(unittest.TestCase):
 
     def setUp(self):
@@ -105,9 +110,9 @@ class ResolveInputTest(unittest.TestCase):
 
     def mobie_values(self):
         values = {"data_dir": self.tmp.name, "cochlea": self.COCHLEA, "stains": self.STAINS}
-        values, _ = self.module.prepare_step({"data_dir": self.tmp.name, "models": {}}, values,
-                                             step_template(TEMPLATE_DIR, "mobie_add_image"),
-                                             argparse.Namespace(group=None))
+        values, _, _ = self.module.prepare_step({"data_dir": self.tmp.name, "models": {}}, values,
+                                                step_template(TEMPLATE_DIR, "mobie_add_image"),
+                                                deploy_args())
         return values
 
     def test_multi_n5_wins(self):
@@ -164,11 +169,9 @@ class ResolveInputTest(unittest.TestCase):
         values = {"data_dir": self.tmp.name, "cochlea": self.COCHLEA, "stains": self.STAINS,
                   "ihc_version": "IHC_v11", "s3_remote": "remote:bucket", **parameters}
         settings = {"data_dir": self.tmp.name, "models": {"IHC": {"IHC_v11": "/path/to/model"}}}
-        stdout = io.StringIO()
-        with contextlib.redirect_stdout(stdout):
-            values, _ = self.module.prepare_step(settings, values, step_template(TEMPLATE_DIR, "mask_IHC"),
-                                                 argparse.Namespace(group=None, download=download), definition)
-        return values, stdout.getvalue()
+        values, _, notes = self.module.prepare_step(settings, values, step_template(TEMPLATE_DIR, "mask_IHC"),
+                                                    deploy_args(download=download), definition)
+        return values, " ".join(notes)
 
     def test_resources_of_the_species_and_of_a_parameter(self):
         values, _ = self.ihc_step()
@@ -179,10 +182,14 @@ class ResolveInputTest(unittest.TestCase):
 
     def test_download_reads_the_ome_zarr(self):
         self.add(self.MULTI)
-        values, _ = self.ihc_step(download=True)
+        values, _ = self.ihc_step(download=True, definition={"name": "ihc", "steps": ["mask_IHC", "apply_IHC"]})
 
         self.assertEqual((values["cochlea_data"], values["input_key"]), (self.OME_ZARR, "s0"))
         self.assertEqual(values["stain"], "Vglut3")
+
+    def test_pipeline_options_need_a_pipeline(self):
+        with self.assertRaisesRegex(ValueError, "--download"):
+            self.ihc_step(download=True)
 
     def test_s3_note(self):
         definition = {"name": "ihc", "steps": ["mask_IHC", "apply_IHC"]}

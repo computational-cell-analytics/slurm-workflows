@@ -106,7 +106,7 @@ To add a project `<project>`, add these four parts:
 |---|---|
 | `add_arguments(parser)` | Add the command line options of the project. |
 | `select_steps(definition, settings, args)` | Return the steps of a pipeline to submit. |
-| `prepare_step(settings, placeholder_values, template_file, args, definition)` | Add the placeholder values of one job and return them together with the name of the sbatch script. |
+| `prepare_step(settings, placeholder_values, template_file, args, definition)` | Add the placeholder values of one job and return them together with the name of the sbatch script and a list of notes. |
 | `check_steps(template_files, sbatch_files)` | Return warnings, see [Warnings](#warnings). |
 
 A deployment module defines only the functions which differ from `slurm_workflows/projects/default.py`.
@@ -161,6 +161,7 @@ Every `check_*` function of `slurm_workflows/inputs.py` and of a deployment modu
 An empty list means that the check found no problem.
 The deploy step prints every warning.
 A warning stops `--submit`, unless `--force` is given.
+The deploy step prints the notes of `prepare_step` after the warnings.
 
 ### The guard of a step
 

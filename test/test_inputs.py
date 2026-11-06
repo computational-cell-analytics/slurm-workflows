@@ -105,9 +105,9 @@ class ResolveInputTest(unittest.TestCase):
 
     def mobie_values(self):
         values = {"data_dir": self.tmp.name, "cochlea": self.COCHLEA, "stains": self.STAINS}
-        values, _ = self.module.prepare_step({"data_dir": self.tmp.name, "models": {}}, values,
-                                             step_template(TEMPLATE_DIR, "mobie_add_image"),
-                                             argparse.Namespace(group=None))
+        values, _, _ = self.module.prepare_step({"data_dir": self.tmp.name, "models": {}}, values,
+                                                step_template(TEMPLATE_DIR, "mobie_add_image"),
+                                                argparse.Namespace(group=None))
         return values
 
     def test_multi_n5_wins(self):
@@ -164,11 +164,9 @@ class ResolveInputTest(unittest.TestCase):
         values = {"data_dir": self.tmp.name, "cochlea": self.COCHLEA, "stains": self.STAINS,
                   "ihc_version": "IHC_v11", "s3_remote": "remote:bucket", **parameters}
         settings = {"data_dir": self.tmp.name, "models": {"IHC": {"IHC_v11": "/path/to/model"}}}
-        stdout = io.StringIO()
-        with contextlib.redirect_stdout(stdout):
-            values, _ = self.module.prepare_step(settings, values, step_template(TEMPLATE_DIR, "mask_IHC"),
-                                                 argparse.Namespace(group=None, download=download), definition)
-        return values, stdout.getvalue()
+        values, _, notes = self.module.prepare_step(settings, values, step_template(TEMPLATE_DIR, "mask_IHC"),
+                                                    argparse.Namespace(group=None, download=download), definition)
+        return values, " ".join(notes)
 
     def test_resources_of_the_species_and_of_a_parameter(self):
         values, _ = self.ihc_step()

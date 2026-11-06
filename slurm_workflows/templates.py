@@ -120,5 +120,3 @@ def render_template(
 
     with open(sbatch_file, "w") as myfile:
         myfile.writelines(processed)
-
-    print(f"Successfully processed {template_file} and saved output to {sbatch_file}")

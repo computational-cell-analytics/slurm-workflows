@@ -491,6 +491,14 @@ def prepare_step(
     """
     notes = []
 
+    if definition is None:
+        given = [option for option, dest in (("--no-mobie", "no_mobie"), ("--no-cleanup", "no_cleanup"),
+                                             ("--download", "download"), ("--cleanup-input", "cleanup_input"))
+                 if getattr(args, dest)]
+        if given:
+            raise ValueError(f"Use {', '.join(given)} together with -p. A single job of -i has no steps "
+                             "to add or drop.")
+
     missing = [key for key in REQUIRED_SETTINGS if key not in settings]
     if missing:
         raise ValueError(f"The settings file is missing the keys: {missing}.")

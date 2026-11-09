@@ -30,8 +30,8 @@ into `slurm_workflows/projects/<project>/cli.py`. Use hyphens in long options, e
 ## Project code
 
 The code which only one project uses lives in `slurm_workflows/projects/<project>/`, with `_` for a
-`-` of the project name. Its `deployment.py` defines the functions of the table in the README section
-Projects which differ from `slurm_workflows/projects/default.py`.
+`-` of the project name. Its `deployment.py` defines the functions of the contract which differ from
+`slurm_workflows/projects/default.py`, see [Create a new project](doc/new_project.md).
 
 ## Python version
 

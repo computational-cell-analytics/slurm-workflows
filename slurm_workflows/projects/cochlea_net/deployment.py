@@ -476,6 +476,9 @@ def prepare_step(
 ) -> tuple:
     """Add the placeholder values of one job, and name its sbatch script.
 
+    The added placeholders, and which of them a parameter overrides, are listed in
+    `doc/hpc_03_processing_pipelines.md`, section "Placeholders of the deployment".
+
     Args:
         settings: Output of `load_settings()`.
         placeholder_values: The settings and the job parameters as placeholder values. The dictionary is

@@ -1,5 +1,4 @@
 {
-    "job_name": "train-nn-gpu",
-    "module": "torch.utils.collect_env",
-    "dataset": "cifar10"
+    "dataset": "cifar10",
+    "run_name": "resnet18_lr0.01"
 }

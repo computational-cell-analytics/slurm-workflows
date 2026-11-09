@@ -3,7 +3,7 @@
 """author: Martin Schilling (martin.schilling@med.uni-goettingen.de), 2026
 
 Temporary script: rename the keys of every `<archive_dir>/<folder>/metadata.json` to lower case with
-underscores. Run it once on each job archive, then delete it. A second run changes nothing.
+underscores. Run it once on each archive directory, then delete it. A second run changes nothing.
 """
 import argparse
 import os
@@ -68,8 +68,8 @@ def migrate(
 
 def main():
     parser = argparse.ArgumentParser(
-        description="Rename the keys of every metadata.json in the subfolders of a job archive to lower case "
-        "with underscores.")
+        description="Rename the keys of every metadata.json in the archive folders of an archive directory to "
+        "lower case with underscores.")
     parser.add_argument("archive_dir", type=str, help="Directory of the archive folders.")
     parser.add_argument("--dry-run", dest="dry_run", action="store_true",
                         help="Print the files which would change, and change nothing.")

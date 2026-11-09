@@ -19,7 +19,7 @@ from slurm_workflows.templates import fill_placeholders, placeholders_in, render
 from stubs import (MOCKUP_DIR, MOCKUP_PARAMS, MOCKUP_PIPELINE, MOCKUP_SETTINGS, MOCKUP_TEMPLATE, REPOSITORY_DIR,
                    read_file, run, write_file)
 
-MOCKUP_SBATCH = os.path.join(MOCKUP_DIR, "YYYY-MM-DD_sbatch_mockup.sbatch")
+MOCKUP_SBATCH = os.path.join(MOCKUP_DIR, "YYYY-MM-DD_sbatch_train.sbatch")
 DEPLOY_SCRIPT = os.path.join(REPOSITORY_DIR, "scripts", "deploy.py")
 
 SETTINGS = {
@@ -138,7 +138,7 @@ class MockupTest(unittest.TestCase):
         values = settings_to_placeholders(load_settings(MOCKUP_SETTINGS))
         with open(MOCKUP_PARAMS) as myfile:
             values.update(json.load(myfile))
-        output = os.path.join(self.tmp.name, "mockup.sbatch")
+        output = os.path.join(self.tmp.name, "train.sbatch")
 
         with contextlib.redirect_stdout(io.StringIO()):
             render_template(MOCKUP_TEMPLATE, output, values)
@@ -150,7 +150,7 @@ class MockupTest(unittest.TestCase):
 
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertIn("has no deployment module", result.stdout)
-        sbatch_files = [name for name in os.listdir(self.tmp.name) if name.endswith("_sbatch_mockup.sbatch")]
+        sbatch_files = [name for name in os.listdir(self.tmp.name) if name.endswith("_sbatch_train.sbatch")]
         self.assertEqual(len(sbatch_files), 1)
         self.assertEqual(read_file(os.path.join(self.tmp.name, sbatch_files[0])), read_file(MOCKUP_SBATCH))
 
@@ -160,8 +160,17 @@ class MockupTest(unittest.TestCase):
 
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertEqual(sorted(name.split("_sbatch_")[1] for name in os.listdir(self.tmp.name)),
-                         ["evaluate.sbatch", "mockup.sbatch"])
+                         ["evaluate.sbatch", "train.sbatch"])
         self.assertEqual(result.stdout.count("Placeholder values of"), 2)
+
+    def test_allow_missing_refuses_submit(self):
+        cmd = [sys.executable, DEPLOY_SCRIPT, "-i", MOCKUP_TEMPLATE, "-j", MOCKUP_PARAMS, "-s", MOCKUP_SETTINGS,
+               "--allow-missing", "--submit"]
+        result = run(cmd, cwd=self.tmp.name)
+
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("--allow-missing", result.stderr)
+        self.assertEqual(os.listdir(self.tmp.name), [])
 
     def test_default_deployment_missing_parameter(self):
         with open(MOCKUP_PARAMS) as myfile:

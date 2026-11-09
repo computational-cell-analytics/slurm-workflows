@@ -129,14 +129,15 @@ class DeploySubmissionTest(unittest.TestCase):
         os.chdir(self.cwd)
         self.tmp.cleanup()
 
-    def deploy(self, archive_dir, pipeline=None):
+    def deploy(self, archive_dir, pipeline=None, force=True):
+        # The input of the mockup does not exist, so only force=True submits it.
         args = argparse.Namespace(input=MOCKUP_TEMPLATE if pipeline is None else None, pipeline=pipeline,
                                   params=MOCKUP_PARAMS, settings=MOCKUP_SETTINGS, archive_dir=archive_dir,
-                                  repository_file=None, submit=True, allow_missing=False, start_at=None, force=False)
+                                  repository_file=None, submit=True, allow_missing=False, start_at=None, force=force)
         with mock.patch.dict(os.environ, self.env), contextlib.redirect_stdout(io.StringIO()):
             deploy.deploy_jobs(args, "mockup", default)
 
-    def archived_metadata(self, step="mockup"):
+    def archived_metadata(self, step="train"):
         [folder] = [name for name in os.listdir(self.archive_dir) if name.endswith(f"_{step}")]
         with open(os.path.join(self.archive_dir, folder, "metadata.json")) as myfile:
             return json.load(myfile)
@@ -154,7 +155,7 @@ class DeploySubmissionTest(unittest.TestCase):
         self.deploy(self.archive_dir, MOCKUP_PIPELINE)
 
         self.assertIn(f"--dependency=afterok:{FIRST_JOBID}", sbatch_calls(self.env)[1])
-        self.assertEqual(self.archived_metadata("mockup")["pipeline"],
+        self.assertEqual(self.archived_metadata("train")["pipeline"],
                          {"name": "train_evaluate", "step": 1, "of": 2})
         self.assertEqual(self.archived_metadata("evaluate")["pipeline"],
                          {"name": "train_evaluate", "step": 2, "of": 2, "depends_on": str(FIRST_JOBID)})
@@ -164,10 +165,17 @@ class DeploySubmissionTest(unittest.TestCase):
 
         self.assertEqual(len(sbatch_calls(self.env)), 1)
 
+    def test_missing_archive_dir_stops_the_chain(self):
+        with mock.patch.object(deploy, "check_job_input", return_value=[]):
+            with self.assertRaisesRegex(ValueError, "--force"):
+                self.deploy(os.path.join(self.tmp.name, "none"), MOCKUP_PIPELINE, force=False)
+
+        self.assertEqual(sbatch_calls(self.env), [])
+
     def test_warning_stops_the_chain_and_removes_the_scripts(self):
         with mock.patch.object(deploy, "check_job_input", return_value=["the input of the job does not exist"]):
             with self.assertRaisesRegex(ValueError, "--force"):
-                self.deploy(self.archive_dir, MOCKUP_PIPELINE)
+                self.deploy(self.archive_dir, MOCKUP_PIPELINE, force=False)
 
         self.assertEqual(sbatch_calls(self.env), [])
         self.assertEqual([name for name in os.listdir(self.tmp.name) if name.endswith(".sbatch")], [])

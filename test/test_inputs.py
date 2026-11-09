@@ -180,6 +180,21 @@ class ResolveInputTest(unittest.TestCase):
         values, _ = self.ihc_step(time="09:00:00")
         self.assertEqual((values["time"], values["mem"]), ("09:00:00", "32G"))
 
+    def test_watershed_values_per_group(self):
+        settings = {"data_dir": self.tmp.name,
+                    "models": {"SGN": {"SGN_v3": "/path/to/model"}, "IHC": {"IHC_v11": "/path/to/model"}}}
+        parameters = {"data_dir": self.tmp.name, "cochlea": self.COCHLEA, "sgn_version": "SGN_v3",
+                      "ihc_version": "IHC_v11", "sgn_center_distance_threshold": "0.3"}
+        sgn, _, _ = self.module.prepare_step(settings, dict(parameters), step_template(TEMPLATE_DIR, "segment_SGN"),
+                                             deploy_args())
+        ihc, _, _ = self.module.prepare_step(settings, dict(parameters), step_template(TEMPLATE_DIR, "segment_IHC"),
+                                             deploy_args())
+
+        defaults = self.module.WATERSHED_DEFAULTS
+        self.assertEqual(sgn["sgn_center_distance_threshold"], "0.3")
+        self.assertEqual(sgn["sgn_boundary_distance_threshold"], defaults["SGN"]["boundary_distance_threshold"])
+        self.assertEqual(ihc["ihc_center_distance_threshold"], defaults["IHC"]["center_distance_threshold"])
+
     def test_download_reads_the_ome_zarr(self):
         self.add(self.MULTI)
         values, _ = self.ihc_step(download=True, definition={"name": "ihc", "steps": ["mask_IHC", "apply_IHC"]})

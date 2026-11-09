@@ -1,2 +1,2 @@
-cochlea-net	/path/to/cochlea-net
+my-tool	/path/to/my-tool
 slurm-workflows	/path/to/slurm-workflows

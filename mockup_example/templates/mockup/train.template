@@ -1,0 +1,26 @@
+#!/bin/bash
+# Mockup: not a functioning sbatch script.
+# Adapted from https://docs.hpc.gwdg.de/how_to_use/slurm/gpu_usage/index.html
+#SBATCH --job-name=train-<run_name>
+#SBATCH -t 05:00:00
+#SBATCH --mail-user=<user_address>
+#SBATCH --mail-type=FAIL
+
+#SBATCH -p grete:shared
+#SBATCH -G A100:2
+
+source ~/.bashrc
+micromamba activate <environment>
+
+export INPUT=<data_dir>/<dataset>
+export OUTPUT_FOLDER=<data_dir>/runs/<run_name>
+
+# Verify the input of the job. A missing input stops the rest of the pipeline.
+for path in "$INPUT" ; do
+	if [ ! -e "$path" ] ; then
+		echo "Missing input of the job: $path"
+		exit 1
+	fi
+done
+
+python -u <repo:my-tool>/train.py --input "$INPUT" --output "$OUTPUT_FOLDER"

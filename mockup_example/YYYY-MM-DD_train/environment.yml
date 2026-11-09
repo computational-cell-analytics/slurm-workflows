@@ -1,0 +1,10 @@
+# Shortened example of `micromamba env export -n dl-gpu`.
+name: dl-gpu
+channels:
+- conda-forge
+dependencies:
+- python=3.11.9
+- pytorch=2.3.1
+- torchvision=0.18.1
+- pip:
+  - my-tool==0.1.0

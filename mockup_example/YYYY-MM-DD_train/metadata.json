@@ -1,0 +1,53 @@
+{
+	"date": "YYYY-MM-DD",
+	"task": "train",
+	"academic_id": "your_academic_id",
+	"hpc_user": "your_hpc_user",
+	"job_name": "train-resnet18_lr0.01",
+	"runtime": "05:00:00",
+	"mail_user": "yourmail@gwdg.de",
+	"partition": "grete:shared",
+	"gpu": "A100:2",
+	"jobid": "1234567",
+	"reportseff": [
+		{
+			"jobid": "1234567",
+			"state": "COMPLETED",
+			"elapsed": "04:13:02",
+			"time_eff": "84.3%",
+			"cpu_eff": "61.2%",
+			"mem_eff": "38.5%"
+		}
+	],
+	"repositories": [
+		{
+			"repo_name": "my-tool",
+			"repo_version": "230b80699e90787b9562e27a8662a2842d61b2ee",
+			"status": "clean"
+		},
+		{
+			"repo_name": "slurm-workflows",
+			"repo_version": "84c497e2df51a34e296e2abd5b81d921cf4dfa57",
+			"status": "clean"
+		}
+	],
+	"project": "mockup",
+	"pipeline": {
+		"name": "train_evaluate",
+		"step": 1,
+		"of": 2
+	},
+	"slurm_output": [
+		{
+			"file": "slurm-1234567.out",
+			"submitted": "YYYY-MM-DDT09:02:41",
+			"started": "YYYY-MM-DDT09:14:05",
+			"ended": "YYYY-MM-DDT13:27:07",
+			"elapsed_min": 253,
+			"limit_min": 300,
+			"cpus": 16,
+			"nodes": 1,
+			"core_hours": 67.47
+		}
+	]
+}

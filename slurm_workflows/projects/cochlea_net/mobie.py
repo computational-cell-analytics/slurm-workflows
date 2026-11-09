@@ -4,6 +4,9 @@
 
 Access to the `project.json` and the `dataset.json` files of a MoBIE project. The S3 files list the
 datasets and the sources of every local MoBIE project, so a local file must not replace them.
+
+MoBIE names the viewer and its data format. `mobie` names the Python package of mobie-utils-python,
+which writes the data of a MoBIE project.
 """
 import csv
 import io
@@ -18,7 +21,7 @@ PROJECT_FILE = "project.json"
 # A dataset is a top-level folder of the project which holds this file.
 DATASET_FILE = "dataset.json"
 
-# Data folders of a dataset, which mobie names after the source.
+# Data folders of a dataset, which `mobie` names after the source.
 IMAGE_DIR = "images/ome-zarr"
 TABLE_DIR = "tables"
 OME_ZARR = ".ome.zarr"
@@ -28,7 +31,7 @@ TABLE_FILE = "default.tsv"
 # the uint16 maximum 65535, as 'mobie_transfer_dataset' does.
 CONTRAST_LIMITS = {1: [0, 255], 2: [0, 1400]}
 
-# Display and menu of the view which mobie creates for a new source.
+# Display and menu of the view which `mobie` creates for a new source.
 DISPLAYS = {"image": "imageDisplay", "segmentation": "segmentationDisplay", "spots": "spotDisplay"}
 MENUS = {"image": "images", "segmentation": "segmentations", "spots": "spots"}
 
@@ -75,7 +78,7 @@ def write_json(
     path: str,
     content: dict,
 ) -> None:
-    # Same format as 'write_metadata' of mobie-utils-python, so that a file changes only by its content.
+    # Same format as 'write_metadata' of `mobie`, so that a file changes only by its content.
     with open(path, "w") as myfile:
         json.dump(content, myfile, indent=2, sort_keys=True)
 
@@ -438,7 +441,7 @@ def default_view(
     name: str,
     contrast_limits: list = None,
 ) -> dict:
-    """Return the view which mobie creates for a new source.
+    """Return the view which `mobie` creates for a new source.
 
     Args:
         source_type: 'image', 'segmentation' or 'spots'.
@@ -468,7 +471,7 @@ def rebuild_source(
 
     The type comes from the data, not from the name. A spot source can carry 'IHC' in its name.
     - OME-Zarr and a table with 'label_id': segmentation.
-    - A table with 'spot_id' alone: spots. mobie always writes this column.
+    - A table with 'spot_id' alone: spots. `mobie` always writes this column.
     - OME-Zarr alone: image for an 8 or 16 bit unsigned dtype, segmentation for an integer dtype
       of 32 bit or more.
 

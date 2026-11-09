@@ -16,7 +16,8 @@ def read_repository_file(
 ) -> dict:
     """Read a repository file.
 
-    Each line holds a repository name and a path, separated by a tab. The path can contain spaces.
+    Each line holds a repository name and a path, separated by whitespace, e.g. a tab. The line is split
+    at the first whitespace, so the path can contain spaces.
     A missing file gives a warning and an empty dictionary.
 
     Args:
@@ -36,8 +37,8 @@ def read_repository_file(
             if len(content) == 0:
                 continue
             if len(content) != 2:
-                raise ValueError(f"Ensure that the file containing repositories has the correct format. "
-                                 f"Check the line '{line.strip()}' of {repository_file}.")
+                raise ValueError(f"The line '{line.strip()}' of the repository file {repository_file} does not "
+                                 "hold a name and a path, separated by whitespace.")
             repositories[content[0]] = content[1]
 
     return repositories
@@ -88,7 +89,7 @@ def add_repository_status(
 
     for repo_name, repo_path in repositories.items():
         if not os.path.isdir(repo_path):
-            print("Repository path " + repo_path + " could not be resolved.")
+            print(f"Warning: repository path {repo_path} of {repo_name} is no directory. Its git hash is not recorded.")
             continue
 
         result = subprocess.run(["git", "rev-parse", "HEAD"], cwd=repo_path, stdout=subprocess.PIPE,

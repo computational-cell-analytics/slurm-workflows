@@ -85,12 +85,21 @@ def deploy_jobs(
 ):
     """Render the templates of a job or a pipeline, check the input, and submit the jobs.
 
+    The order is:
+    1. Render the sbatch script of every step. An error removes the scripts which were written.
+    2. Check the scripts with the generic checks and `check_steps()` of the project, and check the
+       archive directory.
+    3. Print the warnings, then the notes. A dry run stops here.
+    4. Stop if a check gave a warning, unless `--force` is given.
+    5. Submit each step with a dependency on the previous step, and archive it.
+
     Args:
         args: Parsed command line options of `slurm_wf.deploy`, including the options of the project.
         project: Name of the project.
         module: Output of `project_module()`.
     """
     settings, settings_path = load_project_settings(project, args.settings)
+    archive_dir = args.archive_dir if args.archive_dir is not None else settings.get("archive_dir")
 
     with open(args.params, "r") as myfile:
         parameters = json.load(myfile)
@@ -139,6 +148,9 @@ def deploy_jobs(
             warnings += check_external_input(sbatch_file)
             warnings += check_output_absent(sbatch_file)
         warnings += module.check_steps(template_files, sbatch_files)
+        # The archiving runs after the submission, so a missing directory must stop the chain here.
+        if archive_dir and not os.path.isdir(archive_dir):
+            warnings.append(f"the archive directory {archive_dir} does not exist, so the jobs would not be archived")
 
         if not args.submit:
             for sbatch_file, placeholder_values in zip(sbatch_files, step_values):
@@ -164,9 +176,6 @@ def deploy_jobs(
             os.remove(sbatch_file)
         raise
 
-    archive_dir = args.archive_dir
-    if archive_dir is None:
-        archive_dir = settings.get("archive_dir")
     if not archive_dir:
         print("Warning: no archive directory is set. The jobs are not archived.")
 

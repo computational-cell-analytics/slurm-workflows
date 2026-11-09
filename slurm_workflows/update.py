@@ -199,8 +199,8 @@ def update_slurm_output(subfolders: List[str], slurm_dir: str):
 def update_archive(
         input_dir: str,
         pattern: Optional[str] = None,
-        check_general_info: bool = False,
-        check_sbatch_info: bool = False,
+        general: bool = False,
+        sbatch: bool = False,
         slurm_dir: Optional[str] = None,
 ):
     """Update the metadata of the archive folders in a directory.
@@ -210,16 +210,16 @@ def update_archive(
     Args:
         input_dir: Directory of the archive folders.
         pattern: Part of the name of the archive folders to update, or None for all.
-        check_general_info: Run `check_metadata()`.
-        check_sbatch_info: Run `update_sbatch_data()`.
+        general: Run `check_metadata()`, the option `--general`.
+        sbatch: Run `update_sbatch_data()`, the option `--sbatch`.
         slurm_dir: Directory of the slurm output files, or None.
     """
     subfolders = archive_folders(input_dir, pattern)
 
-    if check_sbatch_info:
+    if sbatch:
         update_sbatch_data(subfolders)
 
-    if check_general_info:
+    if general:
         check_metadata(subfolders)
 
     if slurm_dir is not None:

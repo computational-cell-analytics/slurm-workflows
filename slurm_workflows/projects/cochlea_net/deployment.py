@@ -111,11 +111,12 @@ def add_arguments(
                              f"Available: {sorted(GROUPS)}")
     parser.add_argument("--download", action="store_true",
                         help="Add a first step which downloads the OME-Zarr of the stain from the S3 bucket "
-                             "to <data_dir>/<cochlea>. The other steps read it. Needs -p.")
+                             "to <data_dir>/<cochlea>. The other steps read it. Needs -p and a group, from the "
+                             "pipeline or --group.")
     parser.add_argument("--cleanup-input", dest="cleanup_input", action="store_true",
                         help="Add a last step which removes the image data of the stain, if the S3 bucket "
                              "holds its OME-Zarr. From an n5, only the setup of the stain is removed. "
-                             "Needs -p.")
+                             "Needs -p and a group, from the pipeline or --group.")
 
 
 def select_steps(
@@ -522,11 +523,13 @@ def prepare_step(
 
     cochlea_content = cochlea.split("_")
     version = ""
+    cochlea_format = (f"The parameter cochlea '{cochlea}' does not have the format "
+                      "<species>_<initials>_<index>_<side>[_v<N>], e.g. M_AMD_000137_L.")
     if len(cochlea_content) < 4:
-        raise ValueError("Cochlea parameter does not have the correct format.")
+        raise ValueError(cochlea_format)
     if len(cochlea_content) > 4:
         if cochlea_content[4][0] != "v":
-            raise ValueError("Cochlea parameter does not have the correct format.")
+            raise ValueError(cochlea_format)
         version = "_" + cochlea_content[4]
 
     species = cochlea_content[0]

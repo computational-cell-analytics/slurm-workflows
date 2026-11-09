@@ -5,7 +5,10 @@
 
     "environment": "dl-gpu",
 
+    "archive_dir": "/path/to/job_archive",
+    "data_dir": "/path/to/data",
+
     "repositories": {
-        "cochlea-net": "/path/to/cochlea-net"
+        "my-tool": "/path/to/my-tool"
     }
 }

@@ -1,6 +1,6 @@
 #!/bin/bash
 # Mockup: not a functioning sbatch script.
-#SBATCH --job-name=evaluate-<dataset>
+#SBATCH --job-name=evaluate-<run_name>
 #SBATCH -t 00:30:00
 #SBATCH --mail-user=<user_address>
 #SBATCH --mail-type=FAIL
@@ -8,10 +8,18 @@
 #SBATCH -p grete:shared
 #SBATCH -G A100:1
 
-module load miniforge3
-module load cuda
-source activate <environment>
+source ~/.bashrc
+micromamba activate <environment>
 
-# The pipeline starts this job only after the training completed successfully.
-echo "Evaluating on <dataset>"
-python -u evaluate.py --dataset <dataset>
+# The training step writes the model.
+export INPUT=<data_dir>/runs/<run_name>/model.pt
+
+# Verify the input of the job. A missing input stops the rest of the pipeline.
+for path in "$INPUT" ; do
+	if [ ! -e "$path" ] ; then
+		echo "Missing input of the job: $path"
+		exit 1
+	fi
+done
+
+python -u <repo:my-tool>/evaluate.py --model "$INPUT" --dataset <data_dir>/<dataset>

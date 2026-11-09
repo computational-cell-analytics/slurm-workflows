@@ -50,7 +50,8 @@ STEPS_FILE = "steps.json"
 # Keys of a row of the steps file which become placeholders. A job parameter overrides them.
 RESOURCE_KEYS = ("time", "mem")
 
-# The segmentation step needs the watershed parameters of its model.
+# The segment step of a group needs the watershed parameters of its model, as the placeholders
+# '<group>_<key>', e.g. 'sgn_center_distance_threshold'. A parameter of the same name overrides one.
 WATERSHED_PLACEHOLDER = "center_distance_threshold"
 
 # First step of a pipeline with '--download'. It copies the OME-Zarr of the stain from the S3 bucket.
@@ -620,8 +621,11 @@ def prepare_step(
         placeholder_values["prediction_dir"] = placeholder_values["synapse_ihc_prediction"]
 
     with open(template_file, "r") as myfile:
-        if WATERSHED_PLACEHOLDER in placeholders_in(myfile.read()):
-            placeholder_values.update(watershed_parameters(placeholder_values["model"], group))
+        template_placeholders = placeholders_in(myfile.read())
+    if group is not None and f"{group.lower()}_{WATERSHED_PLACEHOLDER}" in template_placeholders:
+        # A parameter overrides a watershed value of the model, e.g. to tune one cochlea.
+        for key, value in watershed_parameters(placeholder_values["model"], group).items():
+            placeholder_values.setdefault(f"{group.lower()}_{key}", value)
 
     # The group enters the name of a template which serves more than one group, so that the runs
     # of two groups do not share an archive folder.

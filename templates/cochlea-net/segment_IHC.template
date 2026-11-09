@@ -17,9 +17,9 @@ echo "Current node: ${SLURM_NODELIST}"
 export OUTPUT_FOLDER=<data_dir>/predictions/<cochlea>/<prediction_dir>
 export MIN_SIZE=1000
 
-export CENTER_DISTANCE_THRESHOLD=<center_distance_threshold>
-export BOUNDARY_DISTANCE_THRESHOLD=<boundary_distance_threshold>
-export DISTANCE_SMOOTHING=<distance_smoothing>
+export CENTER_DISTANCE_THRESHOLD=<ihc_center_distance_threshold>
+export BOUNDARY_DISTANCE_THRESHOLD=<ihc_boundary_distance_threshold>
+export DISTANCE_SMOOTHING=<ihc_distance_smoothing>
 
 echo "Output directory: ${OUTPUT_FOLDER}"
 echo "CENTER_DISTANCE_THRESHOLD: ${CENTER_DISTANCE_THRESHOLD}"

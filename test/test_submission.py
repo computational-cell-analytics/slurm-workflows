@@ -165,6 +165,13 @@ class DeploySubmissionTest(unittest.TestCase):
 
         self.assertEqual(len(sbatch_calls(self.env)), 1)
 
+    def test_missing_archive_dir_stops_the_chain(self):
+        with mock.patch.object(deploy, "check_job_input", return_value=[]):
+            with self.assertRaisesRegex(ValueError, "--force"):
+                self.deploy(os.path.join(self.tmp.name, "none"), MOCKUP_PIPELINE, force=False)
+
+        self.assertEqual(sbatch_calls(self.env), [])
+
     def test_warning_stops_the_chain_and_removes_the_scripts(self):
         with mock.patch.object(deploy, "check_job_input", return_value=["the input of the job does not exist"]):
             with self.assertRaisesRegex(ValueError, "--force"):

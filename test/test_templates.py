@@ -163,6 +163,15 @@ class MockupTest(unittest.TestCase):
                          ["evaluate.sbatch", "train.sbatch"])
         self.assertEqual(result.stdout.count("Placeholder values of"), 2)
 
+    def test_allow_missing_refuses_submit(self):
+        cmd = [sys.executable, DEPLOY_SCRIPT, "-i", MOCKUP_TEMPLATE, "-j", MOCKUP_PARAMS, "-s", MOCKUP_SETTINGS,
+               "--allow-missing", "--submit"]
+        result = run(cmd, cwd=self.tmp.name)
+
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("--allow-missing", result.stderr)
+        self.assertEqual(os.listdir(self.tmp.name), [])
+
     def test_default_deployment_missing_parameter(self):
         with open(MOCKUP_PARAMS) as myfile:
             parameters = json.load(myfile)

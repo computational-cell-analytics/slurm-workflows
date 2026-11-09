@@ -84,6 +84,8 @@ def main_deploy():
 
     if args.start_at is not None and args.pipeline is None:
         parser.error("--start-at needs a pipeline. Use it together with -p.")
+    if args.allow_missing and args.submit:
+        parser.error("--allow-missing keeps the text <name> in the sbatch script. Use it without --submit.")
 
     try:
         deploy_jobs(args, project, module)

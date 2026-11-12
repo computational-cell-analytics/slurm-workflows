@@ -34,8 +34,10 @@
 	"project": "mockup",
 	"pipeline": {
 		"name": "train_evaluate",
+		"run": "1234567",
 		"step": 1,
-		"of": 2
+		"of": 2,
+		"step_name": "train"
 	},
 	"slurm_output": [
 		{

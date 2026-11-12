@@ -182,14 +182,21 @@ def deploy_jobs(
     repositories = job_repositories(settings, args.repository_file)
 
     dependency = None
+    # The JobID of the first step identifies the run of a pipeline in the archive.
+    run = None
     for step_index, sbatch_file in enumerate(sbatch_files, start=1):
         jobid = submit(sbatch_file, dependency)
         print(f"Step {step_index} of {len(sbatch_files)} submitted as JobID {jobid}.")
+        if run is None:
+            run = jobid
 
         if archive_dir:
             metadata = {"project": project}
             if definition is not None:
-                metadata["pipeline"] = {"name": definition["name"], "step": step_index, "of": len(sbatch_files)}
+                metadata["pipeline"] = {"name": definition["name"], "run": run, "step": step_index,
+                                        "of": len(sbatch_files), "step_name": step_names[step_index - 1]}
+                if args.start_at is not None:
+                    metadata["pipeline"]["start_at"] = args.start_at
                 if dependency is not None:
                     metadata["pipeline"]["depends_on"] = dependency
             try:

@@ -339,7 +339,8 @@ The cochlea-net deployment adds these placeholder values to the settings and the
 |---|---|---|
 | `cochlea_job_name` | `cochlea` with `-` instead of `_`, for `#SBATCH --job-name` | no |
 | `stain_SGN`, `stain_IHC`, `stain_synapses` | `PV`, `Vglut3`, `CTBP2` | yes |
-| `time`, `mem` | The row of the template in `templates/cochlea-net/steps.json`, with the values of the species | yes |
+| `time`, `mem`, `instances` | The row of the template in `templates/cochlea-net/steps.json`, with the values of the species. `instances` is the number of tasks of an apply array | yes |
+| `last_instance` | `instances` - 1, for `#SBATCH -a 0-<last_instance>` | no |
 | `stain` | The stain of the group of the template | no |
 | `cochlea_data`, `input_key` | The file of the cochlea folder which holds the stain, and the key of the stain in it | no |
 | `cochlea_data_multi`, `input_key_multi`, `channel_multi` | MoBIE image templates only: the file, the key and the name of each stain of `stains`, separated by spaces | no |

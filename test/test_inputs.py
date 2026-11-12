@@ -165,20 +165,32 @@ class ResolveInputTest(unittest.TestCase):
         self.assertEqual(values["cochlea_data_multi"], " ".join(files))
         self.assertEqual(values["input_key_multi"], " ".join(["setup0/timepoint0/s0"] * 3))
 
-    def ihc_step(self, download=False, definition=None, **parameters):
+    def ihc_step(self, download=False, definition=None, step="mask_IHC", **parameters):
         values = {"data_dir": self.tmp.name, "cochlea": self.COCHLEA, "stains": self.STAINS,
                   "ihc_version": "IHC_v11", "s3_remote": "remote:bucket", **parameters}
         settings = {"data_dir": self.tmp.name, "models": {"IHC": {"IHC_v11": "/path/to/model"}}}
-        values, _, notes = self.module.prepare_step(settings, values, step_template(TEMPLATE_DIR, "mask_IHC"),
+        values, _, notes = self.module.prepare_step(settings, values, step_template(TEMPLATE_DIR, step),
                                                     deploy_args(download=download), definition)
         return values, " ".join(notes)
 
     def test_resources_of_the_species_and_of_a_parameter(self):
         values, _ = self.ihc_step()
-        self.assertEqual((values["time"], values["mem"]), ("00:30:00", "32G"))
+        self.assertEqual((values["time"], values["mem"]), ("01:10:00", "32G"))
 
         values, _ = self.ihc_step(time="09:00:00")
         self.assertEqual((values["time"], values["mem"]), ("09:00:00", "32G"))
+
+    def test_array_size_of_the_species_and_of_a_parameter(self):
+        self.add(self.MULTI)
+        values, _ = self.ihc_step(step="apply_IHC")
+        self.assertEqual((values["instances"], values["last_instance"]), (5, 4))
+
+        values, _ = self.ihc_step(step="apply_IHC", instances="2")
+        self.assertEqual((values["instances"], values["last_instance"]), ("2", 1))
+
+        for instances in (0, "-1", "four"):
+            with self.subTest(instances), self.assertRaises(ValueError):
+                self.ihc_step(step="apply_IHC", instances=instances)
 
     def test_watershed_values_per_group(self):
         settings = {"data_dir": self.tmp.name,

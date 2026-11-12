@@ -194,6 +194,9 @@ A cochlea-net template needs a row in `templates/cochlea-net/steps.json`:
 
 - `group`: `SGN`, `IHC`, `synapses`, or `null` for a template which serves more than one group.
 - `time`, `mem`: the values of `#SBATCH -t <time>` and `#SBATCH --mem <mem>` for a mouse cochlea.
+- `instances`: only for a job array, the number of its tasks. It fills `<instances>`, and
+  `<last_instance>` for `#SBATCH -a 0-<last_instance>`. The apply templates use both, so the array
+  and `PREDICTION_INSTANCES` always match.
 - A species code, e.g. `G` for gerbil: the values which differ for this species.
 
 The deploy step stops for a template without a row, and `test/test_pipelines.py` fails.

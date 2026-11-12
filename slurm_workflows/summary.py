@@ -6,7 +6,6 @@ Logic of `slurm_wf.summary`: summarize the efficiency and the core hours of the 
 The command only reads the archive. `slurm_wf.update_metadata` refreshes the data.
 """
 import csv
-import os
 import statistics
 from typing import List, Optional
 
@@ -15,13 +14,15 @@ try:
 except ImportError:  # openpyxl is optional. The login node does not have it.
     openpyxl = None
 
-from slurm_workflows.metadata import METADATA_FILE, archive_folders, as_list, read_metadata
-from slurm_workflows.update import UNFINISHED_STATES
+from slurm_workflows.metadata import archive_folders, archived_jobs, as_list
+from slurm_workflows.update import FINAL_STATES, NOT_STARTED_ELAPSED
 
 METADATA_COLUMNS = ["date", "task", "jobid", "job_name", "partition", "gpu", "cpus_per_task", "memory_per_node",
                     "runtime"]
 EFFICIENCIES = ["cpu_eff", "mem_eff", "time_eff"]
-COLUMNS = METADATA_COLUMNS + ["tasks", "state"] + EFFICIENCIES + ["core_hours"]
+COLUMNS = (["date", "task", "jobid", "replaced", "job_name", "partition", "gpu", "cpus_per_task", "memory_per_node",
+            "runtime", "project", "pipeline", "run", "tasks", "state", "slurm_state"] + EFFICIENCIES
+           + ["core_hours"])
 
 
 def parse_percent(value: str) -> Optional[float]:
@@ -41,8 +42,23 @@ def parse_percent(value: str) -> Optional[float]:
     return None
 
 
+def has_result(report: dict) -> bool:
+    """Check if a task of the efficiency report ran and ended.
+
+    A task which is not final, e.g. RUNNING or UNTRACKED, has the values of a report while it ran. A task
+    which was cancelled before it started has the values 0.0%.
+
+    Args:
+        report: Entry of the efficiency report.
+
+    Returns:
+        bool: True if the task is in a final state and its elapsed time is not 00:00:00.
+    """
+    return report.get("state") in FINAL_STATES and report.get("elapsed") != NOT_STARTED_ELAPSED
+
+
 def efficiencies(metadict: dict, key: str) -> List[float]:
-    """Return one efficiency of each task of a job that is not RUNNING or PENDING.
+    """Return one efficiency of each task of a job that has a result, see `has_result()`.
 
     Args:
         metadict: Metadata of the job.
@@ -52,7 +68,7 @@ def efficiencies(metadict: dict, key: str) -> List[float]:
         list: The efficiencies in percent. A task without a value is left out.
     """
     values = [parse_percent(report.get(key)) for report in as_list(metadict.get("reportseff", []))
-              if report.get("state") not in UNFINISHED_STATES]
+              if has_result(report)]
     return [value for value in values if value is not None]
 
 
@@ -70,6 +86,18 @@ def core_hours(metadict: dict) -> Optional[float]:
     return sum(hours) if hours else None
 
 
+def slurm_states(metadict: dict) -> List[str]:
+    """Return the states which the slurm output files of a job show.
+
+    Args:
+        metadict: Metadata of the job.
+
+    Returns:
+        list: The different states, sorted.
+    """
+    return sorted({output["state"] for output in as_list(metadict.get("slurm_output", [])) if output.get("state")})
+
+
 def select_jobs(
         input_dir: str,
         pattern: Optional[str] = None,
@@ -77,6 +105,7 @@ def select_jobs(
         until: Optional[str] = None,
         states: Optional[List[str]] = None,
         partitions: Optional[List[str]] = None,
+        all_jobids: bool = False,
 ) -> List[dict]:
     """Read the metadata of the archived jobs which match all given filters.
 
@@ -85,31 +114,30 @@ def select_jobs(
         pattern: Part of the name of the archive folders, or None for all.
         since: First job date as YYYY-MM-DD, or None.
         until: Last job date as YYYY-MM-DD, or None.
-        states: Keep a job if one of its tasks has one of these states, or None.
+        states: Keep a job if one of its tasks has one of these states, in the efficiency report or in
+            the slurm output, or None.
         partitions: Keep a job of one of these partitions, or None.
+        all_jobids: Also read the replaced JobIDs in `previous/<jobid>/`.
 
     Returns:
-        list: The metadata of each job, ordered by date and task.
+        list: A copy of the metadata of each job with the key 'replaced', ordered by date, task and JobID.
     """
     jobs = []
-    for folder in archive_folders(input_dir, pattern):
-        metadata = os.path.join(folder, METADATA_FILE)
-        if not os.path.isfile(metadata):
+    for folder, job_folder, metadict in archived_jobs(archive_folders(input_dir, pattern), all_jobids):
+        job_date = metadict.get("date", "")
+        if since is not None and job_date < since:
             continue
-
-        metadict = read_metadata(metadata)
-        if since is not None and metadict["date"] < since:
+        if until is not None and job_date > until:
             continue
-        if until is not None and metadict["date"] > until:
-            continue
-        if states is not None and not any(report.get("state") in states
-                                          for report in as_list(metadict.get("reportseff", []))):
+        job_states = {report.get("state") for report in as_list(metadict.get("reportseff", []))}
+        if states is not None and not (job_states | set(slurm_states(metadict))) & set(states):
             continue
         if partitions is not None and metadict.get("partition") not in partitions:
             continue
-        jobs.append(metadict)
+        jobs.append(dict(metadict, replaced=job_folder != folder))
 
-    return sorted(jobs, key=lambda metadict: (metadict["date"], metadict["task"]))
+    return sorted(jobs, key=lambda metadict: (metadict.get("date", ""), metadict.get("task", ""),
+                                              str(metadict.get("jobid", ""))))
 
 
 def job_row(metadict: dict) -> list:
@@ -122,20 +150,29 @@ def job_row(metadict: dict) -> list:
         list: The values. A missing value is None.
     """
     reports = as_list(metadict.get("reportseff", []))
-    states = ",".join(sorted({report["state"] for report in reports}))
-    means = []
+    pipeline = metadict.get("pipeline", {})
+    values = {key: metadict.get(key) for key in METADATA_COLUMNS}
+    values.update({
+        "replaced": metadict.get("replaced", False),
+        "project": metadict.get("project"),
+        "pipeline": pipeline.get("name"),
+        "run": pipeline.get("run"),
+        "tasks": len(reports),
+        "state": ",".join(sorted({report["state"] for report in reports if report.get("state")})),
+        "slurm_state": ",".join(slurm_states(metadict)),
+    })
     for key in EFFICIENCIES:
-        values = efficiencies(metadict, key)
-        means.append(round(statistics.mean(values), 1) if values else None)
+        means = efficiencies(metadict, key)
+        values[key] = round(statistics.mean(means), 1) if means else None
     hours = core_hours(metadict)
-    hours = None if hours is None else round(hours, 2)
-    return [metadict.get(key) for key in METADATA_COLUMNS] + [len(reports), states] + means + [hours]
+    values["core_hours"] = None if hours is None else round(hours, 2)
+    return [values[column] for column in COLUMNS]
 
 
 def print_summary(jobs: List[dict]):
     """Print the average efficiency and the core hours of the jobs.
 
-    An efficiency is averaged over the tasks that are not RUNNING or PENDING. The core hours are
+    An efficiency is averaged over the tasks that have a result, see `has_result()`. The core hours are
     summed per job and then averaged over the jobs.
 
     Args:
@@ -195,6 +232,7 @@ def summarize(
         until: Optional[str] = None,
         states: Optional[List[str]] = None,
         partitions: Optional[List[str]] = None,
+        all_jobids: bool = False,
 ):
     """Print the efficiency summary of the archived jobs, and optionally write one row per job.
 
@@ -204,13 +242,15 @@ def summarize(
         pattern: Part of the name of the archive folders, or None for all.
         since: First job date as YYYY-MM-DD, or None.
         until: Last job date as YYYY-MM-DD, or None.
-        states: Keep a job if one of its tasks has one of these states, or None.
+        states: Keep a job if one of its tasks has one of these states, in the efficiency report or in
+            the slurm output, or None.
         partitions: Keep a job of one of these partitions, or None.
+        all_jobids: Also summarize the replaced JobIDs in `previous/<jobid>/`.
     """
     if output is not None and output.lower().endswith(".xlsx") and openpyxl is None:
         raise ValueError("An .xlsx file needs openpyxl. Install openpyxl, or write a .tsv file.")
 
-    jobs = select_jobs(input_dir, pattern, since, until, states, partitions)
+    jobs = select_jobs(input_dir, pattern, since, until, states, partitions, all_jobids)
     print_summary(jobs)
 
     if output is not None:

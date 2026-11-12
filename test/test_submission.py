@@ -97,6 +97,8 @@ class SubmitJobTest(unittest.TestCase):
         self.assertEqual(read_file(os.path.join(archived, "log.txt")), f"{FIRST_JOBID}\n{FIRST_JOBID + 1}\n")
         with open(os.path.join(archived, "metadata.json")) as myfile:
             self.assertEqual(json.load(myfile)["jobid"], str(FIRST_JOBID + 1))
+        with open(os.path.join(archived, "previous", str(FIRST_JOBID), "metadata.json")) as myfile:
+            self.assertEqual(json.load(myfile)["jobid"], str(FIRST_JOBID))
 
     def test_environment_is_archived(self):
         write_file(self.sbatch_file, "#!/bin/bash\nsource ~/.bashrc\nmicromamba activate tools\n")
@@ -129,11 +131,12 @@ class DeploySubmissionTest(unittest.TestCase):
         os.chdir(self.cwd)
         self.tmp.cleanup()
 
-    def deploy(self, archive_dir, pipeline=None, force=True):
+    def deploy(self, archive_dir, pipeline=None, force=True, start_at=None):
         # The input of the mockup does not exist, so only force=True submits it.
         args = argparse.Namespace(input=MOCKUP_TEMPLATE if pipeline is None else None, pipeline=pipeline,
                                   params=MOCKUP_PARAMS, settings=MOCKUP_SETTINGS, archive_dir=archive_dir,
-                                  repository_file=None, submit=True, allow_missing=False, start_at=None, force=force)
+                                  repository_file=None, submit=True, allow_missing=False, start_at=start_at,
+                                  force=force)
         with mock.patch.dict(os.environ, self.env), contextlib.redirect_stdout(io.StringIO()):
             deploy.deploy_jobs(args, "mockup", default)
 
@@ -155,10 +158,19 @@ class DeploySubmissionTest(unittest.TestCase):
         self.deploy(self.archive_dir, MOCKUP_PIPELINE)
 
         self.assertIn(f"--dependency=afterok:{FIRST_JOBID}", sbatch_calls(self.env)[1])
+        run = str(FIRST_JOBID)
         self.assertEqual(self.archived_metadata("train")["pipeline"],
-                         {"name": "train_evaluate", "step": 1, "of": 2})
+                         {"name": "train_evaluate", "run": run, "step": 1, "of": 2, "step_name": "train"})
         self.assertEqual(self.archived_metadata("evaluate")["pipeline"],
-                         {"name": "train_evaluate", "step": 2, "of": 2, "depends_on": str(FIRST_JOBID)})
+                         {"name": "train_evaluate", "run": run, "step": 2, "of": 2, "step_name": "evaluate",
+                          "depends_on": run})
+
+    def test_resumed_pipeline_names_its_start(self):
+        self.deploy(self.archive_dir, MOCKUP_PIPELINE, start_at="evaluate")
+
+        self.assertEqual(self.archived_metadata("evaluate")["pipeline"],
+                         {"name": "train_evaluate", "run": str(FIRST_JOBID), "step": 1, "of": 1,
+                          "step_name": "evaluate", "start_at": "evaluate"})
 
     def test_job_is_submitted_if_archiving_fails(self):
         self.deploy(os.path.join(self.tmp.name, "none"))

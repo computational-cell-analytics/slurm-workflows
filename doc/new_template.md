@@ -79,7 +79,23 @@ source ~/.bashrc
 micromamba activate <environment>
 ```
 
-## 5. Name the input and the output of the job
+## 5. Print the exit code of the job
+
+The slurm output file of the cluster holds no exit code.
+Put these lines directly after the `#SBATCH` lines, so that the archive can read the result of the
+job, see [The archive](archive.md#the-format-of-a-slurm-output-file):
+
+```bash
+# Print the exit code for the archive, see doc/new_template.md.
+trap 'exit 143' TERM
+trap 'echo "Exit code of the job: $?"' EXIT
+```
+
+The EXIT trap prints the exit code of the job.
+After a SIGTERM, e.g. at the time limit, bash prints 0, so the TERM trap exits with 143 first.
+A test checks that every template has both trap lines.
+
+## 6. Name the input and the output of the job
 
 The deploy step reads these shell variables of the sbatch script before the submission:
 
@@ -127,7 +143,7 @@ A step starts only after the previous step completed successfully, i.e. with exi
 The exit code of a job is the status of its last command.
 So a command whose failure must stop the chain needs `|| exit 1` if other commands follow it.
 
-## 6. Name the template
+## 7. Name the template
 
 The template name gives the names of the sbatch script and of the archive folder:
 
@@ -147,7 +163,7 @@ names another file.
 A second submission on the same day uses the same archive folder, and its log file gets the new
 JobID.
 
-## 7. Test the template
+## 8. Test the template
 
 Run the deploy step without `--submit`.
 This dry run writes the sbatch script into the current directory and submits nothing:

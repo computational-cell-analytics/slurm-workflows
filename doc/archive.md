@@ -30,11 +30,15 @@ A missing archive directory gives a warning, which stops `--submit` unless `--fo
     ├── sbatch.sbatch       # the submitted sbatch script
     ├── log.txt             # one JobID per line, the latest last
     ├── metadata.json       # see below
-    └── environment.yml     # the export of the micromamba environment of the job
+    ├── environment.yml     # the export of the micromamba environment of the job
+    └── previous/
+        └── <jobid>/        # the files of a replaced JobID, except log.txt
 ```
 
 A second submission on the same day uses the same archive folder.
-Its JobID is added to `log.txt`, and `sbatch.sbatch` is the latest script.
+Its JobID is added to `log.txt`, and the files of the replaced JobID move to `previous/<jobid>/`.
+So the top level holds the files of the latest JobID, and each earlier JobID keeps its own script,
+environment and metadata.
 `environment.yml` is missing if the job activates no micromamba environment, see
 [Create a template](new_template.md#4-activate-a-micromamba-environment).
 `mockup_example/YYYY-MM-DD_train/` is a complete example.
@@ -49,11 +53,12 @@ The keys are lower case with underscores.
 | `academic_id`, `hpc_user` | Settings file | The person who ran the job. Left out if empty |
 | `job_name`, `runtime`, `partition`, `gpu`, ... | `#SBATCH` lines | See [the #SBATCH forms](new_template.md#3-keep-the-sbatch-lines-which-the-archive-reads) |
 | `jobid` | `log.txt` | The latest JobID |
-| `reportseff` | `reportseff` | One entry per job or array task: `jobid`, `state`, `elapsed`, `time_eff`, `cpu_eff`, `mem_eff` |
+| `reportseff` | `reportseff` | One entry per job or array task: `jobid`, `state`, `elapsed`, `time_eff`, `cpu_eff`, `mem_eff`. A task of an array which never started has a JobID such as `<jobid>_[9]`. An entry with the state `UNTRACKED` also has `last_state`, see update_metadata.py |
 | `repositories` | `git` | One entry per repository: `repo_name`, `repo_version` (the git hash), `status` (`clean` or `dirty`) |
 | `project` | Deploy step | The project, e.g. `cochlea-net` |
-| `pipeline` | Deploy step | Only for a step of a pipeline: `name` of the pipeline, `step` number, number of steps `of`, and `depends_on`, the JobID of the previous step |
-| `slurm_output` | Slurm output file | One entry per output file: `file`, `array_index` of an array task, `submitted`, `started`, `ended`, `elapsed_min`, `limit_min`, `cpus`, `nodes`, `core_hours` |
+| `pipeline` | Deploy step | Only for a step of a pipeline: `name` of the pipeline, `run` (the JobID of the first step of the deploy call), `step` and `of` (the number of the step and of all steps of the deploy call), `step_name` (the template, e.g. `segment_IHC`), `start_at` (after `--start-at`), `depends_on` (the JobID of the previous step), and `failed_at`, see update_metadata.py |
+| `slurm_output` | Slurm output file | One entry per output file: `file`, `array_index` of an array task, `submitted`, `started`, `ended`, `elapsed_min`, `limit_min`, `cpus`, `nodes`, `core_hours`, `elapsed_sec` (from `started` to `ended`), `exit_code` (if the job printed it), `state` and `error` (if the output shows them), see [the format of a slurm output file](#the-format-of-a-slurm-output-file) |
+| `backfilled` | `update_metadata.py --backfill` | `true` if `--backfill` created the metadata. Such metadata holds only `date`, `task`, `jobid`, `reportseff` and `slurm_output` |
 
 The archive records the git hash of slurm-workflows, of each entry of `repositories` in the
 settings file, and of each repository of `--repository-file`.
@@ -64,21 +69,20 @@ code.
 
 1. `scripts/deploy.py --submit` submits the jobs and writes the archive folders.
    At this time, the efficiency report shows the state `PENDING`.
-2. After the jobs ended, update the archive within 8 days:
+2. After the jobs ended, update the archive:
    ```bash
    python scripts/update_metadata.py --slurm-dir <folder of slurm-<jobid>.out> <archive_dir>
    ```
-   `reportseff` knows a job only for about one week, so the update skips a job which is older than
-   8 days (`REPORTSEFF_MAX_DAYS`).
+   `reportseff` lists a job for 365 days after its end.
+   Update the archive before the slurm output files are deleted.
 3. Print the efficiency summary, and write one row per job to a table:
    ```bash
    python scripts/summary.py --output jobs.xlsx --since 2026-01-01 <archive_dir>
    ```
 
-`reportseff` runs as `reportseff -u <user>`, with the user who runs the command.
-So run the update as the HPC user who submitted the jobs.
-`reportseff` is often available on the cluster.
-If not, run `module load py-reportseff`.
+`reportseff` lists only the jobs of the user who runs it, and only of the cluster of the login node.
+So run the update as the HPC user who submitted the jobs, on the same cluster.
+If `reportseff` is missing, run `module load py-reportseff`.
 Without `reportseff`, the commands print a warning and record no report.
 
 `--slurm-dir` is the folder of the files `slurm-<jobid>.out`.
@@ -89,19 +93,43 @@ The core hours come only from these files.
 ## update_metadata.py
 
 ```bash
-python scripts/update_metadata.py [--pattern <text>] [--slurm-dir <dir>] [--general] [--sbatch] <archive_dir>
+python scripts/update_metadata.py [--pattern <text>] [--slurm-dir <dir>] [--general] [--sbatch] [--backfill] \
+    <archive_dir>
 ```
 
-The command always refreshes the efficiency report of a job of the last 8 days, if the report is
-empty or shows `RUNNING` or `PENDING`.
+The command always refreshes the efficiency report of a job if the report is empty or has a task
+which is not final, e.g. `PENDING`, `RUNNING` or `UNTRACKED`.
+The final states are `COMPLETED` and the failed states, e.g. `FAILED`, `TIMEOUT` or `CANCELLED`.
+All updates also cover the replaced JobIDs in `previous/<jobid>/`.
+
+The Slurm database of GWDG purges a job 365 days after its end.
+So the command does not query a job whose `date` is more than 372 days old.
+The 7 extra days cover the time from the submission to the end of a job.
+
+If `reportseff` does not list a job, e.g. after the purge, the job keeps its report.
+Each task which is not final gets the state `UNTRACKED`, and `last_state` keeps its old state.
+The command prints a warning with each JobID of the last 365 days which `reportseff` does not list.
+
+A step of a pipeline starts only after its previous step completed (`afterok`).
+If a step fails, Slurm cancels the later steps before they start.
+`reportseff` lists such a step as `CANCELLED` with the elapsed time `00:00:00`.
+The command follows `depends_on` back and adds `failed_at` to the `pipeline` entry of the step: the
+`jobid`, the `step` and the `state` of the first step which failed.
+This needs no `reportseff`, and the command does not refresh a step with `failed_at` again.
+A step which was cancelled by hand before it started gets no `failed_at`, because it is itself the
+step which failed.
+
 The options add more updates:
 
 | Option | Update |
 |---|---|
 | `-p`, `--pattern` | Update only the archive folders whose name contains this text. The text can hold wildcards |
 | `-s`, `--slurm-dir` | Add `slurm_output` from the files `slurm-<jobid>.out` and `slurm-<jobid>_<array_index>.out` of this folder |
-| `--general` | Correct `date` and `task` from the folder name. Replace an efficiency report of another JobID |
-| `--sbatch` | Copy the `#SBATCH` values of `sbatch.sbatch` into the metadata again |
+| `--general` | Correct `date` and `task` from the name of the archive folder. Replace an efficiency report of another JobID |
+| `--sbatch` | Copy the `#SBATCH` values of `sbatch.sbatch` into the metadata again. A folder without `sbatch.sbatch` is skipped |
+| `--backfill` | Create `previous/<jobid>/metadata.json` for each earlier JobID of `log.txt` without metadata, e.g. in an archive folder from before `previous/<jobid>/`. The refresh adds the efficiency report, and `--slurm-dir` the core hours |
+
+The command skips an unreadable `metadata.json` with a warning.
 
 ### The format of a slurm output file
 
@@ -119,33 +147,63 @@ Estimated credit Consumption: 262.50 core-hours
 ================================================================================
 ```
 
+The section holds no exit code.
+The templates therefore print it with a trap, see
+[Create a template](new_template.md#5-print-the-exit-code-of-the-job):
+
+```
+Exit code of the job: 1
+```
+
+`--slurm-dir` also reads the output of the job before the section.
+The first rule which matches gives `state`, and `error` holds the line which shows it:
+
+1. A line of slurmstepd which cancels the job, e.g.
+   `slurmstepd: error: *** JOB 123 ON ggpu202 CANCELLED AT 2026-11-04T00:00:32 DUE TO TIME LIMIT ***`:
+   `TIMEOUT` for `TIME LIMIT`, `PREEMPTED` for `PREEMPTION`, `NODE_FAIL` for `NODE FAILURE`, else
+   `CANCELLED`.
+2. An `oom_kill` event: `OUT_OF_MEMORY`.
+3. An elapsed time of at least the time limit: `TIMEOUT`.
+4. The exit code 0: `COMPLETED`.
+5. A last line of the output which shows an error: `FAILED`.
+   Such a line is the guard line `Missing input of the job:`, a line which starts with `ERROR:`, an
+   error of bash (`slurm_script: line <n>:`), or a Python exception after a traceback.
+6. Another exit code: `FAILED`.
+
+Without a match, the entry has no `state`.
+The efficiency report of `reportseff` is the main source of the state.
+
 ## summary.py
 
 ```bash
 python scripts/summary.py [--output <file>] [--pattern <text>] [--since <date>] [--until <date>] \
-    [--state <s1,s2>] [--partition <p1,p2>] <archive_dir>
+    [--state <s1,s2>] [--partition <p1,p2>] [--all-jobids] <archive_dir>
 ```
 
 The command only reads the archive.
 
 | Option | Purpose |
 |---|---|
-| `-o`, `--output` | Write one row per job to this file, ordered by date and task. A `.xlsx` file needs openpyxl. Any other suffix gives a TSV file |
+| `-o`, `--output` | Write one row per job to this file, ordered by date, task and JobID. A `.xlsx` file needs openpyxl. Any other suffix gives a TSV file |
 | `-p`, `--pattern` | Use only the archive folders whose name contains this text |
 | `--since`, `--until` | First and last `date`, `YYYY-MM-DD`. Both are inclusive |
-| `--state` | Keep a job if one of its tasks has one of these states, e.g. `COMPLETED,TIMEOUT` |
+| `--state` | Keep a job if one of its tasks has one of these states in the efficiency report or in `slurm_output`, e.g. `COMPLETED,TIMEOUT` |
 | `--partition` | Keep a job of one of these partitions, e.g. `grete:shared,standard96` |
+| `--all-jobids` | Also summarize the replaced JobIDs in `previous/<jobid>/` |
 
 The terminal summary gives the average CPU, memory and time efficiency over the finished tasks of
 all jobs.
 An array job with 10 tasks counts 10 times.
-A task in the state `RUNNING` or `PENDING` does not count.
+Only a task in a final state counts, see update_metadata.py.
+A task which was cancelled before it started, with the elapsed time `00:00:00`, does not count.
 The core hours are summed per job, then averaged over the jobs.
 A folder without `metadata.json` does not count.
 
-The table has these columns: `date`, `task`, `jobid`, `job_name`, `partition`, `gpu`,
-`cpus_per_task`, `memory_per_node`, `runtime`, `tasks` (the number of report entries), `state` (the
-different states), the mean `cpu_eff`, `mem_eff` and `time_eff` of the finished tasks as numbers
+The table has these columns: `date`, `task`, `jobid`, `replaced` (`True` for a JobID of
+`previous/<jobid>/`), `job_name`, `partition`, `gpu`, `cpus_per_task`, `memory_per_node`, `runtime`,
+`project`, `pipeline` and `run` (the name and the run of the pipeline), `tasks` (the number of report
+entries), `state` (the different states of the report), `slurm_state` (the different states of
+`slurm_output`), the mean `cpu_eff`, `mem_eff` and `time_eff` of the finished tasks as numbers
 without `%`, and the sum of `core_hours`.
 A missing value gives an empty cell.
 
@@ -168,7 +226,8 @@ mkdir my_archive
    ```
 2. `scripts/archive_job.py` copies the files of one job into its archive folder.
    With `--move`, it moves them.
-   If `log.txt` exists in the archive folder, the new JobIDs are added to it:
+   If `log.txt` exists in the archive folder, the new JobIDs are added to it.
+   The files of a replaced JobID move to `previous/<jobid>/`:
    ```bash
    python scripts/archive_job.py --input-dir mockup_example/ --archive-dir my_archive/ YYYY-MM-DD train
    ```

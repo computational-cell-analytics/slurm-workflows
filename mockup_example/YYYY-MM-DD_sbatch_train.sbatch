@@ -9,6 +9,10 @@
 #SBATCH -p grete:shared
 #SBATCH -G A100:2
 
+# Print the exit code for the archive, see doc/new_template.md.
+trap 'exit 143' TERM
+trap 'echo "Exit code of the job: $?"' EXIT
+
 source ~/.bashrc
 micromamba activate dl-gpu
 

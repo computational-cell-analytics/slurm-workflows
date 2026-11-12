@@ -66,6 +66,64 @@ class SummaryTest(unittest.TestCase):
         self.assertIn("Average CPU Efficiency:    50.0% (n=3)", output)
         self.assertIn("Average Core Hours: 5.00 (n=2)", output)
 
+    def test_untracked_task_does_not_count(self):
+        untracked = dict(report("UNTRACKED", "1.0%"), last_state="RUNNING")
+        write_file(os.path.join(self.archive, "d_untracked", "metadata.json"),
+                   json.dumps({"date": "2026-04-01", "task": "untracked", "reportseff": [untracked]}))
+
+        output = self.run_summary()
+
+        self.assertIn("Efficiency summary for 4 job(s):", output)
+        self.assertIn("Average CPU Efficiency:    50.0% (n=3)", output)
+        self.assertEqual(self.tasks(states=["UNTRACKED"]), ["untracked"])
+
+    def replaced_job(self):
+        """Add a replaced JobID of the late job, which the slurm output shows as a timeout."""
+        write_file(os.path.join(self.archive, "a_late", "previous", "7", "metadata.json"), json.dumps({
+            "date": "2026-03-01", "task": "late", "jobid": "7", "project": "mockup",
+            "pipeline": {"name": "train_evaluate", "run": "7", "step": 1, "of": 2}, "reportseff": [],
+            "slurm_output": [{"core_hours": 3.0, "state": "TIMEOUT"}]}))
+
+    def test_all_jobids(self):
+        self.replaced_job()
+
+        self.assertEqual(self.tasks(), ["early", "array", "late"])
+        jobs = select_jobs(self.archive, all_jobids=True)
+        self.assertEqual([(metadict["task"], metadict["replaced"]) for metadict in jobs],
+                         [("early", False), ("array", False), ("late", False), ("late", True)])
+        self.assertIn("Total Core Hours:   13.00", self.run_summary(all_jobids=True))
+
+    def test_state_matches_slurm_state(self):
+        self.replaced_job()
+
+        jobs = select_jobs(self.archive, states=["TIMEOUT"], all_jobids=True)
+
+        self.assertEqual([metadict["jobid"] for metadict in jobs], ["7"])
+
+    def test_columns_of_a_replaced_jobid(self):
+        self.replaced_job()
+        table = os.path.join(self.tmp.name, "jobs.tsv")
+
+        self.run_summary(output=table, all_jobids=True)
+
+        with open(table, newline="") as myfile:
+            rows = list(csv.DictReader(myfile, dialect="excel-tab"))
+        keys = ("replaced", "project", "pipeline", "run", "tasks", "state", "slurm_state", "core_hours")
+        self.assertEqual({key: rows[-1][key] for key in keys},
+                         {"replaced": "True", "project": "mockup", "pipeline": "train_evaluate", "run": "7",
+                          "tasks": "0", "state": "", "slurm_state": "TIMEOUT", "core_hours": "3.0"})
+        self.assertEqual(rows[0]["replaced"], "False")
+
+    def test_task_which_never_started_does_not_count(self):
+        cancelled = dict(report("CANCELLED", "---"), elapsed="00:00:00", time_eff="0.0%", mem_eff="0.0%")
+        write_file(os.path.join(self.archive, "d_cancelled", "metadata.json"),
+                   json.dumps({"date": "2026-04-01", "task": "cancelled", "reportseff": [cancelled]}))
+
+        output = self.run_summary()
+
+        self.assertIn("Average Time Efficiency:   10.0% (n=3)", output)
+        self.assertIn("Average Memory Efficiency: 20.0% (n=3)", output)
+
     def test_tsv_rows(self):
         table = os.path.join(self.tmp.name, "jobs.tsv")
         self.run_summary(output=table)

@@ -18,7 +18,7 @@ from slurm_workflows.settings import load_settings
 from slurm_workflows.submission import archive_job, archive_submitted_job, submit
 from slurm_workflows.summary import summarize
 from slurm_workflows.templates import project_of_template
-from slurm_workflows.update import REPORTSEFF_MAX_DAYS, update_archive
+from slurm_workflows.update import update_archive
 
 
 def main_deploy():
@@ -125,11 +125,9 @@ def main_write_metadata():
 
 def main_update_metadata():
     parser = argparse.ArgumentParser(
-        description="Update the metadata.json of each archive folder. The efficiency report of a job of the "
-        f"last {REPORTSEFF_MAX_DAYS} days is refreshed if it is missing or shows PENDING or RUNNING. "
-        "With -s, the core hours are added from the slurm output files. --general corrects the date and the task "
-        "from the folder name, and replaces an efficiency report of another JobID. --sbatch copies the #SBATCH "
-        "parameters of sbatch.sbatch.")
+        description="Update the metadata.json of each archive folder, also of the replaced JobIDs in "
+        "previous/<jobid>/. The efficiency report of a job is refreshed if it is missing or not final, e.g. "
+        "PENDING or RUNNING.")
 
     parser.add_argument("archive_dir", type=str, help="Archive directory, which holds the archive folders.")
 
@@ -143,10 +141,13 @@ def main_update_metadata():
                              "report of another JobID.")
     parser.add_argument("--sbatch", action="store_true",
                         help="Copy the #SBATCH parameters of sbatch.sbatch into the metadata.")
+    parser.add_argument("--backfill", action="store_true",
+                        help="Create previous/<jobid>/metadata.json for the earlier JobIDs of log.txt, which have "
+                             "no metadata.")
     args = parser.parse_args()
 
     try:
-        update_archive(args.archive_dir, args.pattern, args.general, args.sbatch, args.slurm_dir)
+        update_archive(args.archive_dir, args.pattern, args.general, args.sbatch, args.slurm_dir, args.backfill)
     except (FileNotFoundError, ValueError) as exc:
         sys.exit(str(exc))
 
@@ -171,13 +172,18 @@ def main_summary():
     parser.add_argument("--since", type=iso_date, default=None, help="First job date, YYYY-MM-DD.")
     parser.add_argument("--until", type=iso_date, default=None, help="Last job date, YYYY-MM-DD.")
     parser.add_argument("--state", type=lambda value: value.split(","), default=None,
-                        help="Keep a job if one of its tasks has one of these states, e.g. COMPLETED,TIMEOUT.")
+                        help="Keep a job if one of its tasks has one of these states in the efficiency report "
+                             "or in slurm_output, e.g. COMPLETED,TIMEOUT.")
     parser.add_argument("--partition", type=lambda value: value.split(","), default=None,
                         help="Keep a job of one of these partitions, e.g. grete:shared,standard96.")
+    parser.add_argument("--all-jobids", dest="all_jobids", action="store_true",
+                        help="Also summarize the replaced JobIDs in previous/<jobid>/. The column 'replaced' "
+                             "marks them.")
     args = parser.parse_args()
 
     try:
-        summarize(args.archive_dir, args.output, args.pattern, args.since, args.until, args.state, args.partition)
+        summarize(args.archive_dir, args.output, args.pattern, args.since, args.until, args.state, args.partition,
+                  args.all_jobids)
     except (FileNotFoundError, ValueError) as exc:
         sys.exit(str(exc))
 

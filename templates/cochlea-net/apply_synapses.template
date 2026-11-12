@@ -12,6 +12,10 @@
 #SBATCH --mem <mem>
 #SBATCH -a 0-9
 
+# Print the exit code for the archive, see doc/new_template.md.
+trap 'exit 143' TERM
+trap 'echo "Exit code of the job: $?"' EXIT
+
 # The size of the array above and PREDICTION_INSTANCES below must match. Otherwise the tasks
 # either leave blocks unpredicted or exceed the number of splits.
 

@@ -3,6 +3,7 @@
 """Tests of the placeholder filling: `slurm_workflows/templates.py`, `slurm_workflows/settings.py`,
 and the default deployment of `scripts/deploy.py` on the mockup."""
 import contextlib
+import glob
 import io
 import json
 import os
@@ -184,6 +185,19 @@ class MockupTest(unittest.TestCase):
         self.assertIn("dataset", result.stderr)
         self.assertNotIn("has no deployment module", result.stdout)
         self.assertEqual(os.listdir(self.tmp.name), ["params.json"])
+
+
+class ExitCodeTrapTest(unittest.TestCase):
+
+    def test_every_template_prints_its_exit_code(self):
+        templates = glob.glob(os.path.join(REPOSITORY_DIR, "templates", "*", "*.template"))
+        templates += glob.glob(os.path.join(MOCKUP_DIR, "templates", "*", "*.template"))
+        self.assertGreater(len(templates), 2)
+        for template in templates:
+            with self.subTest(template=os.path.basename(template)):
+                content = read_file(template)
+                self.assertIn("trap 'exit 143' TERM\n", content)
+                self.assertIn("""trap 'echo "Exit code of the job: $?"' EXIT\n""", content)
 
 
 class ProjectModuleTest(unittest.TestCase):

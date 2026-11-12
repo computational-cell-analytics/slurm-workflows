@@ -38,9 +38,12 @@ echo $((count + 1)) > "$STUB_STATE"/count
 echo "$(({FIRST_JOBID} + count));cluster"
 """
 
-# Prints the file 'reportseff' of the state directory, which a test fills with report lines.
+# Prints the file 'reportseff' of the state directory, which a test fills with report lines. The real
+# command prints only the requested JobIDs. The caller filters the lines in the same way.
+# 'reportseff_calls' gets one line with the arguments of each call.
 # A non-zero REPORTSEFF_EXIT fails like a wrapper whose Python module is missing.
 REPORTSEFF_STUB = """#!/bin/bash
+echo "$@" >> "$STUB_STATE"/reportseff_calls
 if [ "${REPORTSEFF_EXIT:-0}" != 0 ] ; then
     echo "ModuleNotFoundError: No module named 'reportseff'" >&2
     exit "$REPORTSEFF_EXIT"
@@ -119,6 +122,24 @@ def sbatch_calls(
         list: One string per call.
     """
     path = os.path.join(env["STUB_STATE"], "sbatch_calls")
+    if not os.path.isfile(path):
+        return []
+    with open(path, "r") as myfile:
+        return myfile.read().splitlines()
+
+
+def reportseff_calls(
+    env: dict,
+) -> list:
+    """Return the arguments of each call of the `reportseff` stub.
+
+    Args:
+        env: Output of `stub_env()`.
+
+    Returns:
+        list: One string per call.
+    """
+    path = os.path.join(env["STUB_STATE"], "reportseff_calls")
     if not os.path.isfile(path):
         return []
     with open(path, "r") as myfile:

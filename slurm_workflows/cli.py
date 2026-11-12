@@ -172,13 +172,18 @@ def main_summary():
     parser.add_argument("--since", type=iso_date, default=None, help="First job date, YYYY-MM-DD.")
     parser.add_argument("--until", type=iso_date, default=None, help="Last job date, YYYY-MM-DD.")
     parser.add_argument("--state", type=lambda value: value.split(","), default=None,
-                        help="Keep a job if one of its tasks has one of these states, e.g. COMPLETED,TIMEOUT.")
+                        help="Keep a job if one of its tasks has one of these states in the efficiency report "
+                             "or in slurm_output, e.g. COMPLETED,TIMEOUT.")
     parser.add_argument("--partition", type=lambda value: value.split(","), default=None,
                         help="Keep a job of one of these partitions, e.g. grete:shared,standard96.")
+    parser.add_argument("--all-jobids", dest="all_jobids", action="store_true",
+                        help="Also summarize the replaced JobIDs in previous/<jobid>/. The column 'replaced' "
+                             "marks them.")
     args = parser.parse_args()
 
     try:
-        summarize(args.archive_dir, args.output, args.pattern, args.since, args.until, args.state, args.partition)
+        summarize(args.archive_dir, args.output, args.pattern, args.since, args.until, args.state, args.partition,
+                  args.all_jobids)
     except (FileNotFoundError, ValueError) as exc:
         sys.exit(str(exc))
 

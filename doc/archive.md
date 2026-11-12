@@ -184,18 +184,19 @@ The efficiency report of `reportseff` is the main source of the state.
 
 ```bash
 python scripts/summary.py [--output <file>] [--pattern <text>] [--since <date>] [--until <date>] \
-    [--state <s1,s2>] [--partition <p1,p2>] <archive_dir>
+    [--state <s1,s2>] [--partition <p1,p2>] [--all-jobids] <archive_dir>
 ```
 
 The command only reads the archive.
 
 | Option | Purpose |
 |---|---|
-| `-o`, `--output` | Write one row per job to this file, ordered by date and task. A `.xlsx` file needs openpyxl. Any other suffix gives a TSV file |
+| `-o`, `--output` | Write one row per job to this file, ordered by date, task and JobID. A `.xlsx` file needs openpyxl. Any other suffix gives a TSV file |
 | `-p`, `--pattern` | Use only the archive folders whose name contains this text |
 | `--since`, `--until` | First and last `date`, `YYYY-MM-DD`. Both are inclusive |
-| `--state` | Keep a job if one of its tasks has one of these states, e.g. `COMPLETED,TIMEOUT` |
+| `--state` | Keep a job if one of its tasks has one of these states in the efficiency report or in `slurm_output`, e.g. `COMPLETED,TIMEOUT` |
 | `--partition` | Keep a job of one of these partitions, e.g. `grete:shared,standard96` |
+| `--all-jobids` | Also summarize the replaced JobIDs in `previous/<jobid>/` |
 
 The terminal summary gives the average CPU, memory and time efficiency over the finished tasks of
 all jobs.
@@ -205,9 +206,11 @@ A task which was cancelled before it started, with the elapsed time `00:00:00`, 
 The core hours are summed per job, then averaged over the jobs.
 A folder without `metadata.json` does not count.
 
-The table has these columns: `date`, `task`, `jobid`, `job_name`, `partition`, `gpu`,
-`cpus_per_task`, `memory_per_node`, `runtime`, `tasks` (the number of report entries), `state` (the
-different states), the mean `cpu_eff`, `mem_eff` and `time_eff` of the finished tasks as numbers
+The table has these columns: `date`, `task`, `jobid`, `replaced` (`True` for a JobID of
+`previous/<jobid>/`), `job_name`, `partition`, `gpu`, `cpus_per_task`, `memory_per_node`, `runtime`,
+`project`, `pipeline` and `run` (the name and the run of the pipeline), `tasks` (the number of report
+entries), `state` (the different states of the report), `slurm_state` (the different states of
+`slurm_output`), the mean `cpu_eff`, `mem_eff` and `time_eff` of the finished tasks as numbers
 without `%`, and the sum of `core_hours`.
 A missing value gives an empty cell.
 

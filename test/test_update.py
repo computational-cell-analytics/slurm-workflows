@@ -1,7 +1,7 @@
 #!/usr/bin/python
 # -- coding: utf-8 --
 """Tests of `slurm_workflows/update.py`: the refresh of the efficiency report by JobID, the replaced
-JobIDs, and the mark of a pipeline step which never started. `reportseff` is a stub, see
+JobIDs, the backfill, and the mark of a pipeline step which never started. `reportseff` is a stub, see
 `test/stubs.py`."""
 import contextlib
 import io
@@ -69,11 +69,11 @@ class ArchiveTestCase(unittest.TestCase):
         third = self.job("third", "1003", [], step=3, depends_on="1002", job_date=job_date)
         return second, third
 
-    def update(self, report_lines, pattern=None):
+    def update(self, report_lines, pattern=None, backfill=False):
         set_reportseff_output(self.env, ["JobID State Elapsed TimeEff CPUEff MemEff"] + report_lines)
         stdout = io.StringIO()
         with mock.patch.dict(os.environ, self.env), contextlib.redirect_stdout(stdout):
-            update_archive(self.archive_dir, pattern=pattern)
+            update_archive(self.archive_dir, pattern=pattern, backfill=backfill)
         return stdout.getvalue()
 
     def queried_jobids(self):
@@ -272,6 +272,43 @@ class UpdateReportseffTest(ArchiveTestCase):
 
         self.assertIn("Warning: the efficiency reports are not refreshed", output)
         self.assertEqual(self.metadata(second)["pipeline"]["failed_at"]["state"], "FAILED")
+
+
+class BackfillTest(ArchiveTestCase):
+
+    def test_earlier_jobids_get_metadata(self):
+        folder = self.job("first", "1003", [report("1003", "COMPLETED")], log="1001\n1002\n1003\n")
+
+        output = self.update([line("1001", "TIMEOUT"), not_started("1002")], backfill=True)
+
+        self.assertIn("Backfilled the metadata of 2 earlier JobID(s).", output)
+        first = self.metadata(os.path.join(folder, "previous", "1001"))
+        self.assertEqual({key: first[key] for key in ("date", "task", "jobid", "backfilled")},
+                         {"date": TODAY, "task": "first", "jobid": "1001", "backfilled": True})
+        self.assertEqual(first["reportseff"][0]["state"], "TIMEOUT")
+        self.assertEqual(self.metadata(os.path.join(folder, "previous", "1002"))["reportseff"][0]["state"],
+                         "CANCELLED")
+
+        output = self.update([line("1001", "TIMEOUT"), not_started("1002")], backfill=True)
+
+        self.assertIn("Backfilled the metadata of 0 earlier JobID(s).", output)
+
+    def test_existing_previous_folder_is_kept(self):
+        folder = self.job("first", "1002", [report("1002", "COMPLETED")], log="1001\n1002\n")
+        self.job("first", "1001", [report("1001", "FAILED")], previous=True)
+
+        self.update([], backfill=True)
+
+        self.assertNotIn("backfilled", self.metadata(os.path.join(folder, "previous", "1001")))
+
+    def test_jobid_missing_from_log(self):
+        folder = self.job("first", "1002", [report("1002", "COMPLETED")], log="1001\n")
+
+        output = self.update([], backfill=True)
+
+        self.assertIn(f"Warning: {folder} is not backfilled, because log.txt does not list its JobID '1002'.",
+                      output)
+        self.assertFalse(os.path.exists(os.path.join(folder, "previous")))
 
 
 if __name__ == "__main__":

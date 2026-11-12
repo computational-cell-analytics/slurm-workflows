@@ -143,10 +143,13 @@ def main_update_metadata():
                              "report of another JobID.")
     parser.add_argument("--sbatch", action="store_true",
                         help="Copy the #SBATCH parameters of sbatch.sbatch into the metadata.")
+    parser.add_argument("--backfill", action="store_true",
+                        help="Create previous/<jobid>/metadata.json for the earlier JobIDs of log.txt, which have "
+                             "no metadata.")
     args = parser.parse_args()
 
     try:
-        update_archive(args.archive_dir, args.pattern, args.general, args.sbatch, args.slurm_dir)
+        update_archive(args.archive_dir, args.pattern, args.general, args.sbatch, args.slurm_dir, args.backfill)
     except (FileNotFoundError, ValueError) as exc:
         sys.exit(str(exc))
 

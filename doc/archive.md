@@ -60,6 +60,7 @@ The keys are lower case with underscores.
 | `project` | Deploy step | The project, e.g. `cochlea-net` |
 | `pipeline` | Deploy step | Only for a step of a pipeline: `name` of the pipeline, `step` number, number of steps `of`, and `depends_on`, the JobID of the previous step. `update_metadata.py` adds `failed_at` to a step which never started, see below |
 | `slurm_output` | Slurm output file | One entry per output file: `file`, `array_index` of an array task, `submitted`, `started`, `ended`, `elapsed_min`, `limit_min`, `cpus`, `nodes`, `core_hours` |
+| `backfilled` | `update_metadata.py --backfill` | Only in `previous/<jobid>/` of an earlier JobID of `log.txt`, which was archived without its own files. The metadata holds only `date`, `task`, `jobid`, the report and `slurm_output` |
 
 The archive records the git hash of slurm-workflows, of each entry of `repositories` in the
 settings file, and of each repository of `--repository-file`.
@@ -99,7 +100,8 @@ The core hours come only from these files.
 ## update_metadata.py
 
 ```bash
-python scripts/update_metadata.py [--pattern <text>] [--slurm-dir <dir>] [--general] [--sbatch] <archive_dir>
+python scripts/update_metadata.py [--pattern <text>] [--slurm-dir <dir>] [--general] [--sbatch] [--backfill] \
+    <archive_dir>
 ```
 
 The command always refreshes the efficiency report of a job if the report is empty or has a task
@@ -141,6 +143,7 @@ The options add more updates:
 | `-s`, `--slurm-dir` | Add `slurm_output` from the files `slurm-<jobid>.out` and `slurm-<jobid>_<array_index>.out` of this folder, also for the replaced JobIDs |
 | `--general` | Correct `date` and `task` from the folder name. Replace an efficiency report of another JobID |
 | `--sbatch` | Copy the `#SBATCH` values of `sbatch.sbatch` into the metadata again |
+| `--backfill` | Create `previous/<jobid>/metadata.json` with `backfilled` for each JobID of `log.txt` before the JobID of `metadata.json`, if the folder does not exist. An archive folder from before `previous/<jobid>/` has only the files of its latest JobID. The refresh adds the efficiency report, and `--slurm-dir` the core hours |
 
 ### The format of a slurm output file
 

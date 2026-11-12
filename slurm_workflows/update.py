@@ -8,8 +8,9 @@ Refresh the efficiency report of a running or pending job, and add the data of t
 import os
 from typing import List, Optional
 
-from slurm_workflows.metadata import LOG_FILE, METADATA_FILE, SBATCH_FILE
-from slurm_workflows.metadata import archive_folders, as_list, job_folders, read_metadata, write_metadata
+from slurm_workflows.metadata import LOG_FILE, METADATA_FILE, PREVIOUS_DIR, SBATCH_FILE
+from slurm_workflows.metadata import archive_folders, as_list, init_metadict, job_folders, read_metadata
+from slurm_workflows.metadata import write_metadata
 from slurm_workflows.slurm import jobids_from_log, matches_jobid, reportseff_entries, reportseff_from_jobid
 from slurm_workflows.slurm import add_sbatch_parameters, slurm_output_files, slurm_output_to_dict
 
@@ -368,12 +369,51 @@ def update_slurm_output(subfolders: List[str], slurm_dir: str):
         print("No matching slurm output files found.")
 
 
+def backfill_replaced_jobs(
+    subfolders: List[str],
+):
+    """Create `previous/<jobid>/metadata.json` for each earlier JobID of `log.txt` which has no metadata.
+
+    An archive folder from before `previous/<jobid>/` keeps only the files of its latest JobID. The new
+    metadata holds 'date', 'task', 'jobid' and 'backfilled'. The refresh of the efficiency report and
+    the option `--slurm-dir` add the data of the job.
+
+    Args:
+        subfolders: Archive folders.
+    """
+    created = 0
+    for folder in subfolders:
+        metadata = os.path.join(folder, METADATA_FILE)
+        log_file = os.path.join(folder, LOG_FILE)
+        if not os.path.isfile(metadata) or not os.path.isfile(log_file):
+            continue
+
+        jobid = read_metadata(metadata).get("jobid")
+        jobids = jobids_from_log(log_file)
+        if jobid not in jobids:
+            print(f"Warning: {folder} is not backfilled, because log.txt does not list its JobID '{jobid}'.")
+            continue
+
+        for earlier in jobids[:jobids.index(jobid)]:
+            job_folder = os.path.join(folder, PREVIOUS_DIR, earlier)
+            if os.path.exists(job_folder):
+                continue
+            metadict = init_metadict(folder)
+            metadict.update({"jobid": earlier, "reportseff": [], "backfilled": True})
+            os.makedirs(job_folder)
+            write_metadata(metadict, os.path.join(job_folder, METADATA_FILE))
+            created += 1
+
+    print(f"Backfilled the metadata of {created} earlier JobID(s).")
+
+
 def update_archive(
         input_dir: str,
         pattern: Optional[str] = None,
         general: bool = False,
         sbatch: bool = False,
         slurm_dir: Optional[str] = None,
+        backfill: bool = False,
 ):
     """Update the metadata of the archive folders in a directory.
 
@@ -385,8 +425,12 @@ def update_archive(
         general: Run `check_metadata()`, the option `--general`.
         sbatch: Run `update_sbatch_data()`, the option `--sbatch`.
         slurm_dir: Directory of the slurm output files, or None.
+        backfill: Run `backfill_replaced_jobs()` first, the option `--backfill`.
     """
     subfolders = archive_folders(input_dir, pattern)
+
+    if backfill:
+        backfill_replaced_jobs(subfolders)
 
     if sbatch:
         update_sbatch_data(subfolders)

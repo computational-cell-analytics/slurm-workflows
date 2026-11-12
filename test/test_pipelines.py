@@ -173,9 +173,12 @@ class StepRowTest(unittest.TestCase):
 
     def test_species_deviation(self):
         sgn = step_template(TEMPLATE_DIR, "apply_SGN")
+        ihc = step_template(TEMPLATE_DIR, "apply_IHC")
 
         self.assertEqual(deployment.step_row(sgn, "M"), ("SGN", {"time": "00:25:00", "mem": "96G", "instances": 10}))
         self.assertEqual(deployment.step_row(sgn, "G"), ("SGN", {"time": "01:30:00", "mem": "128G", "instances": 10}))
+        self.assertEqual(deployment.step_row(ihc, "M")[1]["instances"], 4)
+        self.assertEqual(deployment.step_row(ihc, "G")[1]["instances"], 5)
 
     def test_template_without_row_raises(self):
         with tempfile.TemporaryDirectory() as tmp:

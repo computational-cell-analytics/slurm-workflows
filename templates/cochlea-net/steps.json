@@ -1,5 +1,5 @@
 {
-    "apply_IHC": {"group": "IHC", "time": "00:10:00", "mem": "28G", "instances": 10, "G": {"time": "00:20:00", "mem": "72G"}},
+    "apply_IHC": {"group": "IHC", "time": "00:40:00", "mem": "16G", "instances": 4, "G": {"time": "00:30:00", "mem": "72G", "instances": 5}},
     "apply_SGN": {"group": "SGN", "time": "00:25:00", "mem": "96G", "instances": 10, "G": {"time": "01:30:00", "mem": "128G"}},
     "apply_synapses": {"group": "synapses", "time": "00:10:00", "mem": "10G", "instances": 10, "G": {"time": "01:00:00", "mem": "60G"}},
     "cleanup_IHC": {"group": "IHC", "time": "00:10:00", "mem": "2G"},

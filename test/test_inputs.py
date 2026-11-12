@@ -183,7 +183,7 @@ class ResolveInputTest(unittest.TestCase):
     def test_array_size_of_the_species_and_of_a_parameter(self):
         self.add(self.MULTI)
         values, _ = self.ihc_step(step="apply_IHC")
-        self.assertEqual((values["instances"], values["last_instance"]), (10, 9))
+        self.assertEqual((values["instances"], values["last_instance"]), (5, 4))
 
         values, _ = self.ihc_step(step="apply_IHC", instances="2")
         self.assertEqual((values["instances"], values["last_instance"]), ("2", 1))

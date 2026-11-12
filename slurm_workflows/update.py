@@ -3,9 +3,11 @@
 """author: Martin Schilling (martin.schilling@med.uni-goettingen.de), 2025
 
 Logic of `slurm_wf.update_metadata`: update the archived metadata of Slurm jobs.
-Refresh the efficiency report of a running or pending job, and add the data of the slurm output files.
+Refresh the efficiency reports which are not final, mark the steps of a failed chain, and add the data of
+the slurm output files.
 """
 import os
+from datetime import date, datetime
 from typing import List, Optional
 
 from slurm_workflows.metadata import LOG_FILE, METADATA_FILE, PREVIOUS_DIR, SBATCH_FILE
@@ -13,8 +15,8 @@ from slurm_workflows.metadata import archive_folders, archived_jobs, as_list, in
 from slurm_workflows.slurm import jobids_from_log, matches_jobid, reportseff_entries, reportseff_from_jobid
 from slurm_workflows.slurm import add_sbatch_parameters, slurm_output_files, slurm_output_to_dict
 
-# The state of a task which is not final and which `reportseff` no longer lists, because the Slurm
-# database purged the job. `last_state` keeps the state of the last report.
+# The state of a task which is not final and which `reportseff` does not list, e.g. after the purge.
+# `last_state` keeps the state of the last report.
 UNTRACKED_STATE = "UNTRACKED"
 
 # A job which ends in one of these states never satisfies `afterok`, so the later steps of its chain
@@ -28,6 +30,11 @@ FINAL_STATES = ("COMPLETED",) + FAILED_STATES
 
 # The elapsed time of a task which was cancelled before it started.
 NOT_STARTED_ELAPSED = "00:00:00"
+
+# GWDG purges a job from the Slurm database 365 days after its end, so `reportseff` cannot list an older job.
+SLURM_PURGE_DAYS = 365
+# The longest time from the submission of a job, the date of its archive folder, to its end.
+MAX_JOB_DAYS = 7
 
 
 def update_sbatch_data(subfolders: List[str]):
@@ -118,6 +125,39 @@ def chain_failure(
     return None
 
 
+def job_age_days(
+    metadict: dict,
+) -> Optional[int]:
+    """Return the age of a job in days, from the date of its archive folder.
+
+    Args:
+        metadict: Metadata of the job.
+
+    Returns:
+        int: The days since the submission, or None if the date is missing or has another format.
+    """
+    try:
+        job_date = datetime.strptime(str(metadict.get("date")), "%Y-%m-%d").date()
+    except ValueError:
+        return None
+    return (date.today() - job_date).days
+
+
+def is_purged(
+    metadict: dict,
+) -> bool:
+    """Check if the Slurm database purged a job, so that `reportseff` cannot list it.
+
+    Args:
+        metadict: Metadata of the job.
+
+    Returns:
+        bool: True if the job is older than `SLURM_PURGE_DAYS` and `MAX_JOB_DAYS`. False for an unknown age.
+    """
+    age = job_age_days(metadict)
+    return age is not None and age > SLURM_PURGE_DAYS + MAX_JOB_DAYS
+
+
 def needs_refresh(
     reports: List[dict],
 ) -> bool:
@@ -153,27 +193,20 @@ def mark_untracked(
     return changed
 
 
-def print_retention(
-    listed: List[dict],
+def print_unlisted(
     unlisted: List[dict],
 ):
-    """Print the JobIDs which `reportseff` no longer lists, to show how long the Slurm database keeps a job.
+    """Print the JobIDs which `reportseff` does not list, although the Slurm database still keeps them.
+
+    `sacct` shows only the jobs of the user who runs it, and only of the cluster of the login node.
 
     Args:
-        listed: Metadata of the queried jobs which `reportseff` lists.
-        unlisted: Metadata of the queried jobs which `reportseff` does not list.
+        unlisted: Metadata of the jobs.
     """
-    print(f"reportseff listed {len(listed)} of {len(listed) + len(unlisted)} queried JobIDs.")
-    if not unlisted:
-        return
-
-    print("reportseff no longer lists these JobIDs (date, JobID, task):")
-    for metadict in sorted(unlisted, key=lambda metadict: (metadict.get("date", ""), metadict["jobid"])):
+    print(f"Warning: reportseff does not list {len(unlisted)} JobID(s) of the last {SLURM_PURGE_DAYS} days. "
+          "Run the update as the user who submitted the jobs, on the cluster where they ran:")
+    for metadict in sorted(unlisted, key=lambda metadict: (str(metadict.get("date")), metadict["jobid"])):
         print(f"  {metadict.get('date')}  {metadict['jobid']}  {metadict.get('task')}")
-
-    print(f"Newest unlisted job: {max(metadict.get('date', '') for metadict in unlisted)}.")
-    if listed:
-        print(f"Oldest listed job: {min(metadict.get('date', '') for metadict in listed)}.")
 
 
 def update_reportseff(
@@ -182,11 +215,9 @@ def update_reportseff(
 ):
     """Refresh the efficiency reports which can still change, and mark the steps of a failed chain.
 
-    `reportseff` is queried once, with the JobIDs of all jobs whose report is empty or not final,
-    including the replaced JobIDs in `previous/<jobid>/`. A job of any age is listed while the Slurm
-    database keeps it. A job which `reportseff` no longer lists gets `UNTRACKED_STATE` for each task
-    which is not final. A step of a pipeline which never started because an earlier step failed gets
-    `failed_at` in its `pipeline` entry, and is not queried again.
+    A job older than `SLURM_PURGE_DAYS + MAX_JOB_DAYS` is not queried. Each task of a purged or unlisted
+    job which is not final gets `UNTRACKED_STATE`. A step which never started because an earlier step
+    failed gets `failed_at` in its `pipeline` entry, and is not queried again.
 
     Args:
         subfolders: Archive folders to update.
@@ -200,27 +231,29 @@ def update_reportseff(
     jobs = [job for job in jobs if os.path.realpath(job[0]) in selected]
 
     # A JobID which is not a number would make `reportseff` fail for every JobID of the call.
-    queried = [(job_folder, metadict) for _, job_folder, metadict in jobs
+    refresh = [(job_folder, metadict) for _, job_folder, metadict in jobs
                if str(metadict.get("jobid", "")).isdigit() and "failed_at" not in metadict.get("pipeline", {})
                and needs_refresh(as_list(metadict.get("reportseff", [])))]
+    queried = [str(metadict["jobid"]) for _, metadict in refresh if not is_purged(metadict)]
     try:
-        listed = reportseff_entries([str(metadict["jobid"]) for _, metadict in queried]) if queried else {}
+        listed = reportseff_entries(queried) if queried else {}
     except ValueError as exc:
         print(f"Warning: the efficiency reports are not refreshed: {exc}.")
-        queried = []
+        # Without `reportseff`, only a purged job is known to be unlisted.
+        refresh = [(job_folder, metadict) for job_folder, metadict in refresh if is_purged(metadict)]
+        listed = {}
 
     updated = 0
-    listed_jobs = []
     unlisted = []
-    for job_folder, metadict in queried:
-        entries = listed[str(metadict["jobid"])]
+    for job_folder, metadict in refresh:
+        entries = listed.get(str(metadict["jobid"]), [])
         if entries:
-            listed_jobs.append(metadict)
             changed = entries != metadict.get("reportseff")
             metadict["reportseff"] = entries
             message = f"Updated the efficiency report of {job_folder}."
         else:
-            unlisted.append(metadict)
+            if not is_purged(metadict):
+                unlisted.append(metadict)
             changed = mark_untracked(as_list(metadict.get("reportseff", [])))
             message = (f"Marked the report of {job_folder} as {UNTRACKED_STATE}, because reportseff no longer "
                        "lists it.")
@@ -243,8 +276,8 @@ def update_reportseff(
               f"started: step {failure['step']} (JobID {failure['jobid']}) ended with {failure['state']}.")
         updated += 1
 
-    if queried:
-        print_retention(listed_jobs, unlisted)
+    if unlisted:
+        print_unlisted(unlisted)
     if updated == 0:
         print("All directories contain updated efficiency reports.")
 

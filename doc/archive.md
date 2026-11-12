@@ -75,21 +75,16 @@ code.
    ```bash
    python scripts/update_metadata.py --slurm-dir <folder of slurm-<jobid>.out> <archive_dir>
    ```
-   `reportseff` knows a job as long as the Slurm database keeps it.
-   The slurm output files can be deleted earlier, so do not wait too long.
+   `reportseff` lists a job for 365 days after its end.
+   Update the archive before the slurm output files are deleted.
 3. Print the efficiency summary, and write one row per job to a table:
    ```bash
    python scripts/summary.py --output jobs.xlsx --since 2026-01-01 <archive_dir>
    ```
 
-`reportseff` runs as `reportseff <jobid> ...`.
-With JobIDs, `sacct` searches the whole Slurm database and also lists a job which never became
-eligible, see the section DEFAULT TIME WINDOW of `man sacct`.
-`reportseff -u <user>` lists only the jobs of the last week and no job which never became eligible.
-`sacct` shows only the jobs of the user who runs the command.
-So run the update as the HPC user who submitted the jobs.
-`reportseff` is often available on the cluster.
-If not, run `module load py-reportseff`.
+`reportseff` lists only the jobs of the user who runs it, and only of the cluster of the login node.
+So run the update as the HPC user who submitted the jobs, on the same cluster.
+If `reportseff` is missing, run `module load py-reportseff`.
 Without `reportseff`, the commands print a warning and record no report.
 
 `--slurm-dir` is the folder of the files `slurm-<jobid>.out`.
@@ -109,15 +104,13 @@ which is not final, e.g. `PENDING`, `RUNNING` or `UNTRACKED`.
 The final states are `COMPLETED` and the failed states, e.g. `FAILED`, `TIMEOUT` or `CANCELLED`.
 All updates also cover the replaced JobIDs in `previous/<jobid>/`.
 
-A job which `reportseff` no longer lists, because the Slurm database purged it, keeps its report.
-Each task which is not final gets the state `UNTRACKED`.
-`last_state` keeps the state of the last report, and the other values of the entry stay.
-If `reportseff` lists the job again, the report replaces the entry.
+The Slurm database of GWDG purges a job 365 days after its end.
+So the command does not query a job whose `date` is more than 372 days old.
+The 7 extra days cover the time from the submission to the end of a job.
 
-The command prints the JobIDs which `reportseff` no longer lists, ordered by date, then the newest
-date of these jobs and the oldest date of the listed jobs.
-Between the two dates lies the time after which the Slurm database purges a job.
-The documentation of GWDG does not state this time.
+If `reportseff` does not list a job, e.g. after the purge, the job keeps its report.
+Each task which is not final gets the state `UNTRACKED`, and `last_state` keeps its old state.
+The command prints a warning with each JobID of the last 365 days which `reportseff` does not list.
 
 A step of a pipeline waits for its previous step with `afterok`.
 If the previous step fails, Slurm cancels the step before it starts.

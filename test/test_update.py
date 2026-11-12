@@ -9,13 +9,16 @@ import json
 import os
 import tempfile
 import unittest
-from datetime import date
+from datetime import date, timedelta
 from unittest import mock
 
 from slurm_workflows.update import update_archive
 from stubs import reportseff_calls, set_reportseff_output, stub_env, write_file
 
 TODAY = str(date.today())
+# Older than the window of `reportseff -u`, but still kept in the Slurm database.
+WEEKS_AGO = str(date.today() - timedelta(days=100))
+# Older than the purge time of the Slurm database.
 OLD_DATE = "2025-01-01"
 
 
@@ -168,7 +171,7 @@ class UpdateReportseffTest(ArchiveTestCase):
         self.assertEqual(self.metadata(second)["pipeline"]["failed_at"]["state"], "OUT_OF_MEMORY")
 
     def test_old_job_is_refreshed(self):
-        folder = self.job("old", "1001", [report("1001", "PENDING")], job_date=OLD_DATE)
+        folder = self.job("old", "1001", [report("1001", "PENDING")], job_date=WEEKS_AGO)
 
         output = self.update([line("1001", "COMPLETED")])
 
@@ -199,7 +202,7 @@ class UpdateReportseffTest(ArchiveTestCase):
 
     def test_untracked_report_is_replaced_when_listed(self):
         untracked = dict(report("1001", "UNTRACKED"), last_state="RUNNING")
-        folder = self.job("untracked", "1001", [untracked], job_date=OLD_DATE)
+        folder = self.job("untracked", "1001", [untracked], job_date=WEEKS_AGO)
 
         self.update([line("1001", "COMPLETED")])
 
@@ -253,16 +256,33 @@ class UpdateReportseffTest(ArchiveTestCase):
 
         self.assertEqual(self.queried_jobids(), [["1001", "1002"]])
 
-    def test_retention_lines(self):
+    def test_purged_job_is_not_queried(self):
+        folder = self.job("purged", "1001", [report("1001", "RUNNING")], job_date=OLD_DATE)
+        self.job("empty", "1002", [], job_date=OLD_DATE)
+
+        output = self.update([line("1001", "COMPLETED")])
+
+        self.assertEqual(reportseff_calls(self.env), [])
+        self.assertEqual(self.metadata(folder)["reportseff"][0]["state"], "UNTRACKED")
+        self.assertNotIn("Warning", output)
+
+    def test_bad_date_is_queried(self):
+        folder = self.job("bad_date", "1001", [], job_date="iter03")
+
+        self.update([line("1001", "COMPLETED")])
+
+        self.assertEqual(self.metadata(folder)["reportseff"][0]["state"], "COMPLETED")
+
+    def test_unlisted_young_jobs_are_reported(self):
         self.job("old", "1001", [], job_date=OLD_DATE)
-        self.job("new", "1002", [report("1002", "PENDING")])
+        self.job("young", "1002", [], job_date=WEEKS_AGO)
+        self.job("new", "1003", [report("1003", "PENDING")])
 
-        output = self.update([line("1002", "COMPLETED")])
+        output = self.update([line("1003", "COMPLETED")])
 
-        self.assertIn("reportseff listed 1 of 2 queried JobIDs.", output)
-        self.assertIn(f"  {OLD_DATE}  1001  old", output)
-        self.assertIn(f"Newest unlisted job: {OLD_DATE}.", output)
-        self.assertIn(f"Oldest listed job: {TODAY}.", output)
+        self.assertIn("Warning: reportseff does not list 1 JobID(s) of the last 365 days.", output)
+        self.assertIn(f"  {WEEKS_AGO}  1002  young", output)
+        self.assertNotIn("1001", output)
 
     def test_unreadable_metadata_is_skipped(self):
         empty = self.job("empty", "1001", [])

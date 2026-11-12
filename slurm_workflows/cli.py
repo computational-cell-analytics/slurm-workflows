@@ -125,11 +125,9 @@ def main_write_metadata():
 
 def main_update_metadata():
     parser = argparse.ArgumentParser(
-        description="Update the metadata.json of each archive folder. The efficiency report of a job is "
-        "refreshed with one reportseff call by JobID if it is missing or not final, e.g. PENDING or RUNNING. The "
-        "command lists the JobIDs which reportseff no longer knows. With -s, the core hours are added from the "
-        "slurm output files. --general corrects the date and the task from the folder name, and replaces an "
-        "efficiency report of another JobID. --sbatch copies the #SBATCH parameters of sbatch.sbatch.")
+        description="Update the metadata.json of each archive folder, also of the replaced JobIDs in "
+        "previous/<jobid>/. The efficiency report of a job is refreshed if it is missing or not final, e.g. "
+        "PENDING or RUNNING.")
 
     parser.add_argument("archive_dir", type=str, help="Archive directory, which holds the archive folders.")
 

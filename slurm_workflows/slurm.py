@@ -189,12 +189,11 @@ def matches_jobid(
 def run_reportseff(
     jobids: List[str],
 ) -> str:
-    """Run `reportseff <jobid> ...`.
+    """Run `reportseff <jobid> ...`, with at most `REPORTSEFF_CHUNK` JobIDs per call.
 
-    With JobIDs, `sacct` searches from Epoch 0 and also lists a job which never became eligible, such
-    as a step whose dependency failed. `reportseff -u <user>` lists only the jobs of the last week.
-    A `reportseff` on PATH can still fail, e.g. if its Python module is not installed in the active
-    environment.
+    A query by JobID has no time window and also lists a job which never started, e.g. a step whose
+    dependency failed. A `reportseff` on PATH can still fail, e.g. if its Python module is not
+    installed in the active environment.
 
     Args:
         jobids: JobIDs of the jobs.
@@ -243,7 +242,7 @@ def parse_reportseff(
 def reportseff_entries(
     jobids: List[str],
 ) -> dict:
-    """Query the efficiency reports of jobs with one `reportseff` run.
+    """Query the efficiency reports of jobs.
 
     Args:
         jobids: JobIDs of the jobs.

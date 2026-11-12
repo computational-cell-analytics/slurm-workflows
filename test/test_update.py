@@ -284,6 +284,18 @@ class UpdateReportseffTest(ArchiveTestCase):
         self.assertIn(f"  {WEEKS_AGO}  1002  young", output)
         self.assertNotIn("1001", output)
 
+    def test_slurm_output_state_of_untracked_predecessor(self):
+        # The Slurm database purged 1001 before its report was final. Its slurm output shows the timeout.
+        untracked = dict(report("1001", "UNTRACKED"), last_state="RUNNING")
+        self.job("first", "1001", [untracked], step=1, job_date=OLD_DATE,
+                 slurm_output=[{"file": "slurm-1001.out", "started": "2025-01-01T10:00:00", "state": "TIMEOUT"}])
+        second = self.job("second", "1002", [], step=2, depends_on="1001", job_date=OLD_DATE)
+
+        self.update([])
+
+        self.assertEqual(self.metadata(second)["pipeline"]["failed_at"],
+                         {"jobid": "1001", "step": 1, "state": "TIMEOUT"})
+
     def test_unreadable_metadata_is_skipped(self):
         empty = self.job("empty", "1001", [])
         write_file(os.path.join(empty, "metadata.json"), "")

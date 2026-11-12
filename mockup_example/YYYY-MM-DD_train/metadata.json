@@ -47,7 +47,10 @@
 			"limit_min": 300,
 			"cpus": 16,
 			"nodes": 1,
-			"core_hours": 67.47
+			"core_hours": 67.47,
+			"elapsed_sec": 15182,
+			"exit_code": 0,
+			"state": "COMPLETED"
 		}
 	]
 }

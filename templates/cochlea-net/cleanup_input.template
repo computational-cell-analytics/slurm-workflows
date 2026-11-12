@@ -10,6 +10,10 @@
 #SBATCH --mem <mem>
 #SBATCH --constraint=inet
 
+# Print the exit code for the archive, see doc/new_template.md.
+trap 'exit 143' TERM
+trap 'echo "Exit code of the job: $?"' EXIT
+
 source ~/.bashrc
 
 # Remove the image data of the stain which the pipeline read, e.g. the OME-Zarr of '--download'.

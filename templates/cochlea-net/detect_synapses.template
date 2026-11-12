@@ -11,6 +11,10 @@
 #SBATCH --mem <mem>
 #SBATCH --constraint=inet       # the IHC segmentation is read from the S3 bucket
 
+# Print the exit code for the archive, see doc/new_template.md.
+trap 'exit 143' TERM
+trap 'echo "Exit code of the job: $?"' EXIT
+
 source ~/.bashrc
 micromamba activate <cochlea-net_environment>
 

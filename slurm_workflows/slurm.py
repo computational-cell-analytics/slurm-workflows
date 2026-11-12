@@ -9,13 +9,39 @@ import os
 import re
 import shutil
 import subprocess
-from typing import List
+from datetime import datetime
+from typing import List, Optional
 
 # The columns of a `reportseff` line, in order.
 REPORTSEFF_KEYS = ("jobid", "state", "elapsed", "time_eff", "cpu_eff", "mem_eff")
 
 # The number of JobIDs of one `reportseff` call, which keeps the command line short.
 REPORTSEFF_CHUNK = 100
+
+# The line of slurmstepd when Slurm cancels a job or a step, e.g.
+# 'slurmstepd: error: *** JOB 123 ON ggpu202 CANCELLED AT 2026-11-03T12:00:00 DUE TO TIME LIMIT ***'.
+# Without a reason, the job was cancelled with scancel.
+CANCEL_PATTERN = re.compile(r"\*\*\* (?:JOB|STEP) \S+ ON \S+ CANCELLED AT \S+(?: DUE TO (.+?))? \*\*\*")
+CANCEL_STATES = {"TIME LIMIT": "TIMEOUT", "PREEMPTION": "PREEMPTED", "NODE FAILURE": "NODE_FAIL"}
+
+# 'slurmstepd: error: Detected 1 oom_kill event in StepId=123.batch.'
+OOM_PATTERN = re.compile(r"oom[-_]kill", re.IGNORECASE)
+
+# The line of the EXIT trap of the templates, see doc/new_template.md.
+EXIT_CODE_PATTERN = re.compile(r"^Exit code of the job: (\d+)$")
+
+# A last line of the job output which shows that the job script failed: the guard of a template, an
+# error message, an error of bash, or a Python exception after a traceback.
+ERROR_PREFIXES = ("Missing input of the job:", "ERROR:")
+BASH_ERROR_PATTERN = re.compile(r"slurm_script: line \d+: ")
+EXCEPTION_PATTERN = re.compile(r"^[A-Za-z_][\w.]*(?:Error|Exception|Interrupt)\b")
+TRACEBACK_LINE = "Traceback (most recent call last):"
+
+# The longest `error` line of a `slurm_output` entry.
+MAX_ERROR_LENGTH = 300
+
+# The format of the times of the 'Job Information' section.
+TIME_FORMAT = "%Y-%m-%dT%H:%M:%S"
 
 SBATCH_PARAMETERS = [
     {"param": ["-A", "--account"],
@@ -111,17 +137,89 @@ def slurm_output_files(
     )
 
 
+def elapsed_seconds(
+    job_info: dict,
+) -> Optional[int]:
+    """Return the run time of a job from the 'started' and 'ended' times of its slurm output.
+
+    Args:
+        job_info: Entry of `slurm_output`.
+
+    Returns:
+        int: The seconds from the start to the end, or None if a time is missing or has another format.
+    """
+    try:
+        started = datetime.strptime(job_info["started"], TIME_FORMAT)
+        ended = datetime.strptime(job_info["ended"], TIME_FORMAT)
+    except (KeyError, ValueError):
+        return None
+    return int((ended - started).total_seconds())
+
+
+def output_state(
+    lines: List[str],
+    job_info: dict,
+) -> tuple:
+    """Derive the state of a job from the lines of its output before the 'Job Information' section.
+
+    The output holds no exit code unless the template prints it, so a state is given only if a marker
+    shows it. The first rule that matches gives the state:
+    1. a slurmstepd line which cancels the job: TIMEOUT, PREEMPTED, NODE_FAIL or CANCELLED
+    2. an oom_kill event: OUT_OF_MEMORY
+    3. an elapsed time of at least the time limit: TIMEOUT
+    4. the exit code 0: COMPLETED
+    5. a last line of the guard, of an 'ERROR:' message, of a bash error, or of a Python exception
+       after a traceback: FAILED, with this line
+    6. another exit code: FAILED
+
+    Args:
+        lines: Lines of the job output, without line ends.
+        job_info: Entry of `slurm_output`, with 'exit_code', 'elapsed_sec' and 'limit_min' if known.
+
+    Returns:
+        tuple of:
+            str - the state, or None
+            str - the line which shows the state, or None
+    """
+    for line in lines:
+        match = CANCEL_PATTERN.search(line)
+        if match:
+            return CANCEL_STATES.get(match.group(1), "CANCELLED"), line
+    for line in lines:
+        if OOM_PATTERN.search(line):
+            return "OUT_OF_MEMORY", line
+
+    # A job which Slurm kills before its EXIT trap runs prints no exit code.
+    if "elapsed_sec" in job_info and "limit_min" in job_info and \
+            job_info["elapsed_sec"] >= job_info["limit_min"] * 60:
+        return "TIMEOUT", None
+    exit_code = job_info.get("exit_code")
+    if exit_code == 0:
+        return "COMPLETED", None
+
+    output = [line for line in lines if line.strip() and not EXIT_CODE_PATTERN.match(line.strip())]
+    last = output[-1].strip() if output else ""
+    if last.startswith(ERROR_PREFIXES) or BASH_ERROR_PATTERN.search(last) or \
+            (EXCEPTION_PATTERN.match(last) and any(line.strip() == TRACEBACK_LINE for line in output)):
+        return "FAILED", last
+    if exit_code is not None:
+        return "FAILED", None
+    return None, None
+
+
 def slurm_output_to_dict(
     slurm_file: str,
 ) -> dict:
-    """Read the 'Job Information' section of a slurm output file.
+    """Read a slurm output file: the 'Job Information' section, the exit code, and the state.
 
     Args:
         slurm_file: Path of a file `slurm-<jobid>.out`, or `slurm-<jobid>_<array_index>.out` of an array task.
 
     Returns:
         dict: The keys 'file', 'submitted', 'started', 'ended', 'elapsed_min', 'limit_min', 'cpus',
-            'nodes' and 'core_hours', and 'array_index' for an array task.
+            'nodes' and 'core_hours', and 'array_index' for an array task. 'elapsed_sec' if both times
+            are known, 'exit_code' if the job printed it, and 'state' and 'error' if the output shows
+            them, see `output_state()`.
     """
     filename = os.path.basename(slurm_file)
     job_info = {"file": filename}
@@ -130,42 +228,72 @@ def slurm_output_to_dict(
     if array_match:
         job_info["array_index"] = int(array_match.group(1))
 
+    # The output of a job can be large, so only the lines which `output_state()` reads are kept: the
+    # first cancel line, the first oom_kill line, a traceback line, and the last line.
+    markers = {}
+    last = None
+    exit_code = None
     in_job_info = False
     with open(slurm_file, 'rt', encoding='utf-8', errors='ignore') as f:
         for line in f:
             if 'Job Information' in line:
                 in_job_info = True
                 continue
-            if in_job_info:
-                if line.startswith('==='):
-                    break
-                line = line.strip()
-                if not line:
-                    continue
-                if line.startswith('Submitted:'):
-                    job_info['submitted'] = line.split(':', 1)[1].strip()
-                elif line.startswith('Started:'):
-                    job_info['started'] = line.split(':', 1)[1].strip()
-                elif line.startswith('Ended:'):
-                    job_info['ended'] = line.split(':', 1)[1].strip()
-                elif line.startswith('Elapsed:'):
-                    elapsed_match = re.search(r'Elapsed:\s*(\d+)\s*min', line)
-                    limit_match = re.search(r'Limit:\s*(\d+)\s*min', line)
-                    if elapsed_match:
-                        job_info['elapsed_min'] = int(elapsed_match.group(1))
-                    if limit_match:
-                        job_info['limit_min'] = int(limit_match.group(1))
-                elif line.startswith('CPUs:'):
-                    cpu_match = re.search(r'CPUs:\s*(\d+)', line)
-                    node_match = re.search(r'Nodes:\s*(\d+)', line)
-                    if cpu_match:
-                        job_info['cpus'] = int(cpu_match.group(1))
-                    if node_match:
-                        job_info['nodes'] = int(node_match.group(1))
-                elif 'core-hours' in line.lower():
-                    core_match = re.search(r'([\d.]+)\s*core-hours', line, re.IGNORECASE)
-                    if core_match:
-                        job_info['core_hours'] = float(core_match.group(1))
+            if not in_job_info:
+                stripped = line.strip()
+                exit_match = EXIT_CODE_PATTERN.match(stripped)
+                if exit_match:
+                    exit_code = int(exit_match.group(1))
+                elif stripped:
+                    last = line.rstrip("\n")
+                    if "cancel" not in markers and CANCEL_PATTERN.search(line):
+                        markers["cancel"] = last
+                    elif "oom" not in markers and OOM_PATTERN.search(line):
+                        markers["oom"] = last
+                    elif stripped == TRACEBACK_LINE:
+                        markers["traceback"] = last
+                continue
+            if line.startswith('==='):
+                break
+            line = line.strip()
+            if not line:
+                continue
+            if line.startswith('Submitted:'):
+                job_info['submitted'] = line.split(':', 1)[1].strip()
+            elif line.startswith('Started:'):
+                job_info['started'] = line.split(':', 1)[1].strip()
+            elif line.startswith('Ended:'):
+                job_info['ended'] = line.split(':', 1)[1].strip()
+            elif line.startswith('Elapsed:'):
+                elapsed_match = re.search(r'Elapsed:\s*(\d+)\s*min', line)
+                limit_match = re.search(r'Limit:\s*(\d+)\s*min', line)
+                if elapsed_match:
+                    job_info['elapsed_min'] = int(elapsed_match.group(1))
+                if limit_match:
+                    job_info['limit_min'] = int(limit_match.group(1))
+            elif line.startswith('CPUs:'):
+                cpu_match = re.search(r'CPUs:\s*(\d+)', line)
+                node_match = re.search(r'Nodes:\s*(\d+)', line)
+                if cpu_match:
+                    job_info['cpus'] = int(cpu_match.group(1))
+                if node_match:
+                    job_info['nodes'] = int(node_match.group(1))
+            elif 'core-hours' in line.lower():
+                core_match = re.search(r'([\d.]+)\s*core-hours', line, re.IGNORECASE)
+                if core_match:
+                    job_info['core_hours'] = float(core_match.group(1))
+
+    elapsed = elapsed_seconds(job_info)
+    if elapsed is not None:
+        job_info["elapsed_sec"] = elapsed
+    if exit_code is not None:
+        job_info["exit_code"] = exit_code
+
+    state, error = output_state(list(markers.values()) + ([last] if last is not None else []), job_info)
+    if state is not None:
+        job_info["state"] = state
+    if error is not None:
+        job_info["error"] = error.strip().encode("ascii", "replace").decode("ascii")[:MAX_ERROR_LENGTH]
 
     return job_info
 

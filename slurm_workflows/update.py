@@ -87,6 +87,28 @@ def never_started(
                for report in as_list(metadict.get("reportseff", [])))
 
 
+def final_states(
+    metadict: dict,
+) -> List[str]:
+    """Return the final states of the tasks of a job.
+
+    The efficiency report is the source. A report without a final state, e.g. an empty or an
+    UNTRACKED one, is replaced by the states which the slurm output files show.
+
+    Args:
+        metadict: Metadata of the job.
+
+    Returns:
+        list: The final states, one per task with a known final state.
+    """
+    states = [report.get("state") for report in as_list(metadict.get("reportseff", []))
+              if report.get("state") in FINAL_STATES]
+    if states:
+        return states
+    return [output.get("state") for output in as_list(metadict.get("slurm_output", []))
+            if output.get("state") in FINAL_STATES]
+
+
 def chain_failure(
     jobid: str,
     index: dict,
@@ -116,9 +138,8 @@ def chain_failure(
         if failure is not None:
             return failure
 
-    states = [report.get("state") for report in as_list(metadict.get("reportseff", []))]
     # One failed task of an array is enough, because `afterok` needs every task to complete.
-    failed = [state for state in states if state in FAILED_STATES]
+    failed = [state for state in final_states(metadict) if state in FAILED_STATES]
     if failed:
         return {"jobid": jobid, "step": pipeline.get("step"), "state": failed[0]}
 
@@ -326,6 +347,7 @@ def update_slurm_output(subfolders: List[str], slurm_dir: str):
         slurm_dir: Directory of the slurm output files.
     """
     update_dir = []
+    found = 0
 
     for _, job_folder, metadict in archived_jobs(subfolders):
         jobid = metadict.get("jobid")
@@ -336,6 +358,7 @@ def update_slurm_output(subfolders: List[str], slurm_dir: str):
 
         if not slurm_files:
             continue
+        found += 1
 
         new_slurm_output = [slurm_output_to_dict(sf) for sf in slurm_files]
         if new_slurm_output == metadict.get("slurm_output"):
@@ -352,8 +375,10 @@ def update_slurm_output(subfolders: List[str], slurm_dir: str):
     for folder in update_dir:
         print(f"Updated slurm output information of folder {folder}.")
 
-    if len(update_dir) == 0:
+    if found == 0:
         print("No matching slurm output files found.")
+    elif not update_dir:
+        print("All slurm output information is up to date.")
 
 
 def backfill_replaced_jobs(

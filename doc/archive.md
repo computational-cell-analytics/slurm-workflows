@@ -59,7 +59,7 @@ The keys are lower case with underscores.
 | `repositories` | `git` | One entry per repository: `repo_name`, `repo_version` (the git hash), `status` (`clean` or `dirty`) |
 | `project` | Deploy step | The project, e.g. `cochlea-net` |
 | `pipeline` | Deploy step | Only for a step of a pipeline: `name` of the pipeline, `step` number, number of steps `of`, and `depends_on`, the JobID of the previous step. `update_metadata.py` adds `failed_at` to a step which never started, see below |
-| `slurm_output` | Slurm output file | One entry per output file: `file`, `array_index` of an array task, `submitted`, `started`, `ended`, `elapsed_min`, `limit_min`, `cpus`, `nodes`, `core_hours` |
+| `slurm_output` | Slurm output file | One entry per output file: `file`, `array_index` of an array task, `submitted`, `started`, `ended`, `elapsed_min`, `limit_min`, `cpus`, `nodes`, `core_hours`, `elapsed_sec` (from `started` to `ended`), `exit_code` (if the job printed it), `state` and `error` (if the output shows them), see [the format of a slurm output file](#the-format-of-a-slurm-output-file) |
 | `backfilled` | `update_metadata.py --backfill` | Only in `previous/<jobid>/` of an earlier JobID of `log.txt`, which was archived without its own files. The metadata holds only `date`, `task`, `jobid`, the report and `slurm_output` |
 
 The archive records the git hash of slurm-workflows, of each entry of `repositories` in the
@@ -153,6 +153,32 @@ CPUs: 2, Nodes: 1
 Estimated credit Consumption: 262.50 core-hours
 ================================================================================
 ```
+
+The section holds no exit code.
+The templates therefore print it with a trap, see
+[Create a template](new_template.md#5-print-the-exit-code-of-the-job):
+
+```
+Exit code of the job: 1
+```
+
+`--slurm-dir` also reads the output of the job before the section.
+The first rule which matches gives `state`, and `error` holds the line which shows it:
+
+1. A line of slurmstepd which cancels the job, e.g.
+   `slurmstepd: error: *** JOB 123 ON ggpu202 CANCELLED AT 2026-11-04T00:00:32 DUE TO TIME LIMIT ***`:
+   `TIMEOUT` for `TIME LIMIT`, `PREEMPTED` for `PREEMPTION`, `NODE_FAIL` for `NODE FAILURE`, else
+   `CANCELLED`.
+2. An `oom_kill` event: `OUT_OF_MEMORY`.
+3. An elapsed time of at least the time limit: `TIMEOUT`.
+4. The exit code 0: `COMPLETED`.
+5. A last line of the output which shows an error: `FAILED`.
+   Such a line is the guard line `Missing input of the job:`, a line which starts with `ERROR:`, an
+   error of bash (`slurm_script: line <n>:`), or a Python exception after a traceback.
+6. Another exit code: `FAILED`.
+
+Without a match, the entry has no `state`.
+The efficiency report of `reportseff` is the main source of the state.
 
 ## summary.py
 

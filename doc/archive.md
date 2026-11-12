@@ -105,11 +105,9 @@ python scripts/update_metadata.py [--pattern <text>] [--slurm-dir <dir>] [--gene
 ```
 
 The command always refreshes the efficiency report of a job if the report is empty or has a task
-which is not in a final state.
-The final states are `COMPLETED` and the failed states, e.g. `TIMEOUT`, `FAILED` or `CANCELLED`.
-So `RUNNING`, `PENDING`, `COMPLETING` and `UNTRACKED` are refreshed.
-This includes the replaced JobIDs in `previous/<jobid>/`.
-The command calls `reportseff` once, with the JobIDs of all these jobs.
+which is not final, e.g. `PENDING`, `RUNNING` or `UNTRACKED`.
+The final states are `COMPLETED` and the failed states, e.g. `FAILED`, `TIMEOUT` or `CANCELLED`.
+All updates also cover the replaced JobIDs in `previous/<jobid>/`.
 
 A job which `reportseff` no longer lists, because the Slurm database purged it, keeps its report.
 Each task which is not final gets the state `UNTRACKED`.
@@ -140,9 +138,9 @@ The options add more updates:
 | Option | Update |
 |---|---|
 | `-p`, `--pattern` | Update only the archive folders whose name contains this text. The text can hold wildcards |
-| `-s`, `--slurm-dir` | Add `slurm_output` from the files `slurm-<jobid>.out` and `slurm-<jobid>_<array_index>.out` of this folder, also for the replaced JobIDs |
-| `--general` | Correct `date` and `task` from the folder name. Replace an efficiency report of another JobID |
-| `--sbatch` | Copy the `#SBATCH` values of `sbatch.sbatch` into the metadata again |
+| `-s`, `--slurm-dir` | Add `slurm_output` from the files `slurm-<jobid>.out` and `slurm-<jobid>_<array_index>.out` of this folder |
+| `--general` | Correct `date` and `task` from the name of the archive folder. Replace an efficiency report of another JobID |
+| `--sbatch` | Copy the `#SBATCH` values of `sbatch.sbatch` into the metadata again. A folder without `sbatch.sbatch` is skipped |
 | `--backfill` | Create `previous/<jobid>/metadata.json` for each earlier JobID of `log.txt` without metadata, e.g. in an archive folder from before `previous/<jobid>/`. The refresh adds the efficiency report, and `--slurm-dir` the core hours |
 
 The command skips an unreadable `metadata.json` with a warning.

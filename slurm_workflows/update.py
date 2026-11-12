@@ -9,8 +9,7 @@ import os
 from typing import List, Optional
 
 from slurm_workflows.metadata import LOG_FILE, METADATA_FILE, PREVIOUS_DIR, SBATCH_FILE
-from slurm_workflows.metadata import archive_folders, archived_jobs, as_list, init_metadict, read_metadata
-from slurm_workflows.metadata import write_metadata
+from slurm_workflows.metadata import archive_folders, archived_jobs, as_list, init_metadict, write_metadata
 from slurm_workflows.slurm import jobids_from_log, matches_jobid, reportseff_entries, reportseff_from_jobid
 from slurm_workflows.slurm import add_sbatch_parameters, slurm_output_files, slurm_output_to_dict
 
@@ -32,41 +31,31 @@ NOT_STARTED_ELAPSED = "00:00:00"
 
 
 def update_sbatch_data(subfolders: List[str]):
-    """Copy the #SBATCH parameters into the metadata.
+    """Copy the #SBATCH parameters into the metadata, also of the replaced JobIDs.
+
+    A job folder without `sbatch.sbatch`, such as a backfilled one, is skipped.
 
     Args:
         subfolders: Archive folders.
     """
-    update_dir = []
+    updated = []
+    for _, job_folder, metadict in archived_jobs(subfolders):
+        sbatch_file = os.path.join(job_folder, SBATCH_FILE)
+        if not os.path.isfile(sbatch_file):
+            continue
 
-    for folder in subfolders:
-        metadata = os.path.join(folder, METADATA_FILE)
-        if os.path.isfile(metadata):
-            metadict = read_metadata(metadata)
+        sbatch_dict = {}
+        add_sbatch_parameters(sbatch_dict, sbatch_file)
+        if all(metadict.get(key) == value for key, value in sbatch_dict.items()):
+            continue
 
-            sbatch_file = os.path.join(folder, SBATCH_FILE)
-            sbatch_dict = {}
-            add_sbatch_parameters(sbatch_dict, sbatch_file)
+        metadict.update(sbatch_dict)
+        write_metadata(metadict, os.path.join(job_folder, METADATA_FILE))
+        updated.append(job_folder)
 
-            for key, value in sbatch_dict.items():
-                if key not in metadict:
-
-                    update_dir.append(folder)
-                    metadict[key] = value
-                elif value != metadict[key]:
-                    update_dir.append(folder)
-                    metadict[key] = value
-
-            if folder in update_dir:
-                write_metadata(metadict, metadata)
-
-    update_dir = list(set(update_dir))
-    update_dir.sort()
-
-    for folder in update_dir:
-        print(f"Updated sbatch parameters of folder {folder}.")
-
-    if len(update_dir) == 0:
+    for job_folder in sorted(updated):
+        print(f"Updated sbatch parameters of folder {job_folder}.")
+    if not updated:
         print("All directories contain updated sbatch information.")
 
 
@@ -263,48 +252,34 @@ def update_reportseff(
 def check_metadata(subfolders: List[str]):
     """Correct the date and the task from the folder name, and the efficiency report from the JobID.
 
-    A report of another JobID is deleted if `log.txt` does not list the JobID of the metadata.
+    The replaced JobIDs in `previous/<jobid>/` take the date and the task from the name of their
+    archive folder too. A report with an entry of another JobID is queried again, see
+    `reportseff_from_jobid()`.
 
     Args:
         subfolders: Archive folders.
     """
-    update_metadata = []
-    for folder in subfolders:
-        folder_name = os.path.basename(folder)
-        contents = folder_name.split("_")
-        folder_date = contents[0]
-        task = "_".join(contents[1:])
+    updated = []
+    for folder, job_folder, metadict in archived_jobs(subfolders):
+        contents = os.path.basename(folder).split("_")
+        changed = False
+        for key, value in (("date", contents[0]), ("task", "_".join(contents[1:]))):
+            if metadict.get(key) != value:
+                metadict[key] = value
+                changed = True
 
-        log_file = os.path.join(folder, LOG_FILE)
-        metadata = os.path.join(folder, METADATA_FILE)
+        jobid = metadict.get("jobid")
+        reports = as_list(metadict.get("reportseff", []))
+        if jobid and any(not matches_jobid(report.get("jobid", ""), jobid) for report in reports):
+            reportseff_from_jobid(os.path.join(folder, LOG_FILE), metadict, jobid=jobid)
+            changed = True
 
-        if os.path.isfile(metadata):
-            metadict = read_metadata(metadata)
+        if changed:
+            write_metadata(metadict, os.path.join(job_folder, METADATA_FILE))
+            updated.append(job_folder)
 
-            if metadict["date"] != folder_date:
-                update_metadata.append(folder)
-                metadict["date"] = folder_date
-
-            if metadict["task"] != task:
-                metadict["task"] = task
-                update_metadata.append(folder)
-
-            # check if JobID of efficiency report is identical with JobID of log
-            reports = as_list(metadict.get("reportseff", []))
-            for report in reports:
-                if not matches_jobid(report["jobid"], metadict["jobid"]):
-                    if metadict["jobid"] not in jobids_from_log(log_file):
-                        metadict["reportseff"] = []
-                    reportseff_from_jobid(log_file, metadict, jobid=metadict["jobid"])
-                    update_metadata.append(folder)
-
-            write_metadata(metadict, metadata)
-
-    update_metadata = list(set(update_metadata))
-    update_metadata.sort()
-
-    for folder in update_metadata:
-        print(f"Updated essential metadata for {folder}.")
+    for job_folder in sorted(updated):
+        print(f"Updated essential metadata for {job_folder}.")
 
 
 def update_slurm_output(subfolders: List[str], slurm_dir: str):

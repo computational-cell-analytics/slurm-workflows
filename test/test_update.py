@@ -335,5 +335,38 @@ class BackfillTest(ArchiveTestCase):
         self.assertFalse(os.path.exists(os.path.join(folder, "previous")))
 
 
+class OptionTest(ArchiveTestCase):
+    """The options --sbatch and --general also cover the replaced JobIDs."""
+
+    def test_sbatch_covers_previous(self):
+        folder = self.job("first", "1002", [report("1002", "COMPLETED")])
+        write_file(os.path.join(folder, "sbatch.sbatch"), "#!/bin/bash\n#SBATCH -t 01:00:00\n")
+        previous = self.job("first", "1001", [report("1001", "TIMEOUT")], previous=True)
+        write_file(os.path.join(previous, "sbatch.sbatch"), "#!/bin/bash\n#SBATCH -t 02:00:00\n")
+        backfilled = self.job("first", "1000", [report("1000", "FAILED")], previous=True)
+
+        output = self.update([], sbatch=True)
+
+        self.assertEqual(self.metadata(folder)["runtime"], "01:00:00")
+        self.assertEqual(self.metadata(previous)["runtime"], "02:00:00")
+        self.assertNotIn("runtime", self.metadata(backfilled))
+        self.assertIn(f"Updated sbatch parameters of folder {previous}.", output)
+
+    def test_general_covers_previous(self):
+        self.job("first", "1002", [report("1002", "COMPLETED")])
+        previous = self.job("first", "1001", [report("999", "COMPLETED")], previous=True)
+        with open(os.path.join(previous, "metadata.json")) as myfile:
+            metadict = json.load(myfile)
+        metadict.update({"date": "2020-01-01", "task": "other"})
+        write_file(os.path.join(previous, "metadata.json"), json.dumps(metadict))
+
+        output = self.update([line("1001", "TIMEOUT")], general=True)
+
+        corrected = self.metadata(previous)
+        self.assertEqual((corrected["date"], corrected["task"]), (TODAY, "first"))
+        self.assertEqual([entry["jobid"] for entry in corrected["reportseff"]], ["1001"])
+        self.assertIn(f"Updated essential metadata for {previous}.", output)
+
+
 if __name__ == "__main__":
     unittest.main()

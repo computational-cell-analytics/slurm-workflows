@@ -36,11 +36,9 @@ A missing archive directory gives a warning, which stops `--submit` unless `--fo
 ```
 
 A second submission on the same day uses the same archive folder.
-Its JobID is added to `log.txt`, and the top level holds the files of the latest JobID.
-Before the new files are archived, the files of the replaced JobID move to `previous/<jobid>/`.
-So each JobID keeps its script, its environment, and its metadata with the git hashes, the
-`pipeline` entry and the final state, e.g. `TIMEOUT`.
-`scripts/summary.py` reads only the latest JobID of each archive folder.
+Its JobID is added to `log.txt`, and the files of the replaced JobID move to `previous/<jobid>/`.
+So the top level holds the files of the latest JobID, and each earlier JobID keeps its own script,
+environment and metadata.
 `environment.yml` is missing if the job activates no micromamba environment, see
 [Create a template](new_template.md#4-activate-a-micromamba-environment).
 `mockup_example/YYYY-MM-DD_train/` is a complete example.
@@ -60,7 +58,7 @@ The keys are lower case with underscores.
 | `project` | Deploy step | The project, e.g. `cochlea-net` |
 | `pipeline` | Deploy step | Only for a step of a pipeline: `name` of the pipeline, `run` (the JobID of the first step of the deploy call), `step` and `of` (the number of the step and of all steps of the deploy call), `step_name` (the template, e.g. `segment_IHC`), `start_at` (after `--start-at`), `depends_on` (the JobID of the previous step), and `failed_at`, see update_metadata.py |
 | `slurm_output` | Slurm output file | One entry per output file: `file`, `array_index` of an array task, `submitted`, `started`, `ended`, `elapsed_min`, `limit_min`, `cpus`, `nodes`, `core_hours`, `elapsed_sec` (from `started` to `ended`), `exit_code` (if the job printed it), `state` and `error` (if the output shows them), see [the format of a slurm output file](#the-format-of-a-slurm-output-file) |
-| `backfilled` | `update_metadata.py --backfill` | Only in `previous/<jobid>/` of an earlier JobID of `log.txt`, which was archived without its own files. The metadata holds only `date`, `task`, `jobid`, the report and `slurm_output` |
+| `backfilled` | `update_metadata.py --backfill` | `true` if `--backfill` created the metadata. Such metadata holds only `date`, `task`, `jobid`, `reportseff` and `slurm_output` |
 
 The archive records the git hash of slurm-workflows, of each entry of `repositories` in the
 settings file, and of each repository of `--repository-file`.
@@ -112,19 +110,14 @@ If `reportseff` does not list a job, e.g. after the purge, the job keeps its rep
 Each task which is not final gets the state `UNTRACKED`, and `last_state` keeps its old state.
 The command prints a warning with each JobID of the last 365 days which `reportseff` does not list.
 
-A step of a pipeline waits for its previous step with `afterok`.
-If the previous step fails, Slurm cancels the step before it starts.
+A step of a pipeline starts only after its previous step completed (`afterok`).
+If a step fails, Slurm cancels the later steps before they start.
 `reportseff` lists such a step as `CANCELLED` with the elapsed time `00:00:00`.
-A step without a report, or with only such tasks, and without a `slurm_output` entry with `started`,
-never started.
-For such a step, the command follows `depends_on` back through the archive.
-If a previous step ended in a failed state, the step gets `failed_at` in its `pipeline` entry: the
+The command follows `depends_on` back and adds `failed_at` to the `pipeline` entry of the step: the
 `jobid`, the `step` and the `state` of the first step which failed.
-The command prints this once, and does not refresh the step again.
-This needs no `reportseff`.
-A step whose previous step still shows `RUNNING` or `PENDING` gets no entry.
-A step which was cancelled by hand before it started gets no entry, because it is itself the step
-which failed.
+This needs no `reportseff`, and the command does not refresh a step with `failed_at` again.
+A step which was cancelled by hand before it started gets no `failed_at`, because it is itself the
+step which failed.
 
 The options add more updates:
 
@@ -234,8 +227,7 @@ mkdir my_archive
 2. `scripts/archive_job.py` copies the files of one job into its archive folder.
    With `--move`, it moves them.
    If `log.txt` exists in the archive folder, the new JobIDs are added to it.
-   If the last new JobID replaces the JobID of `metadata.json`, the old files move to
-   `previous/<jobid>/` first:
+   The files of a replaced JobID move to `previous/<jobid>/`:
    ```bash
    python scripts/archive_job.py --input-dir mockup_example/ --archive-dir my_archive/ YYYY-MM-DD train
    ```

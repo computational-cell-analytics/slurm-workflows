@@ -9,7 +9,7 @@ import os
 from typing import List, Optional
 
 from slurm_workflows.metadata import LOG_FILE, METADATA_FILE, PREVIOUS_DIR, SBATCH_FILE
-from slurm_workflows.metadata import archive_folders, as_list, init_metadict, job_folders, read_metadata
+from slurm_workflows.metadata import archive_folders, archived_jobs, as_list, init_metadict, read_metadata
 from slurm_workflows.metadata import write_metadata
 from slurm_workflows.slurm import jobids_from_log, matches_jobid, reportseff_entries, reportseff_from_jobid
 from slurm_workflows.slurm import add_sbatch_parameters, slurm_output_files, slurm_output_to_dict
@@ -68,27 +68,6 @@ def update_sbatch_data(subfolders: List[str]):
 
     if len(update_dir) == 0:
         print("All directories contain updated sbatch information.")
-
-
-def archived_jobs(
-    folders: List[str],
-) -> List[tuple]:
-    """Read the metadata of the jobs of archive folders, including the replaced JobIDs.
-
-    Args:
-        folders: Archive folders.
-
-    Returns:
-        list: One tuple per job: the archive folder, the folder of the job (the archive folder or
-            `previous/<jobid>/`), and the metadata.
-    """
-    jobs = []
-    for folder in folders:
-        for job_folder in job_folders(folder):
-            metadata = os.path.join(job_folder, METADATA_FILE)
-            if os.path.isfile(metadata):
-                jobs.append((folder, job_folder, read_metadata(metadata)))
-    return jobs
 
 
 def never_started(
@@ -376,19 +355,18 @@ def backfill_replaced_jobs(
 
     An archive folder from before `previous/<jobid>/` keeps only the files of its latest JobID. The new
     metadata holds 'date', 'task', 'jobid' and 'backfilled'. The refresh of the efficiency report and
-    the option `--slurm-dir` add the data of the job.
+    the option `--slurm-dir` add the data of the job. An empty `metadata.json` counts as missing.
 
     Args:
         subfolders: Archive folders.
     """
     created = 0
-    for folder in subfolders:
-        metadata = os.path.join(folder, METADATA_FILE)
+    for folder, _, top_level in archived_jobs(subfolders, include_previous=False):
         log_file = os.path.join(folder, LOG_FILE)
-        if not os.path.isfile(metadata) or not os.path.isfile(log_file):
+        if not os.path.isfile(log_file):
             continue
 
-        jobid = read_metadata(metadata).get("jobid")
+        jobid = top_level.get("jobid")
         jobids = jobids_from_log(log_file)
         if jobid not in jobids:
             print(f"Warning: {folder} is not backfilled, because log.txt does not list its JobID '{jobid}'.")
@@ -396,12 +374,13 @@ def backfill_replaced_jobs(
 
         for earlier in jobids[:jobids.index(jobid)]:
             job_folder = os.path.join(folder, PREVIOUS_DIR, earlier)
-            if os.path.exists(job_folder):
+            metadata = os.path.join(job_folder, METADATA_FILE)
+            if os.path.isfile(metadata) and os.path.getsize(metadata) > 0:
                 continue
             metadict = init_metadict(folder)
             metadict.update({"jobid": earlier, "reportseff": [], "backfilled": True})
-            os.makedirs(job_folder)
-            write_metadata(metadict, os.path.join(job_folder, METADATA_FILE))
+            os.makedirs(job_folder, exist_ok=True)
+            write_metadata(metadict, metadata)
             created += 1
 
     print(f"Backfilled the metadata of {created} earlier JobID(s).")

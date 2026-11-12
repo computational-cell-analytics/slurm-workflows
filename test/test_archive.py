@@ -127,6 +127,20 @@ class ArchiveTest(unittest.TestCase):
         self.assertEqual(read_file(os.path.join(folder, "sbatch.sbatch")), "new script")
         self.assertEqual(read_file(os.path.join(folder, "log.txt")), "1\n2\n")
 
+    def test_replaced_jobid_without_metadata_moves_to_previous(self):
+        # An archiving which failed before the metadata leaves the files of JobID 1 without metadata.json.
+        folder = self.archived("x")
+        write_file(os.path.join(folder, "sbatch.sbatch"), "old script")
+        write_file(os.path.join(folder, "log.txt"), "1\n")
+        self.job_file("sbatch", "x", "sbatch", "new script")
+        self.job_file("log", "x", "txt", "2\n")
+
+        result = self.archive("x", move=True)
+
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(read_file(os.path.join(folder, "previous", "1", "sbatch.sbatch")), "old script")
+        self.assertEqual(read_file(os.path.join(folder, "sbatch.sbatch")), "new script")
+
     def test_same_jobid_is_not_moved(self):
         # A copy followed by a move archives the same JobID twice.
         folder = self.archive_replaced_job()

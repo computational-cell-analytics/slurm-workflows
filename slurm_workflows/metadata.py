@@ -7,6 +7,7 @@ Access to the files of an archive folder, and creation of its `metadata.json`.
 import glob
 import json
 import os
+import shutil
 from typing import List, Optional
 
 from slurm_workflows.repositories import add_repository_status
@@ -32,7 +33,10 @@ def read_metadata(
         dict: Content of the metadata file.
     """
     with open(metadata_file, "r") as myfile:
-        return json.loads(myfile.read())
+        try:
+            return json.load(myfile)
+        except ValueError as exc:
+            raise ValueError(f"The metadata file {metadata_file} is not valid JSON: {exc}") from exc
 
 
 def write_metadata(
@@ -41,14 +45,20 @@ def write_metadata(
 ) -> None:
     """Write a metadata file of an archive folder.
 
-    The key order and the tab indentation of the archived files are kept.
+    The key order and the tab indentation of the archived files are kept. The file is written to a
+    temporary file first and then renamed, so an interrupted write cannot leave an empty or partial
+    file.
 
     Args:
         metadict: Metadata of the job.
         metadata_file: Path of the metadata file.
     """
-    with open(metadata_file, "w") as myfile:
+    temporary = f"{metadata_file}.tmp"
+    with open(temporary, "w") as myfile:
         json.dump(metadict, myfile, sort_keys=False, indent="\t", separators=(",", ": "))
+    if os.path.isfile(metadata_file):
+        shutil.copymode(metadata_file, temporary)
+    os.replace(temporary, metadata_file)
 
 
 def as_list(
@@ -102,6 +112,36 @@ def job_folders(
     if not os.path.isdir(previous_dir):
         return [folder]
     return [folder] + sorted(entry.path for entry in os.scandir(previous_dir) if entry.is_dir())
+
+
+def archived_jobs(
+    folders: List[str],
+    include_previous: bool = True,
+) -> List[tuple]:
+    """Read the metadata of the jobs of archive folders.
+
+    An unreadable `metadata.json` is reported and skipped, so that one broken file does not stop a
+    command over the whole archive.
+
+    Args:
+        folders: Archive folders.
+        include_previous: Also read the replaced JobIDs in `previous/<jobid>/`.
+
+    Returns:
+        list: One tuple per job: the archive folder, the folder of the job (the archive folder or
+            `previous/<jobid>/`), and the metadata.
+    """
+    jobs = []
+    for folder in folders:
+        for job_folder in (job_folders(folder) if include_previous else [folder]):
+            metadata = os.path.join(job_folder, METADATA_FILE)
+            if not os.path.isfile(metadata):
+                continue
+            try:
+                jobs.append((folder, job_folder, read_metadata(metadata)))
+            except ValueError as exc:
+                print(f"Warning: {exc} The job is skipped.")
+    return jobs
 
 
 def init_metadict(

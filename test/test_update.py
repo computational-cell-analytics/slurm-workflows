@@ -69,11 +69,11 @@ class ArchiveTestCase(unittest.TestCase):
         third = self.job("third", "1003", [], step=3, depends_on="1002", job_date=job_date)
         return second, third
 
-    def update(self, report_lines, pattern=None, backfill=False):
+    def update(self, report_lines, pattern=None, **options):
         set_reportseff_output(self.env, ["JobID State Elapsed TimeEff CPUEff MemEff"] + report_lines)
         stdout = io.StringIO()
         with mock.patch.dict(os.environ, self.env), contextlib.redirect_stdout(stdout):
-            update_archive(self.archive_dir, pattern=pattern, backfill=backfill)
+            update_archive(self.archive_dir, pattern=pattern, **options)
         return stdout.getvalue()
 
     def queried_jobids(self):
@@ -264,6 +264,20 @@ class UpdateReportseffTest(ArchiveTestCase):
         self.assertIn(f"Newest unlisted job: {OLD_DATE}.", output)
         self.assertIn(f"Oldest listed job: {TODAY}.", output)
 
+    def test_unreadable_metadata_is_skipped(self):
+        empty = self.job("empty", "1001", [])
+        write_file(os.path.join(empty, "metadata.json"), "")
+        corrupt = self.job("corrupt", "1002", [], previous=True)
+        write_file(os.path.join(corrupt, "metadata.json"), '{"jobid": ')
+        folder = self.job("valid", "1003", [report("1003", "PENDING")])
+
+        output = self.update([line("1003", "COMPLETED")])
+
+        self.assertIn(f"Warning: The metadata file {os.path.join(empty, 'metadata.json')} is not valid JSON", output)
+        self.assertIn(f"Warning: The metadata file {os.path.join(corrupt, 'metadata.json')} is not valid JSON",
+                      output)
+        self.assertEqual(self.metadata(folder)["reportseff"][0]["state"], "COMPLETED")
+
     def test_missing_reportseff_still_marks(self):
         self.env = stub_env(os.path.join(self.tmp.name, "no_reportseff"), reportseff=False)
         second, _ = self.chain("FAILED")
@@ -292,6 +306,16 @@ class BackfillTest(ArchiveTestCase):
         output = self.update([line("1001", "TIMEOUT"), not_started("1002")], backfill=True)
 
         self.assertIn("Backfilled the metadata of 0 earlier JobID(s).", output)
+
+    def test_empty_metadata_is_repaired(self):
+        folder = self.job("first", "1002", [report("1002", "COMPLETED")], log="1001\n1002\n")
+        write_file(os.path.join(folder, "previous", "1001", "metadata.json"), "")
+
+        output = self.update([line("1001", "TIMEOUT")], backfill=True)
+
+        self.assertIn("Backfilled the metadata of 1 earlier JobID(s).", output)
+        repaired = self.metadata(os.path.join(folder, "previous", "1001"))
+        self.assertEqual((repaired["backfilled"], repaired["reportseff"][0]["state"]), (True, "TIMEOUT"))
 
     def test_existing_previous_folder_is_kept(self):
         folder = self.job("first", "1002", [report("1002", "COMPLETED")], log="1001\n1002\n")

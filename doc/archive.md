@@ -143,7 +143,9 @@ The options add more updates:
 | `-s`, `--slurm-dir` | Add `slurm_output` from the files `slurm-<jobid>.out` and `slurm-<jobid>_<array_index>.out` of this folder, also for the replaced JobIDs |
 | `--general` | Correct `date` and `task` from the folder name. Replace an efficiency report of another JobID |
 | `--sbatch` | Copy the `#SBATCH` values of `sbatch.sbatch` into the metadata again |
-| `--backfill` | Create `previous/<jobid>/metadata.json` with `backfilled` for each JobID of `log.txt` before the JobID of `metadata.json`, if the folder does not exist. An archive folder from before `previous/<jobid>/` has only the files of its latest JobID. The refresh adds the efficiency report, and `--slurm-dir` the core hours |
+| `--backfill` | Create `previous/<jobid>/metadata.json` for each earlier JobID of `log.txt` without metadata, e.g. in an archive folder from before `previous/<jobid>/`. The refresh adds the efficiency report, and `--slurm-dir` the core hours |
+
+The command skips an unreadable `metadata.json` with a warning.
 
 ### The format of a slurm output file
 

@@ -11,7 +11,7 @@ import tempfile
 import unittest
 from unittest import mock
 
-from slurm_workflows.metadata import init_metadict
+from slurm_workflows.metadata import init_metadict, read_metadata, write_metadata
 from slurm_workflows.repositories import job_repositories
 from slurm_workflows.slurm import jobids_from_log, reportseff_from_jobid, add_sbatch_parameters
 from stubs import REPOSITORY_DIR, WRITE_METADATA, reportseff_calls, run, set_reportseff_output, stub_env
@@ -127,6 +127,41 @@ class ReportseffTest(unittest.TestCase):
         metadict = self.report("777", metadict={"reportseff": [{"jobid": "777_0"}, {"jobid": "5"}]})
 
         self.assertEqual(metadict["reportseff"], [{"jobid": "777_0"}])
+
+
+class MetadataFileTest(unittest.TestCase):
+
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.path = os.path.join(self.tmp.name, "metadata.json")
+
+    def tearDown(self):
+        self.tmp.cleanup()
+
+    def test_write_keeps_the_mode(self):
+        write_metadata({"jobid": "1"}, self.path)
+        os.chmod(self.path, 0o640)
+
+        write_metadata({"jobid": "2"}, self.path)
+
+        self.assertEqual(read_metadata(self.path), {"jobid": "2"})
+        self.assertEqual(os.stat(self.path).st_mode & 0o777, 0o640)
+        self.assertEqual(os.listdir(self.tmp.name), ["metadata.json"])
+
+    def test_failed_write_keeps_the_old_file(self):
+        write_metadata({"jobid": "1"}, self.path)
+
+        with mock.patch("slurm_workflows.metadata.json.dump", side_effect=KeyboardInterrupt):
+            with self.assertRaises(KeyboardInterrupt):
+                write_metadata({"jobid": "2"}, self.path)
+
+        self.assertEqual(read_metadata(self.path), {"jobid": "1"})
+
+    def test_read_error_names_the_file(self):
+        write_file(self.path, "")
+
+        with self.assertRaisesRegex(ValueError, f"The metadata file {self.path} is not valid JSON"):
+            read_metadata(self.path)
 
 
 class WriteMetadataTest(unittest.TestCase):

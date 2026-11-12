@@ -95,17 +95,25 @@ def move_replaced_job(
     """Move the files of an archived JobID to `previous/<jobid>/` if a new JobID replaces it.
 
     A copy followed by a move archives the same JobID twice, so nothing moves if the archived JobID
-    is the last new JobID. `log.txt` stays, because it lists every JobID of the job.
+    is the last new JobID. `log.txt` stays, because it lists every JobID of the job. Without
+    `metadata.json`, e.g. after an archiving which failed before the metadata, the archived JobID is
+    the last JobID of the archived `log.txt`.
 
     Args:
         folder: Archive folder of the job.
         new_jobids: JobIDs of the log file which is archived next, oldest first.
     """
-    metadata_file = os.path.join(folder, METADATA_FILE)
-    if not new_jobids or not os.path.isfile(metadata_file):
+    if not new_jobids:
         return
 
-    jobid = read_metadata(metadata_file).get("jobid")
+    metadata_file = os.path.join(folder, METADATA_FILE)
+    if os.path.isfile(metadata_file):
+        jobid = read_metadata(metadata_file).get("jobid")
+    elif any(name not in (LOG_FILE, PREVIOUS_DIR) for name in os.listdir(folder)):
+        jobid = (jobids_from_log(os.path.join(folder, LOG_FILE)) or [None])[-1]
+    else:
+        return
+
     if not jobid or jobid == new_jobids[-1]:
         return
 

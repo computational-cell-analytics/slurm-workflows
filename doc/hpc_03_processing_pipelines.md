@@ -348,6 +348,7 @@ The cochlea-net deployment adds these placeholder values to the settings and the
 | `model` | The path of `models.<group>.<version>` | no |
 | `sgn_prediction`, `ihc_prediction`, `synapses_prediction` | The prediction folder of each group whose version is known: `<version>`, or `<stain>_<version>` for a stain which is not the default | no |
 | `synapse_ihc_prediction` | The folder of the synapse jobs, from both versions, e.g. `synapse_v3_ihc_v11` | no |
+| `raw_folder`, `converted_name` | `convert_data` only: `1_raw`, and the value of `cochlea`, see [Data conversion](hpc_04_data_conversion.md) | yes |
 | `prediction_dir` | The prediction folder of the group of the template. For `synapses`, it is `synapse_ihc_prediction` | no |
 | `sgn_center_distance_threshold`, `sgn_boundary_distance_threshold`, `sgn_distance_smoothing`, and the same with `ihc_` | `segment_SGN` and `segment_IHC` only: the watershed values of `best_best_params.json` in the model folder, else the defaults of the group, see [The watershed values of the segmentation](#the-watershed-values-of-the-segmentation) | yes |
 

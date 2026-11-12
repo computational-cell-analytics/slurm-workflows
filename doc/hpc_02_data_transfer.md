@@ -65,6 +65,9 @@ A failed login stops the command at once, without a retry, because repeated fail
 `--remote_data` can also name a single large file, e.g. a TIF. An interrupted download of the file continues where it stopped.
 See the [data transfer documentation of cochlea-net](https://github.com/computational-cell-analytics/cochlea-net/blob/master/doc/data_transfer.md) for all options, the upload to UKON, and the other transfer scripts.
 
+To convert the raw data of a cochlea for the stitching, see [Data conversion](hpc_04_data_conversion.md). It
+copies the raw files from UKON, converts them on the cluster, and copies the result back.
+
 ## Data transfer from and to the S3 bucket
 
 The S3 bucket stores the data in the MoBIE data format, which the MoBIE utils create.

@@ -14,6 +14,7 @@ Feedback is appreciated.
 | Reader | Pages |
 |---|---|
 | A cochlea-net user who runs the pipelines | [Getting started](doc/hpc_01_getting_started.md) -> [Data transfer](doc/hpc_02_data_transfer.md) -> [Processing pipelines](doc/hpc_03_processing_pipelines.md). [HPC 101](doc/hpc_101.md) collects basic commands |
+| A cochlea-net user who converts raw data for the stitching | [Getting started](doc/hpc_01_getting_started.md) -> [Data transfer](doc/hpc_02_data_transfer.md) -> [Data conversion](doc/hpc_04_data_conversion.md) |
 | An author of a new project or a new template | [Create a new project](doc/new_project.md) -> [Create a template](doc/new_template.md) -> the worked example `mockup_example/` |
 | An analyst of the archive | [The archive and the efficiency analysis](doc/archive.md) |
 

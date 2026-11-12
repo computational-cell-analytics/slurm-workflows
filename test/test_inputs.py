@@ -175,7 +175,7 @@ class ResolveInputTest(unittest.TestCase):
 
     def test_resources_of_the_species_and_of_a_parameter(self):
         values, _ = self.ihc_step()
-        self.assertEqual((values["time"], values["mem"]), ("00:30:00", "32G"))
+        self.assertEqual((values["time"], values["mem"]), ("01:10:00", "32G"))
 
         values, _ = self.ihc_step(time="09:00:00")
         self.assertEqual((values["time"], values["mem"]), ("09:00:00", "32G"))

@@ -166,13 +166,16 @@ class StepRowTest(unittest.TestCase):
             with self.subTest(template):
                 group, resources = deployment.step_row(template, "M")
                 self.assertIn(group, list(deployment.GROUPS) + [None])
-                self.assertEqual(sorted(resources), sorted(deployment.RESOURCE_KEYS))
+                expected = ["mem", "time"]
+                if f"<{deployment.INSTANCES_KEY}>" in read_file(template):
+                    expected.append(deployment.INSTANCES_KEY)
+                self.assertEqual(sorted(resources), sorted(expected))
 
     def test_species_deviation(self):
-        template = step_template(TEMPLATE_DIR, "apply_SGN")
+        sgn = step_template(TEMPLATE_DIR, "apply_SGN")
 
-        self.assertEqual(deployment.step_row(template, "M"), ("SGN", {"time": "00:25:00", "mem": "96G"}))
-        self.assertEqual(deployment.step_row(template, "G"), ("SGN", {"time": "01:30:00", "mem": "128G"}))
+        self.assertEqual(deployment.step_row(sgn, "M"), ("SGN", {"time": "00:25:00", "mem": "96G", "instances": 10}))
+        self.assertEqual(deployment.step_row(sgn, "G"), ("SGN", {"time": "01:30:00", "mem": "128G", "instances": 10}))
 
     def test_template_without_row_raises(self):
         with tempfile.TemporaryDirectory() as tmp:

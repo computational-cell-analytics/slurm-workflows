@@ -47,8 +47,11 @@ GROUP_KEY = "group"
 # "G": {"time": "01:30:00"}}. The default resources fit mice.
 STEPS_FILE = "steps.json"
 
-# Keys of a row of the steps file which become placeholders. A job parameter overrides them.
-RESOURCE_KEYS = ("time", "mem")
+# Keys of a row of the steps file which become placeholders. A job parameter overrides them. Every
+# row has 'time' and 'mem'. The row of an array template also has 'instances', the number of tasks
+# of the job array, which gives the placeholder 'last_instance' for '#SBATCH -a 0-<last_instance>'.
+RESOURCE_KEYS = ("time", "mem", "instances")
+INSTANCES_KEY = "instances"
 
 # The segment step of a group needs the watershed parameters of its model, as the placeholders
 # '<group>_<key>', e.g. 'sgn_center_distance_threshold'. A parameter of the same name overrides one.
@@ -556,6 +559,12 @@ def prepare_step(
     step_group, resources = step_row(template_file, species)
     for key, value in resources.items():
         placeholder_values.setdefault(key, value)
+    if INSTANCES_KEY in placeholder_values:
+        instances = str(placeholder_values[INSTANCES_KEY])
+        if not instances.isdigit() or int(instances) < 1:
+            raise ValueError(f"The number of array tasks '{INSTANCES_KEY}' must be a positive integer, "
+                             f"not '{instances}'.")
+        placeholder_values["last_instance"] = int(instances) - 1
 
     cochlea_dir = os.path.join(placeholder_values["data_dir"], cochlea)
     group = step_group

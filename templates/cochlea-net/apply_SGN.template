@@ -9,7 +9,7 @@
 #SBATCH -G A100:1
 #SBATCH -c 1
 #SBATCH --mem <mem>
-#SBATCH -a 0-9
+#SBATCH -a 0-<last_instance>
 
 # Print the exit code for the archive, see doc/new_template.md.
 trap 'exit 143' TERM
@@ -24,7 +24,7 @@ export INPUT=<data_dir>/<cochlea>/<cochlea_data>
 
 export OUTPUT_FOLDER=<data_dir>/predictions/<cochlea>/<prediction_dir>
 export MODEL=<model>
-export PREDICTION_INSTANCES=10
+export PREDICTION_INSTANCES=<instances>
 export INPUT_KEY=<input_key>
 
 echo "Input directory: ${INPUT}"

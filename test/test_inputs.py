@@ -13,8 +13,8 @@ from unittest import mock
 
 from slurm_workflows.projects.cochlea_net import deployment, mobie
 from slurm_workflows.inputs import check_external_input, check_job_input, check_output_absent, job_variables
-from slurm_workflows.templates import step_template
-from stubs import TEMPLATE_DIR, write_file
+from slurm_workflows.templates import render_template, step_template
+from stubs import MICROMAMBA_STUB, TEMPLATE_DIR, read_file, run, write_executable, write_file
 
 
 def deploy_args(**options):
@@ -221,6 +221,71 @@ class ResolveInputTest(unittest.TestCase):
 
         with mock.patch.object(self.module, "s3_datasets", return_value=[]):
             self.assertIn("either", self.ihc_step(definition=definition)[1])
+
+
+class ConversionTest(unittest.TestCase):
+    """The conversion reads the raw tiles of every stain, so it needs no group, no stain and no model."""
+
+    COCHLEA = "Re_AMD_WT2_MWfLS"
+
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.template = step_template(TEMPLATE_DIR, deployment.CONVERSION_STEP)
+
+    def tearDown(self):
+        self.tmp.cleanup()
+
+    def prepare(self, args=None, **parameters):
+        values = {"data_dir": self.tmp.name, "cochlea": self.COCHLEA, **parameters}
+        values, script_name, _ = deployment.prepare_step({"data_dir": self.tmp.name, "models": {}}, values,
+                                                         self.template, args or deploy_args())
+        return values, script_name
+
+    def test_defaults(self):
+        values, script_name = self.prepare()
+
+        self.assertEqual((values["raw_folder"], values["converted_name"]), ("1_raw", self.COCHLEA))
+        self.assertEqual((values["time"], values["mem"]), ("20:00:00", "96G"))
+        self.assertNotIn("stain", values)
+        self.assertEqual(script_name, "convert_data_ReAMDWT2MWfLS")
+
+    def test_parameters_override_the_defaults(self):
+        values, _ = self.prepare(raw_folder="1_raw_reimage", converted_name="MAMD_N235L_CTBP2", time="30:00:00")
+
+        self.assertEqual((values["raw_folder"], values["converted_name"]), ("1_raw_reimage", "MAMD_N235L_CTBP2"))
+        self.assertEqual(values["time"], "30:00:00")
+
+    def test_no_group(self):
+        with self.assertRaisesRegex(ValueError, "no group"):
+            self.prepare(deploy_args(group="SGN"))
+
+    def test_job(self):
+        bin_dir = os.path.join(self.tmp.name, "stub_bin")
+        os.makedirs(bin_dir)
+        write_executable(os.path.join(bin_dir, "micromamba"), MICROMAMBA_STUB)
+        args_file = os.path.join(self.tmp.name, "convert_args")
+        write_executable(os.path.join(bin_dir, "flamingo_tools.convert_data"),
+                         f'#!/bin/bash\nprintf "%s\\n" "$@" > {args_file}\n')
+        env = {"PATH": os.pathsep.join([bin_dir, "/usr/bin", "/bin"]), "HOME": self.tmp.name,
+               "SLURM_CPUS_PER_TASK": "4"}
+
+        values, _ = self.prepare(user_address="a", account_name="b", **{"cochlea-net_environment": "env"})
+        sbatch_file = os.path.join(self.tmp.name, "job.sbatch")
+        with contextlib.redirect_stdout(io.StringIO()):
+            render_template(self.template, sbatch_file, values)
+
+        raw_dir = os.path.join(self.tmp.name, self.COCHLEA, "1_raw")
+        self.assertEqual(len(check_job_input(sbatch_file)), 1)
+        self.assertNotEqual(run(["bash", sbatch_file], env=env).returncode, 0)
+        self.assertFalse(os.path.exists(args_file))
+
+        os.makedirs(raw_dir)
+        self.assertEqual(check_job_input(sbatch_file), [])
+        self.assertEqual(run(["bash", sbatch_file], env=env).returncode, 0)
+        output = os.path.join(self.tmp.name, self.COCHLEA, "2_converted_stitching", f"{self.COCHLEA}.n5")
+        self.assertEqual(read_file(args_file).splitlines(),
+                         ["-i", raw_dir, "--out_path", output, "--file_ext", ".raw", "--n_threads", "4"])
+        self.assertTrue(os.path.isdir(os.path.dirname(output)))
 
 
 class SynapseNameTest(unittest.TestCase):

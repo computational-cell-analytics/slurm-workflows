@@ -6,6 +6,7 @@
     "cleanup_SGN": {"group": "SGN", "time": "00:30:00", "mem": "2G"},
     "cleanup_input": {"group": null, "time": "01:00:00", "mem": "2G"},
     "cleanup_synapses": {"group": "synapses", "time": "01:00:00", "mem": "2G"},
+    "convert_data": {"group": null, "time": "20:00:00", "mem": "96G"},
     "detect_synapses": {"group": "synapses", "time": "00:20:00", "mem": "24G", "G": {"time": "02:00:00", "mem": "144G"}},
     "download_image": {"group": null, "time": "03:00:00", "mem": "4G", "G": {"time": "08:00:00"}},
     "mask_IHC": {"group": "IHC", "time": "00:20:00", "mem": "32G", "G": {"time": "00:30:00"}},

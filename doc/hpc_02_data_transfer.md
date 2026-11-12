@@ -49,17 +49,24 @@ exit
 
 ### Larger amounts of data, e.g. n5 files
 
-The connection, above all to UKON_spezial, is unstable. For large data, use the script `scripts/data_transfer/smb_transfer_resilient.py` of cochlea-net. The script retries the connection and tracks the files that it did not transfer.
+The connection, above all to UKON_spezial, is unstable. For large data, use the command `flamingo_tools.transfer_data` of cochlea-net. The command retries the connection and tracks the files that it did not transfer.
 
 > [!IMPORTANT]
 > Put the UKON path in quotation marks. Otherwise, the shell removes the backslashes.
 
 ```bash
-python /path/to/cochlea-net/scripts/data_transfer/smb_transfer_resilient.py --username gwdg_username \
+flamingo_tools.transfer_data --username gwdg_username \
     --remote_parent_dir "UKON100\archiv\imaging\Lightsheet\Huiskengroup_CTLSM\<year>\<experimenter>\M_AMD_00C202_L\3_fused" \
     --remote_data MAMD_C202_PV_CR_Lypd1_fused.n5 -o .
 ```
-The script asks for your GWDG password and then starts the transfer.
+The command asks for your GWDG password and then starts the transfer.
+A failed login stops the command at once, without a retry, because repeated failed logins can lock the GWDG account.
+
+`--remote_data` can also name a single large file, e.g. a TIF. An interrupted download of the file continues where it stopped.
+See the [data transfer documentation of cochlea-net](https://github.com/computational-cell-analytics/cochlea-net/blob/master/doc/data_transfer.md) for all options, the upload to UKON, and the other transfer scripts.
+
+To convert the raw data of a cochlea for the stitching, see [Data conversion](hpc_04_data_conversion.md). It
+copies the raw files from UKON, converts them on the cluster, and copies the result back.
 
 ## Data transfer from and to the S3 bucket
 

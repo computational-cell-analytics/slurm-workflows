@@ -1,0 +1,32 @@
+#!/bin/bash
+#SBATCH --job-name=convert-data_<cochlea_job_name>
+#SBATCH -t <time>
+#SBATCH --mail-user=<user_address>
+#SBATCH --mail-type=FAIL
+
+#SBATCH -p standard96s:shared
+#SBATCH -A <account_name>
+#SBATCH -c 4
+#SBATCH --mem <mem>
+
+source ~/.bashrc
+micromamba activate <cochlea-net_environment>
+
+# The raw tiles of the microscope, copied from UKON with 'flamingo_tools.transfer_data'.
+INPUT=<data_dir>/<cochlea>/<raw_folder>
+OUTPUT_FOLDER=<data_dir>/<cochlea>/2_converted_stitching
+OUTPUT=$OUTPUT_FOLDER/<converted_name>.n5
+
+# Verify the input of the job.
+if [ ! -d "$INPUT" ] ; then
+	echo "Missing input of the job: $INPUT"
+	exit 1
+fi
+
+mkdir -p "$OUTPUT_FOLDER" || exit 1
+
+# The conversion records its progress in $OUTPUT.convert_state.json, so a rerun continues where an
+# interrupted job stopped. The default of --n_threads is the core count of the whole node, not the
+# count of the allocation.
+flamingo_tools.convert_data -i "$INPUT" --out_path "$OUTPUT" --file_ext .raw \
+	--n_threads "${SLURM_CPUS_PER_TASK:-1}" || exit 1

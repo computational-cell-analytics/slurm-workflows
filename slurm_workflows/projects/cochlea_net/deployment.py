@@ -60,6 +60,13 @@ DOWNLOAD_STEP = "download_image"
 # Last step of a pipeline with '--cleanup-input'. It removes the image data of the stain.
 CLEANUP_INPUT_STEP = "cleanup_input"
 
+# Step which converts the raw tiles of the microscope to the n5 and XML of the stitching. The raw
+# tiles hold every stain, so the step has no group and no stain.
+CONVERSION_STEP = "convert_data"
+
+# Folder of the raw tiles in the cochlea folder. UKON uses the same name.
+RAW_FOLDER = "1_raw"
+
 # Watershed defaults, used if the model directory has no 'best_best_params.json'.
 WATERSHED_DEFAULTS = {
     # default for SGN_v2
@@ -484,7 +491,8 @@ def prepare_step(
         placeholder_values: The settings and the job parameters as placeholder values. The dictionary is
             changed in place.
         template_file: Path of the template. Its row of the steps file gives the group and the
-            resources. A template without a group gets the group of the pipeline or of '--group'.
+            resources. A template without a group gets the group of the pipeline or of '--group',
+            except `CONVERSION_STEP`, which takes no group.
         args: Parsed command line options.
         definition: Output of `load_pipeline()`, or None for a single job.
 
@@ -543,6 +551,7 @@ def prepare_step(
 
     prefix = "".join([species, experimenter])
     template_name = os.path.basename(template_file)
+    step_name = template_name.split(".template")[0]
 
     step_group, resources = step_row(template_file, species)
     for key, value in resources.items():
@@ -553,7 +562,14 @@ def prepare_step(
     if group is None:
         group = pipeline_group
 
-    if group is None:
+    if step_name == CONVERSION_STEP:
+        if pipeline_group is not None:
+            raise ValueError(f"The template {template_name} converts the raw tiles of every stain, so it takes "
+                             "no group.")
+        placeholder_values.setdefault("raw_folder", RAW_FOLDER)
+        placeholder_values.setdefault("converted_name", cochlea)
+
+    elif group is None:
         # The MoBIE templates convert every stain from an n5. The OME-Zarr of the S3 bucket is
         # their result, so it is no candidate.
         if not stains:
@@ -583,7 +599,7 @@ def prepare_step(
 
         # The first step of a pipeline reads the image data and is rendered once per chain.
         if (definition is not None and not args.download and
-                template_name.split(".template")[0] == definition["steps"][0] and
+                step_name == definition["steps"][0] and
                 not path_exists(os.path.join(cochlea_dir, placeholder_values["cochlea_data"],
                                              placeholder_values["input_key"]))):
             notes.append(s3_image_note(placeholder_values.get("s3_remote"), cochlea, stain))
@@ -635,7 +651,7 @@ def prepare_step(
 
     # The group enters the name of a template which serves more than one group, so that the runs
     # of two groups do not share an archive folder.
-    script_str = template_name.split(".template")[0]
+    script_str = step_name
     if pipeline_group is not None and step_group is None:
         script_str = f"{script_str}_{pipeline_group}"
 

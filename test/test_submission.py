@@ -97,6 +97,8 @@ class SubmitJobTest(unittest.TestCase):
         self.assertEqual(read_file(os.path.join(archived, "log.txt")), f"{FIRST_JOBID}\n{FIRST_JOBID + 1}\n")
         with open(os.path.join(archived, "metadata.json")) as myfile:
             self.assertEqual(json.load(myfile)["jobid"], str(FIRST_JOBID + 1))
+        with open(os.path.join(archived, "previous", str(FIRST_JOBID), "metadata.json")) as myfile:
+            self.assertEqual(json.load(myfile)["jobid"], str(FIRST_JOBID))
 
     def test_environment_is_archived(self):
         write_file(self.sbatch_file, "#!/bin/bash\nsource ~/.bashrc\nmicromamba activate tools\n")

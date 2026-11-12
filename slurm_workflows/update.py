@@ -10,7 +10,7 @@ from datetime import date
 from typing import List, Optional
 
 from slurm_workflows.metadata import LOG_FILE, METADATA_FILE, SBATCH_FILE
-from slurm_workflows.metadata import archive_folders, as_list, read_metadata, write_metadata
+from slurm_workflows.metadata import archive_folders, as_list, job_folders, read_metadata, write_metadata
 from slurm_workflows.slurm import jobids_from_log, matches_jobid, reportseff_from_jobid, add_sbatch_parameters
 from slurm_workflows.slurm import slurm_output_files, slurm_output_to_dict
 
@@ -57,6 +57,27 @@ def update_sbatch_data(subfolders: List[str]):
 
     if len(update_dir) == 0:
         print("All directories contain updated sbatch information.")
+
+
+def archived_jobs(
+    folders: List[str],
+) -> List[tuple]:
+    """Read the metadata of the jobs of archive folders, including the replaced JobIDs.
+
+    Args:
+        folders: Archive folders.
+
+    Returns:
+        list: One tuple per job: the archive folder, the folder of the job (the archive folder or
+            `previous/<jobid>/`), and the metadata.
+    """
+    jobs = []
+    for folder in folders:
+        for job_folder in job_folders(folder):
+            metadata = os.path.join(job_folder, METADATA_FILE)
+            if os.path.isfile(metadata):
+                jobs.append((folder, job_folder, read_metadata(metadata)))
+    return jobs
 
 
 def update_reportseff(subfolders: List[str]):
@@ -153,7 +174,7 @@ def update_slurm_output(subfolders: List[str], slurm_dir: str):
     """Add the data of the slurm output files of each job to its metadata.
 
     Each file `slurm-<jobid>.out` or `slurm-<jobid>_<array_index>.out` gives one entry of the list
-    'slurm_output'.
+    'slurm_output'. The replaced JobIDs in `previous/<jobid>/` get their entries too.
 
     Args:
         subfolders: Archive folders.
@@ -161,13 +182,7 @@ def update_slurm_output(subfolders: List[str], slurm_dir: str):
     """
     update_dir = []
 
-    for folder in subfolders:
-        metadata = os.path.join(folder, METADATA_FILE)
-        if not os.path.isfile(metadata):
-            continue
-
-        metadict = read_metadata(metadata)
-
+    for _, job_folder, metadict in archived_jobs(subfolders):
         jobid = metadict.get("jobid")
         if not jobid:
             continue
@@ -182,9 +197,9 @@ def update_slurm_output(subfolders: List[str], slurm_dir: str):
             continue
 
         metadict["slurm_output"] = new_slurm_output
-        update_dir.append(folder)
+        update_dir.append(job_folder)
 
-        write_metadata(metadict, metadata)
+        write_metadata(metadict, os.path.join(job_folder, METADATA_FILE))
 
     update_dir = list(set(update_dir))
     update_dir.sort()

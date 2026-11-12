@@ -13,7 +13,9 @@ import re
 import shutil
 import subprocess
 
-from slurm_workflows.metadata import SBATCH_FILE, write_job_metadata
+from slurm_workflows.metadata import LOG_FILE, METADATA_FILE, PREVIOUS_DIR, SBATCH_FILE, read_metadata
+from slurm_workflows.metadata import write_job_metadata
+from slurm_workflows.slurm import jobids_from_log
 
 # The environment of a job, e.g. 'micromamba activate cochlea-net' or 'source activate dl-gpu'.
 ACTIVATE_PATTERN = re.compile(r"^\s*(?:micromamba|mamba|conda|source)\s+activate\s+(\S+)")
@@ -86,6 +88,39 @@ def submit(
     return jobid
 
 
+def move_replaced_job(
+    folder: str,
+    new_jobids: list,
+) -> None:
+    """Move the files of an archived JobID to `previous/<jobid>/` if a new JobID replaces it.
+
+    A copy followed by a move archives the same JobID twice, so nothing moves if the archived JobID
+    is the last new JobID. `log.txt` stays, because it lists every JobID of the job.
+
+    Args:
+        folder: Archive folder of the job.
+        new_jobids: JobIDs of the log file which is archived next, oldest first.
+    """
+    metadata_file = os.path.join(folder, METADATA_FILE)
+    if not new_jobids or not os.path.isfile(metadata_file):
+        return
+
+    jobid = read_metadata(metadata_file).get("jobid")
+    if not jobid or jobid == new_jobids[-1]:
+        return
+
+    target = os.path.join(folder, PREVIOUS_DIR, jobid)
+    if os.path.exists(target):
+        raise FileExistsError(f"The files of the replaced JobID {jobid} cannot be moved, because {target} exists.")
+    os.makedirs(target)
+
+    for name in sorted(os.listdir(folder)):
+        if name not in (LOG_FILE, PREVIOUS_DIR):
+            shutil.move(os.path.join(folder, name), os.path.join(target, name))
+
+    print(f"Moved the files of the replaced JobID {jobid} to {target}.")
+
+
 def archive_job(
     input_dir: str,
     archive_dir: str,
@@ -96,6 +131,7 @@ def archive_job(
     """Copy or move the files of a job into its archive folder.
 
     A log file is merged into an archived one, because a moved log file holds only the new JobIDs.
+    The files of a replaced JobID move to `previous/<jobid>/` first, see `move_replaced_job()`.
 
     Args:
         input_dir: Directory of the job files.
@@ -127,6 +163,9 @@ def archive_job(
 
     folder = os.path.join(archive_dir, f"{date}_{suffix}")
     os.makedirs(folder, exist_ok=True)
+
+    new_log = next((path for path, target_name in job_files if target_name.startswith("log.")), None)
+    move_replaced_job(folder, jobids_from_log(new_log) if new_log is not None else [])
 
     for path, target_name in job_files:
         target = os.path.join(folder, target_name)

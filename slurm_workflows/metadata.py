@@ -16,6 +16,8 @@ from slurm_workflows.slurm import reportseff_from_jobid, add_sbatch_parameters
 METADATA_FILE = "metadata.json"
 SBATCH_FILE = "sbatch.sbatch"
 LOG_FILE = "log.txt"
+# Subfolder of an archive folder with one folder `<jobid>/` per replaced JobID.
+PREVIOUS_DIR = "previous"
 
 
 def read_metadata(
@@ -83,6 +85,23 @@ def archive_folders(
     if len(subfolders) == 0:
         raise ValueError(f"No subfolders match pattern {pattern}.")
     return subfolders
+
+
+def job_folders(
+    folder: str,
+) -> List[str]:
+    """List the folders of the jobs of an archive folder.
+
+    Args:
+        folder: Archive folder.
+
+    Returns:
+        list: The archive folder, then its folders `previous/<jobid>/` of the replaced JobIDs.
+    """
+    previous_dir = os.path.join(folder, PREVIOUS_DIR)
+    if not os.path.isdir(previous_dir):
+        return [folder]
+    return [folder] + sorted(entry.path for entry in os.scandir(previous_dir) if entry.is_dir())
 
 
 def init_metadict(

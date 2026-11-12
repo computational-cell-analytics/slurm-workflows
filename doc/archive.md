@@ -30,11 +30,17 @@ A missing archive directory gives a warning, which stops `--submit` unless `--fo
     ├── sbatch.sbatch       # the submitted sbatch script
     ├── log.txt             # one JobID per line, the latest last
     ├── metadata.json       # see below
-    └── environment.yml     # the export of the micromamba environment of the job
+    ├── environment.yml     # the export of the micromamba environment of the job
+    └── previous/
+        └── <jobid>/        # the files of a replaced JobID, except log.txt
 ```
 
 A second submission on the same day uses the same archive folder.
-Its JobID is added to `log.txt`, and `sbatch.sbatch` is the latest script.
+Its JobID is added to `log.txt`, and the top level holds the files of the latest JobID.
+Before the new files are archived, the files of the replaced JobID move to `previous/<jobid>/`.
+So each JobID keeps its script, its environment, and its metadata with the git hashes, the
+`pipeline` entry and the final state, e.g. `TIMEOUT`.
+`scripts/summary.py` reads only the latest JobID of each archive folder.
 `environment.yml` is missing if the job activates no micromamba environment, see
 [Create a template](new_template.md#4-activate-a-micromamba-environment).
 `mockup_example/YYYY-MM-DD_train/` is a complete example.
@@ -99,7 +105,7 @@ The options add more updates:
 | Option | Update |
 |---|---|
 | `-p`, `--pattern` | Update only the archive folders whose name contains this text. The text can hold wildcards |
-| `-s`, `--slurm-dir` | Add `slurm_output` from the files `slurm-<jobid>.out` and `slurm-<jobid>_<array_index>.out` of this folder |
+| `-s`, `--slurm-dir` | Add `slurm_output` from the files `slurm-<jobid>.out` and `slurm-<jobid>_<array_index>.out` of this folder, also for the replaced JobIDs |
 | `--general` | Correct `date` and `task` from the folder name. Replace an efficiency report of another JobID |
 | `--sbatch` | Copy the `#SBATCH` values of `sbatch.sbatch` into the metadata again |
 
@@ -168,7 +174,9 @@ mkdir my_archive
    ```
 2. `scripts/archive_job.py` copies the files of one job into its archive folder.
    With `--move`, it moves them.
-   If `log.txt` exists in the archive folder, the new JobIDs are added to it:
+   If `log.txt` exists in the archive folder, the new JobIDs are added to it.
+   If the last new JobID replaces the JobID of `metadata.json`, the old files move to
+   `previous/<jobid>/` first:
    ```bash
    python scripts/archive_job.py --input-dir mockup_example/ --archive-dir my_archive/ YYYY-MM-DD train
    ```

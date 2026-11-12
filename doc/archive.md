@@ -58,7 +58,7 @@ The keys are lower case with underscores.
 | `reportseff` | `reportseff` | One entry per job or array task: `jobid`, `state`, `elapsed`, `time_eff`, `cpu_eff`, `mem_eff`. A task of an array which never started has a JobID such as `<jobid>_[9]`. An entry with the state `UNTRACKED` also has `last_state`, see update_metadata.py |
 | `repositories` | `git` | One entry per repository: `repo_name`, `repo_version` (the git hash), `status` (`clean` or `dirty`) |
 | `project` | Deploy step | The project, e.g. `cochlea-net` |
-| `pipeline` | Deploy step | Only for a step of a pipeline: `name` of the pipeline, `step` number, number of steps `of`, and `depends_on`, the JobID of the previous step |
+| `pipeline` | Deploy step | Only for a step of a pipeline: `name` of the pipeline, `step` number, number of steps `of`, and `depends_on`, the JobID of the previous step. `update_metadata.py` adds `failed_at` to a step which never started, see below |
 | `slurm_output` | Slurm output file | One entry per output file: `file`, `array_index` of an array task, `submitted`, `started`, `ended`, `elapsed_min`, `limit_min`, `cpus`, `nodes`, `core_hours` |
 
 The archive records the git hash of slurm-workflows, of each entry of `repositories` in the
@@ -118,6 +118,20 @@ The command prints the JobIDs which `reportseff` no longer lists, ordered by dat
 date of these jobs and the oldest date of the listed jobs.
 Between the two dates lies the time after which the Slurm database purges a job.
 The documentation of GWDG does not state this time.
+
+A step of a pipeline waits for its previous step with `afterok`.
+If the previous step fails, Slurm cancels the step before it starts.
+`reportseff` lists such a step as `CANCELLED` with the elapsed time `00:00:00`.
+A step without a report, or with only such tasks, and without a `slurm_output` entry with `started`,
+never started.
+For such a step, the command follows `depends_on` back through the archive.
+If a previous step ended in a failed state, the step gets `failed_at` in its `pipeline` entry: the
+`jobid`, the `step` and the `state` of the first step which failed.
+The command prints this once, and does not refresh the step again.
+This needs no `reportseff`.
+A step whose previous step still shows `RUNNING` or `PENDING` gets no entry.
+A step which was cancelled by hand before it started gets no entry, because it is itself the step
+which failed.
 
 The options add more updates:
 

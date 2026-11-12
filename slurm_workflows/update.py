@@ -18,7 +18,7 @@ from slurm_workflows.slurm import add_sbatch_parameters, slurm_output_files, slu
 UNTRACKED_STATE = "UNTRACKED"
 
 # A job which ends in one of these states never satisfies `afterok`, so the later steps of its chain
-# never start.
+# never start. An unknown state does not count, so that a step is not marked by mistake.
 FAILED_STATES = ("BOOT_FAIL", "CANCELLED", "DEADLINE", "FAILED", "NODE_FAIL", "OUT_OF_MEMORY", "PREEMPTED",
                  "TIMEOUT")
 
@@ -90,6 +90,65 @@ def archived_jobs(
     return jobs
 
 
+def never_started(
+    metadict: dict,
+) -> bool:
+    """Check if a job never started.
+
+    `reportseff` lists a job which was cancelled before it started, e.g. because its dependency failed,
+    as CANCELLED with the elapsed time 00:00:00. A slurm output file exists only for a job which started.
+
+    Args:
+        metadict: Metadata of the job.
+
+    Returns:
+        bool: True if the job has no report or only tasks which were cancelled before they started, and
+            no slurm output.
+    """
+    if any(output.get("started") for output in as_list(metadict.get("slurm_output", []))):
+        return False
+    return all(report.get("state") == "CANCELLED" and report.get("elapsed") == NOT_STARTED_ELAPSED
+               for report in as_list(metadict.get("reportseff", [])))
+
+
+def chain_failure(
+    jobid: str,
+    index: dict,
+) -> Optional[dict]:
+    """Find the step of a chain which failed at or before a job.
+
+    Args:
+        jobid: JobID of the job.
+        index: Metadata of the archived jobs, by JobID.
+
+    Returns:
+        dict: 'jobid', 'step' and 'state' of the failed step, or None if the job is not archived, has
+            not ended, or completed.
+    """
+    metadict = index.get(jobid)
+    if metadict is None:
+        return None
+
+    pipeline = metadict.get("pipeline", {})
+    if "failed_at" in pipeline:
+        return pipeline["failed_at"]
+
+    # A job which never started was cancelled because an earlier step failed, or by hand. Only in the
+    # second case is the job itself the failed step.
+    if never_started(metadict) and "depends_on" in pipeline:
+        failure = chain_failure(pipeline["depends_on"], index)
+        if failure is not None:
+            return failure
+
+    states = [report.get("state") for report in as_list(metadict.get("reportseff", []))]
+    # One failed task of an array is enough, because `afterok` needs every task to complete.
+    failed = [state for state in states if state in FAILED_STATES]
+    if failed:
+        return {"jobid": jobid, "step": pipeline.get("step"), "state": failed[0]}
+
+    return None
+
+
 def needs_refresh(
     reports: List[dict],
 ) -> bool:
@@ -150,22 +209,30 @@ def print_retention(
 
 def update_reportseff(
     subfolders: List[str],
+    all_folders: List[str],
 ):
-    """Refresh the efficiency reports which can still change.
+    """Refresh the efficiency reports which can still change, and mark the steps of a failed chain.
 
     `reportseff` is queried once, with the JobIDs of all jobs whose report is empty or not final,
     including the replaced JobIDs in `previous/<jobid>/`. A job of any age is listed while the Slurm
     database keeps it. A job which `reportseff` no longer lists gets `UNTRACKED_STATE` for each task
-    which is not final.
+    which is not final. A step of a pipeline which never started because an earlier step failed gets
+    `failed_at` in its `pipeline` entry, and is not queried again.
 
     Args:
         subfolders: Archive folders to update.
+        all_folders: All archive folders of the archive directory, which hold the earlier steps.
     """
-    jobs = archived_jobs(subfolders)
+    jobs = archived_jobs(all_folders)
+    # The index and the jobs share the metadata, so a refreshed report is visible to the chain check.
+    index = {metadict.get("jobid"): metadict for _, _, metadict in jobs}
+
+    selected = {os.path.realpath(folder) for folder in subfolders}
+    jobs = [job for job in jobs if os.path.realpath(job[0]) in selected]
 
     # A JobID which is not a number would make `reportseff` fail for every JobID of the call.
     queried = [(job_folder, metadict) for _, job_folder, metadict in jobs
-               if str(metadict.get("jobid", "")).isdigit()
+               if str(metadict.get("jobid", "")).isdigit() and "failed_at" not in metadict.get("pipeline", {})
                and needs_refresh(as_list(metadict.get("reportseff", [])))]
     try:
         listed = reportseff_entries([str(metadict["jobid"]) for _, metadict in queried]) if queried else {}
@@ -192,6 +259,20 @@ def update_reportseff(
             write_metadata(metadict, os.path.join(job_folder, METADATA_FILE))
             print(message)
             updated += 1
+
+    # The mark needs no `reportseff`, so it uses the archived reports if `reportseff` is missing.
+    for _, job_folder, metadict in jobs:
+        pipeline = metadict.get("pipeline", {})
+        if "failed_at" in pipeline or "depends_on" not in pipeline or not never_started(metadict):
+            continue
+        failure = chain_failure(pipeline["depends_on"], index)
+        if failure is None:
+            continue
+        pipeline["failed_at"] = failure
+        write_metadata(metadict, os.path.join(job_folder, METADATA_FILE))
+        print(f"Step {pipeline.get('step')} of pipeline {pipeline.get('name')} in {job_folder} never "
+              f"started: step {failure['step']} (JobID {failure['jobid']}) ended with {failure['state']}.")
+        updated += 1
 
     if queried:
         print_retention(listed_jobs, unlisted)
@@ -296,7 +377,7 @@ def update_archive(
 ):
     """Update the metadata of the archive folders in a directory.
 
-    The efficiency report is always refreshed.
+    The efficiency report is always refreshed, and a step of a failed chain is marked.
 
     Args:
         input_dir: Directory of the archive folders.
@@ -316,4 +397,5 @@ def update_archive(
     if slurm_dir is not None:
         update_slurm_output(subfolders, slurm_dir)
 
-    update_reportseff(subfolders)
+    all_folders = subfolders if pattern is None else archive_folders(input_dir)
+    update_reportseff(subfolders, all_folders)

@@ -9,6 +9,13 @@ import os
 import re
 import shutil
 import subprocess
+from typing import List
+
+# The columns of a `reportseff` line, in order.
+REPORTSEFF_KEYS = ("jobid", "state", "elapsed", "time_eff", "cpu_eff", "mem_eff")
+
+# The number of JobIDs of one `reportseff` call, which keeps the command line short.
+REPORTSEFF_CHUNK = 100
 
 SBATCH_PARAMETERS = [
     {"param": ["-A", "--account"],
@@ -180,31 +187,78 @@ def matches_jobid(
 
 
 def run_reportseff(
-    user_id: str,
+    jobids: List[str],
 ) -> str:
-    """Run `reportseff -u <user>`.
+    """Run `reportseff <jobid> ...`.
 
+    With JobIDs, `sacct` searches from Epoch 0 and also lists a job which never became eligible, such
+    as a step whose dependency failed. `reportseff -u <user>` lists only the jobs of the last week.
     A `reportseff` on PATH can still fail, e.g. if its Python module is not installed in the active
     environment.
 
     Args:
-        user_id: HPC user.
+        jobids: JobIDs of the jobs.
 
     Returns:
-        str: The standard output.
+        str: The standard output of all calls.
     """
     executable = shutil.which("reportseff")
     if executable is None:
         raise ValueError("reportseff was not found")
-    try:
-        result = subprocess.run([executable, "-u", user_id], stdout=subprocess.PIPE, stderr=subprocess.PIPE,
-                                universal_newlines=True)
-    except OSError as exc:
-        raise ValueError(f"reportseff could not be run: {exc}") from exc
-    if result.returncode != 0:
-        lines = result.stderr.strip().splitlines() or [f"exit code {result.returncode}"]
-        raise ValueError(f"reportseff failed: {lines[-1]}")
-    return result.stdout
+
+    outputs = []
+    for start in range(0, len(jobids), REPORTSEFF_CHUNK):
+        try:
+            result = subprocess.run([executable] + jobids[start:start + REPORTSEFF_CHUNK], stdout=subprocess.PIPE,
+                                    stderr=subprocess.PIPE, universal_newlines=True)
+        except OSError as exc:
+            raise ValueError(f"reportseff could not be run: {exc}") from exc
+        if result.returncode != 0:
+            lines = result.stderr.strip().splitlines() or [f"exit code {result.returncode}"]
+            raise ValueError(f"reportseff failed: {lines[-1]}")
+        outputs.append(result.stdout)
+    return "\n".join(outputs)
+
+
+def parse_reportseff(
+    output: str,
+) -> List[dict]:
+    """Read the entries of a `reportseff` output.
+
+    Args:
+        output: Standard output of `reportseff`.
+
+    Returns:
+        list: One dict per job or array task with 'jobid', 'state', 'elapsed', 'time_eff', 'cpu_eff' and
+            'mem_eff'. A task of an array which never started has a JobID such as '1234_[9]'.
+    """
+    entries = []
+    for line in output.splitlines():
+        contents = line.split()
+        if len(contents) >= 6 and contents[0] != "JobID":
+            entries.append(dict(zip(REPORTSEFF_KEYS, contents)))
+    return entries
+
+
+def reportseff_entries(
+    jobids: List[str],
+) -> dict:
+    """Query the efficiency reports of jobs with one `reportseff` run.
+
+    Args:
+        jobids: JobIDs of the jobs.
+
+    Returns:
+        dict: The entries of each JobID, see `parse_reportseff()`. The list is empty if `reportseff`
+            does not list the job.
+    """
+    reports = {jobid: [] for jobid in jobids}
+    for entry in parse_reportseff(run_reportseff(list(reports))):
+        # '1234', '1234_0', '1234_[9]' and '1234.batch' belong to the job '1234'.
+        base = re.split(r"[_.]", entry["jobid"], maxsplit=1)[0]
+        if base in reports:
+            reports[base].append(entry)
+    return reports
 
 
 def reportseff_from_jobid(
@@ -214,8 +268,8 @@ def reportseff_from_jobid(
 ) -> None:
     """Add the efficiency report of a job to the metadata.
 
-    The report comes from `reportseff -u <user>`, which knows a job for about one week after the
-    submission. The metadata keeps its old report if `reportseff` does not list the job.
+    If `reportseff` does not list the job, the metadata keeps only the entries of its old report which
+    belong to the JobID.
 
     Args:
         log_file: Log file with one JobID per line. Its last JobID is used if `jobid` is None.
@@ -232,34 +286,18 @@ def reportseff_from_jobid(
         jobid = str(jobid)
 
     metadict["jobid"] = jobid
-    user_id = subprocess.run(['whoami'], stdout=subprocess.PIPE).stdout.decode('utf-8').strip()
 
     try:
-        result = run_reportseff(user_id)
+        entries = reportseff_entries([jobid])[jobid]
     except ValueError as exc:
         # A finished job must still be archived, so the report is left out instead.
         print(f"Warning: the efficiency report is not recorded: {exc}. Make reportseff available, then run "
-              f"scripts/update_metadata.py <archive_dir> within one week.")
+              f"scripts/update_metadata.py <archive_dir>.")
         return
 
-    lines = result.split("\n")
-    reports_eff_list = []
-    job_id_found = False
-
-    for line in lines:
-        contents = line.split()
-        if len(contents) >= 6 and matches_jobid(contents[0], jobid):
-            job_id_found = True
-            reports_eff = {"jobid": contents[0]}
-            reports_eff["state"] = contents[1]
-            reports_eff["elapsed"] = contents[2]
-            reports_eff["time_eff"] = contents[3]
-            reports_eff["cpu_eff"] = contents[4]
-            reports_eff["mem_eff"] = contents[5]
-            reports_eff_list.append(reports_eff)
-
-    # do not overwrite reportseff if JobID is not found and entry already exists
-    if job_id_found:
-        metadict["reportseff"] = reports_eff_list
-    elif "reportseff" not in metadict:
-        metadict["reportseff"] = []
+    if not entries:
+        # The report of another JobID, e.g. of a replaced JobID, must not stay under this JobID.
+        kept = metadict.get("reportseff", [])
+        kept = kept if isinstance(kept, list) else [kept]
+        entries = [entry for entry in kept if matches_jobid(entry.get("jobid", ""), jobid)]
+    metadict["reportseff"] = entries

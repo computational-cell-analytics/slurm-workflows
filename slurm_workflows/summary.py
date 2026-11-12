@@ -16,7 +16,7 @@ except ImportError:  # openpyxl is optional. The login node does not have it.
     openpyxl = None
 
 from slurm_workflows.metadata import METADATA_FILE, archive_folders, as_list, read_metadata
-from slurm_workflows.update import UNFINISHED_STATES
+from slurm_workflows.update import FINAL_STATES, NOT_STARTED_ELAPSED
 
 METADATA_COLUMNS = ["date", "task", "jobid", "job_name", "partition", "gpu", "cpus_per_task", "memory_per_node",
                     "runtime"]
@@ -41,8 +41,23 @@ def parse_percent(value: str) -> Optional[float]:
     return None
 
 
+def has_result(report: dict) -> bool:
+    """Check if a task of the efficiency report ran and ended.
+
+    A task which is not final, e.g. RUNNING or UNTRACKED, has the values of a report while it ran. A task
+    which was cancelled before it started has the values 0.0%.
+
+    Args:
+        report: Entry of the efficiency report.
+
+    Returns:
+        bool: True if the task is in a final state and its elapsed time is not 00:00:00.
+    """
+    return report.get("state") in FINAL_STATES and report.get("elapsed") != NOT_STARTED_ELAPSED
+
+
 def efficiencies(metadict: dict, key: str) -> List[float]:
-    """Return one efficiency of each task of a job that is not RUNNING or PENDING.
+    """Return one efficiency of each task of a job that has a result, see `has_result()`.
 
     Args:
         metadict: Metadata of the job.
@@ -52,7 +67,7 @@ def efficiencies(metadict: dict, key: str) -> List[float]:
         list: The efficiencies in percent. A task without a value is left out.
     """
     values = [parse_percent(report.get(key)) for report in as_list(metadict.get("reportseff", []))
-              if report.get("state") not in UNFINISHED_STATES]
+              if has_result(report)]
     return [value for value in values if value is not None]
 
 
@@ -135,7 +150,7 @@ def job_row(metadict: dict) -> list:
 def print_summary(jobs: List[dict]):
     """Print the average efficiency and the core hours of the jobs.
 
-    An efficiency is averaged over the tasks that are not RUNNING or PENDING. The core hours are
+    An efficiency is averaged over the tasks that have a result, see `has_result()`. The core hours are
     summed per job and then averaged over the jobs.
 
     Args:

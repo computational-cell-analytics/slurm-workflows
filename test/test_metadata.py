@@ -14,7 +14,8 @@ from unittest import mock
 from slurm_workflows.metadata import init_metadict
 from slurm_workflows.repositories import job_repositories
 from slurm_workflows.slurm import jobids_from_log, reportseff_from_jobid, add_sbatch_parameters
-from stubs import REPOSITORY_DIR, WRITE_METADATA, run, set_reportseff_output, stub_env, write_file
+from stubs import REPOSITORY_DIR, WRITE_METADATA, reportseff_calls, run, set_reportseff_output, stub_env
+from stubs import write_file
 
 REPORT_LINES = [
     "JobID State Elapsed TimeEff CPUEff MemEff",
@@ -22,6 +23,7 @@ REPORT_LINES = [
     "12345 COMPLETED 00:02:00 2.0% 20.0% 2.0%",
     "1234_0 COMPLETED 00:03:00 3.0% 30.0% 3.0%",
     "1234_1 FAILED 00:04:00 4.0% 40.0% 4.0%",
+    "1234_[2] CANCELLED 00:00:00 0.0% --- 0.0%",
 ]
 
 
@@ -96,20 +98,22 @@ class ReportseffTest(unittest.TestCase):
     def tearDown(self):
         self.tmp.cleanup()
 
-    def report(self, jobid, reportseff=True):
-        env = stub_env(self.tmp.name, reportseff=reportseff)
+    def report(self, jobid, reportseff=True, metadict=None):
+        self.env = stub_env(self.tmp.name, reportseff=reportseff)
         if reportseff:
-            set_reportseff_output(env, REPORT_LINES)
-        metadict = {}
-        with mock.patch.dict(os.environ, env), contextlib.redirect_stdout(io.StringIO()):
+            set_reportseff_output(self.env, REPORT_LINES)
+        metadict = {} if metadict is None else metadict
+        with mock.patch.dict(os.environ, self.env), contextlib.redirect_stdout(io.StringIO()):
             reportseff_from_jobid(None, metadict, jobid=jobid)
         return metadict
 
     def test_jobid_match_is_exact(self):
-        # The report of 91234 and 12345 must not be taken for JobID 1234.
+        # The report of 91234 and 12345 must not be taken for JobID 1234. '1234_[2]' is a task of the
+        # array which never started.
         metadict = self.report("1234")
 
-        self.assertEqual([report["jobid"] for report in metadict["reportseff"]], ["1234_0", "1234_1"])
+        self.assertEqual([report["jobid"] for report in metadict["reportseff"]], ["1234_0", "1234_1", "1234_[2]"])
+        self.assertEqual(reportseff_calls(self.env), ["1234"])
 
     def test_single_job(self):
         metadict = self.report("91234")
@@ -118,14 +122,11 @@ class ReportseffTest(unittest.TestCase):
         self.assertEqual(metadict["reportseff"], [{"jobid": "91234", "state": "COMPLETED", "elapsed": "00:01:00",
                                                    "time_eff": "1.0%", "cpu_eff": "10.0%", "mem_eff": "1.0%"}])
 
-    def test_unknown_jobid_keeps_report(self):
-        env = stub_env(self.tmp.name)
-        set_reportseff_output(env, REPORT_LINES)
-        metadict = {"reportseff": [{"jobid": "5"}]}
-        with mock.patch.dict(os.environ, env), contextlib.redirect_stdout(io.StringIO()):
-            reportseff_from_jobid(None, metadict, jobid="777")
+    def test_unknown_jobid_keeps_only_its_own_report(self):
+        # The entry of JobID 5 is the report of a replaced JobID.
+        metadict = self.report("777", metadict={"reportseff": [{"jobid": "777_0"}, {"jobid": "5"}]})
 
-        self.assertEqual(metadict["reportseff"], [{"jobid": "5"}])
+        self.assertEqual(metadict["reportseff"], [{"jobid": "777_0"}])
 
 
 class WriteMetadataTest(unittest.TestCase):

@@ -66,6 +66,27 @@ class SummaryTest(unittest.TestCase):
         self.assertIn("Average CPU Efficiency:    50.0% (n=3)", output)
         self.assertIn("Average Core Hours: 5.00 (n=2)", output)
 
+    def test_untracked_task_does_not_count(self):
+        untracked = dict(report("UNTRACKED", "1.0%"), last_state="RUNNING")
+        write_file(os.path.join(self.archive, "d_untracked", "metadata.json"),
+                   json.dumps({"date": "2026-04-01", "task": "untracked", "reportseff": [untracked]}))
+
+        output = self.run_summary()
+
+        self.assertIn("Efficiency summary for 4 job(s):", output)
+        self.assertIn("Average CPU Efficiency:    50.0% (n=3)", output)
+        self.assertEqual(self.tasks(states=["UNTRACKED"]), ["untracked"])
+
+    def test_task_which_never_started_does_not_count(self):
+        cancelled = dict(report("CANCELLED", "---"), elapsed="00:00:00", time_eff="0.0%", mem_eff="0.0%")
+        write_file(os.path.join(self.archive, "d_cancelled", "metadata.json"),
+                   json.dumps({"date": "2026-04-01", "task": "cancelled", "reportseff": [cancelled]}))
+
+        output = self.run_summary()
+
+        self.assertIn("Average Time Efficiency:   10.0% (n=3)", output)
+        self.assertIn("Average Memory Efficiency: 20.0% (n=3)", output)
+
     def test_tsv_rows(self):
         table = os.path.join(self.tmp.name, "jobs.tsv")
         self.run_summary(output=table)

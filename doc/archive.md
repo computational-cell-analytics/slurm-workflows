@@ -55,7 +55,7 @@ The keys are lower case with underscores.
 | `academic_id`, `hpc_user` | Settings file | The person who ran the job. Left out if empty |
 | `job_name`, `runtime`, `partition`, `gpu`, ... | `#SBATCH` lines | See [the #SBATCH forms](new_template.md#3-keep-the-sbatch-lines-which-the-archive-reads) |
 | `jobid` | `log.txt` | The latest JobID |
-| `reportseff` | `reportseff` | One entry per job or array task: `jobid`, `state`, `elapsed`, `time_eff`, `cpu_eff`, `mem_eff` |
+| `reportseff` | `reportseff` | One entry per job or array task: `jobid`, `state`, `elapsed`, `time_eff`, `cpu_eff`, `mem_eff`. A task of an array which never started has a JobID such as `<jobid>_[9]`. An entry with the state `UNTRACKED` also has `last_state`, see update_metadata.py |
 | `repositories` | `git` | One entry per repository: `repo_name`, `repo_version` (the git hash), `status` (`clean` or `dirty`) |
 | `project` | Deploy step | The project, e.g. `cochlea-net` |
 | `pipeline` | Deploy step | Only for a step of a pipeline: `name` of the pipeline, `step` number, number of steps `of`, and `depends_on`, the JobID of the previous step |
@@ -70,18 +70,22 @@ code.
 
 1. `scripts/deploy.py --submit` submits the jobs and writes the archive folders.
    At this time, the efficiency report shows the state `PENDING`.
-2. After the jobs ended, update the archive within 8 days:
+2. After the jobs ended, update the archive:
    ```bash
    python scripts/update_metadata.py --slurm-dir <folder of slurm-<jobid>.out> <archive_dir>
    ```
-   `reportseff` knows a job only for about one week, so the update skips a job which is older than
-   8 days (`REPORTSEFF_MAX_DAYS`).
+   `reportseff` knows a job as long as the Slurm database keeps it.
+   The slurm output files can be deleted earlier, so do not wait too long.
 3. Print the efficiency summary, and write one row per job to a table:
    ```bash
    python scripts/summary.py --output jobs.xlsx --since 2026-01-01 <archive_dir>
    ```
 
-`reportseff` runs as `reportseff -u <user>`, with the user who runs the command.
+`reportseff` runs as `reportseff <jobid> ...`.
+With JobIDs, `sacct` searches the whole Slurm database and also lists a job which never became
+eligible, see the section DEFAULT TIME WINDOW of `man sacct`.
+`reportseff -u <user>` lists only the jobs of the last week and no job which never became eligible.
+`sacct` shows only the jobs of the user who runs the command.
 So run the update as the HPC user who submitted the jobs.
 `reportseff` is often available on the cluster.
 If not, run `module load py-reportseff`.
@@ -98,8 +102,23 @@ The core hours come only from these files.
 python scripts/update_metadata.py [--pattern <text>] [--slurm-dir <dir>] [--general] [--sbatch] <archive_dir>
 ```
 
-The command always refreshes the efficiency report of a job of the last 8 days, if the report is
-empty or shows `RUNNING` or `PENDING`.
+The command always refreshes the efficiency report of a job if the report is empty or has a task
+which is not in a final state.
+The final states are `COMPLETED` and the failed states, e.g. `TIMEOUT`, `FAILED` or `CANCELLED`.
+So `RUNNING`, `PENDING`, `COMPLETING` and `UNTRACKED` are refreshed.
+This includes the replaced JobIDs in `previous/<jobid>/`.
+The command calls `reportseff` once, with the JobIDs of all these jobs.
+
+A job which `reportseff` no longer lists, because the Slurm database purged it, keeps its report.
+Each task which is not final gets the state `UNTRACKED`.
+`last_state` keeps the state of the last report, and the other values of the entry stay.
+If `reportseff` lists the job again, the report replaces the entry.
+
+The command prints the JobIDs which `reportseff` no longer lists, ordered by date, then the newest
+date of these jobs and the oldest date of the listed jobs.
+Between the two dates lies the time after which the Slurm database purges a job.
+The documentation of GWDG does not state this time.
+
 The options add more updates:
 
 | Option | Update |
@@ -145,7 +164,8 @@ The command only reads the archive.
 The terminal summary gives the average CPU, memory and time efficiency over the finished tasks of
 all jobs.
 An array job with 10 tasks counts 10 times.
-A task in the state `RUNNING` or `PENDING` does not count.
+Only a task in a final state counts, see update_metadata.py.
+A task which was cancelled before it started, with the elapsed time `00:00:00`, does not count.
 The core hours are summed per job, then averaged over the jobs.
 A folder without `metadata.json` does not count.
 

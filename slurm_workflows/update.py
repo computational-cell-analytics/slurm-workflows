@@ -6,18 +6,28 @@ Logic of `slurm_wf.update_metadata`: update the archived metadata of Slurm jobs.
 Refresh the efficiency report of a running or pending job, and add the data of the slurm output files.
 """
 import os
-from datetime import date
 from typing import List, Optional
 
 from slurm_workflows.metadata import LOG_FILE, METADATA_FILE, SBATCH_FILE
 from slurm_workflows.metadata import archive_folders, as_list, job_folders, read_metadata, write_metadata
-from slurm_workflows.slurm import jobids_from_log, matches_jobid, reportseff_from_jobid, add_sbatch_parameters
-from slurm_workflows.slurm import slurm_output_files, slurm_output_to_dict
+from slurm_workflows.slurm import jobids_from_log, matches_jobid, reportseff_entries, reportseff_from_jobid
+from slurm_workflows.slurm import add_sbatch_parameters, slurm_output_files, slurm_output_to_dict
 
-# The efficiency report of a job is available for around one week after the submission.
-REPORTSEFF_MAX_DAYS = 8
+# The state of a task which is not final and which `reportseff` no longer lists, because the Slurm
+# database purged the job. `last_state` keeps the state of the last report.
+UNTRACKED_STATE = "UNTRACKED"
 
-UNFINISHED_STATES = ("RUNNING", "PENDING")
+# A job which ends in one of these states never satisfies `afterok`, so the later steps of its chain
+# never start.
+FAILED_STATES = ("BOOT_FAIL", "CANCELLED", "DEADLINE", "FAILED", "NODE_FAIL", "OUT_OF_MEMORY", "PREEMPTED",
+                 "TIMEOUT")
+
+# The states which do not change any more. A report with another state, such as RUNNING, PENDING,
+# COMPLETING or UNTRACKED, is refreshed.
+FINAL_STATES = ("COMPLETED",) + FAILED_STATES
+
+# The elapsed time of a task which was cancelled before it started.
+NOT_STARTED_ELAPSED = "00:00:00"
 
 
 def update_sbatch_data(subfolders: List[str]):
@@ -80,46 +90,112 @@ def archived_jobs(
     return jobs
 
 
-def update_reportseff(subfolders: List[str]):
-    """Refresh the efficiency report of a recent job that is pending, running, or has no report.
+def needs_refresh(
+    reports: List[dict],
+) -> bool:
+    """Check if the efficiency report of a job can still change.
 
     Args:
-        subfolders: Archive folders.
+        reports: Entries of the efficiency report.
+
+    Returns:
+        bool: True if the report is empty or has a task which is not in a final state.
     """
-    update_dir = []
+    return not reports or any(report.get("state") not in FINAL_STATES for report in reports)
 
-    for folder in subfolders:
-        metadata = os.path.join(folder, METADATA_FILE)
-        if os.path.isfile(metadata):
-            metadict = read_metadata(metadata)
 
-            # check for dates in the last 8 days
-            date_str = [int(i) for i in metadict["date"].split("-")]
-            job_date = date(date_str[0], date_str[1], date_str[2])
-            days_past = date.today() - job_date
-            if days_past.days > REPORTSEFF_MAX_DAYS:
-                continue
+def mark_untracked(
+    reports: List[dict],
+) -> bool:
+    """Replace the state of each task which is not final with `UNTRACKED_STATE`.
 
-            reports = as_list(metadict.get("reportseff", []))
-            for report in reports:
-                if report["state"] in UNFINISHED_STATES:
-                    update_dir.append(folder)
-                    break
+    Args:
+        reports: Entries of the efficiency report. They are changed in place.
 
-            if len(reports) == 0:
-                update_dir.append(folder)
+    Returns:
+        bool: True if an entry changed.
+    """
+    changed = False
+    for report in reports:
+        state = report.get("state")
+        if state not in FINAL_STATES and state != UNTRACKED_STATE:
+            report["last_state"] = state
+            report["state"] = UNTRACKED_STATE
+            changed = True
+    return changed
 
-    for folder in update_dir:
-        print(f"Updating efficiency report of folder {folder}.")
-        log_file = os.path.join(folder, LOG_FILE)
-        metadata = os.path.join(folder, METADATA_FILE)
 
-        metadict = read_metadata(metadata)
-        reportseff_from_jobid(log_file, metadict=metadict, jobid=None)
+def print_retention(
+    listed: List[dict],
+    unlisted: List[dict],
+):
+    """Print the JobIDs which `reportseff` no longer lists, to show how long the Slurm database keeps a job.
 
-        write_metadata(metadict, metadata)
+    Args:
+        listed: Metadata of the queried jobs which `reportseff` lists.
+        unlisted: Metadata of the queried jobs which `reportseff` does not list.
+    """
+    print(f"reportseff listed {len(listed)} of {len(listed) + len(unlisted)} queried JobIDs.")
+    if not unlisted:
+        return
 
-    if len(update_dir) == 0:
+    print("reportseff no longer lists these JobIDs (date, JobID, task):")
+    for metadict in sorted(unlisted, key=lambda metadict: (metadict.get("date", ""), metadict["jobid"])):
+        print(f"  {metadict.get('date')}  {metadict['jobid']}  {metadict.get('task')}")
+
+    print(f"Newest unlisted job: {max(metadict.get('date', '') for metadict in unlisted)}.")
+    if listed:
+        print(f"Oldest listed job: {min(metadict.get('date', '') for metadict in listed)}.")
+
+
+def update_reportseff(
+    subfolders: List[str],
+):
+    """Refresh the efficiency reports which can still change.
+
+    `reportseff` is queried once, with the JobIDs of all jobs whose report is empty or not final,
+    including the replaced JobIDs in `previous/<jobid>/`. A job of any age is listed while the Slurm
+    database keeps it. A job which `reportseff` no longer lists gets `UNTRACKED_STATE` for each task
+    which is not final.
+
+    Args:
+        subfolders: Archive folders to update.
+    """
+    jobs = archived_jobs(subfolders)
+
+    # A JobID which is not a number would make `reportseff` fail for every JobID of the call.
+    queried = [(job_folder, metadict) for _, job_folder, metadict in jobs
+               if str(metadict.get("jobid", "")).isdigit()
+               and needs_refresh(as_list(metadict.get("reportseff", [])))]
+    try:
+        listed = reportseff_entries([str(metadict["jobid"]) for _, metadict in queried]) if queried else {}
+    except ValueError as exc:
+        print(f"Warning: the efficiency reports are not refreshed: {exc}.")
+        queried = []
+
+    updated = 0
+    listed_jobs = []
+    unlisted = []
+    for job_folder, metadict in queried:
+        entries = listed[str(metadict["jobid"])]
+        if entries:
+            listed_jobs.append(metadict)
+            changed = entries != metadict.get("reportseff")
+            metadict["reportseff"] = entries
+            message = f"Updated the efficiency report of {job_folder}."
+        else:
+            unlisted.append(metadict)
+            changed = mark_untracked(as_list(metadict.get("reportseff", [])))
+            message = (f"Marked the report of {job_folder} as {UNTRACKED_STATE}, because reportseff no longer "
+                       "lists it.")
+        if changed:
+            write_metadata(metadict, os.path.join(job_folder, METADATA_FILE))
+            print(message)
+            updated += 1
+
+    if queried:
+        print_retention(listed_jobs, unlisted)
+    if updated == 0:
         print("All directories contain updated efficiency reports.")
 
 

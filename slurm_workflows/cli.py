@@ -18,7 +18,7 @@ from slurm_workflows.settings import load_settings
 from slurm_workflows.submission import archive_job, archive_submitted_job, submit
 from slurm_workflows.summary import summarize
 from slurm_workflows.templates import project_of_template
-from slurm_workflows.update import REPORTSEFF_MAX_DAYS, update_archive
+from slurm_workflows.update import update_archive
 
 
 def main_deploy():
@@ -125,11 +125,11 @@ def main_write_metadata():
 
 def main_update_metadata():
     parser = argparse.ArgumentParser(
-        description="Update the metadata.json of each archive folder. The efficiency report of a job of the "
-        f"last {REPORTSEFF_MAX_DAYS} days is refreshed if it is missing or shows PENDING or RUNNING. "
-        "With -s, the core hours are added from the slurm output files. --general corrects the date and the task "
-        "from the folder name, and replaces an efficiency report of another JobID. --sbatch copies the #SBATCH "
-        "parameters of sbatch.sbatch.")
+        description="Update the metadata.json of each archive folder. The efficiency report of a job is "
+        "refreshed with one reportseff call by JobID if it is missing or not final, e.g. PENDING or RUNNING. The "
+        "command lists the JobIDs which reportseff no longer knows. With -s, the core hours are added from the "
+        "slurm output files. --general corrects the date and the task from the folder name, and replaces an "
+        "efficiency report of another JobID. --sbatch copies the #SBATCH parameters of sbatch.sbatch.")
 
     parser.add_argument("archive_dir", type=str, help="Archive directory, which holds the archive folders.")
 

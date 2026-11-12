@@ -243,7 +243,7 @@ python /path/to/slurm-workflows/scripts/deploy.py --input /path/to/slurm-workflo
   python /path/to/slurm-workflows/scripts/deploy.py --pipeline cochlea-net/sgn --params /path/to/M_AMD_000137_L.json \
       --start-at apply_SGN --submit
   ```
-- Update the archive within 8 days, see [The archive](archive.md#the-workflow).
+- Update the archive, see [The archive](archive.md#the-workflow).
 
 ## The result in MoBIE and in the S3 bucket
 

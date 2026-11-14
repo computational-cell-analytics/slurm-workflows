@@ -16,6 +16,8 @@ Every file of a job uses the format `<date>_<middle>_<suffix>.<ext>`, with the d
 and a middle part of one word, e.g. `2025-03-19_sbatch_apply_unet.sbatch` and
 `2025-03-19_log_apply_unet.txt`.
 The archive folder of the job is `<archive_dir>/<date>_<suffix>/`.
+Archive folders can also be in subdirectories of `<archive_dir>`.
+The commands take each directory with `metadata.json` as an archive folder.
 
 ## The archive folder
 
@@ -89,6 +91,8 @@ Without `reportseff`, the commands print a warning and record no report.
 Slurm writes them into the directory where the deploy step ran, unless `#SBATCH -o` names another
 file.
 The core hours come only from these files.
+Without `--slurm-dir`, the command searches the archive folder of each job.
+For a job array, `#SBATCH -o` needs `slurm-%A_%a.out`, because `%j` is the JobID of the task.
 
 ## update_metadata.py
 
@@ -123,8 +127,8 @@ The options add more updates:
 
 | Option | Update |
 |---|---|
-| `-p`, `--pattern` | Update only the archive folders whose name contains this text. The text can hold wildcards |
-| `-s`, `--slurm-dir` | Add `slurm_output` from the files `slurm-<jobid>.out` and `slurm-<jobid>_<array_index>.out` of this folder |
+| `-p`, `--pattern` | Update only the archive folders whose path relative to `<archive_dir>` contains this text. The text can hold wildcards |
+| `-s`, `--slurm-dir` | Add `slurm_output` from the files `slurm-<jobid>.out` and `slurm-<jobid>_<array_index>.out` of this folder. Without this option, the archive folder of each job is searched |
 | `--general` | Correct `date` and `task` from the name of the archive folder. Replace an efficiency report of another JobID |
 | `--sbatch` | Copy the `#SBATCH` values of `sbatch.sbatch` into the metadata again. A folder without `sbatch.sbatch` is skipped |
 | `--backfill` | Create `previous/<jobid>/metadata.json` for each earlier JobID of `log.txt` without metadata, e.g. in an archive folder from before `previous/<jobid>/`. The refresh adds the efficiency report, and `--slurm-dir` the core hours |
@@ -185,7 +189,7 @@ The command only reads the archive.
 | Option | Purpose |
 |---|---|
 | `-o`, `--output` | Write one row per job to this file, ordered by date, task and JobID. A `.xlsx` file needs openpyxl. Any other suffix gives a TSV file |
-| `-p`, `--pattern` | Use only the archive folders whose name contains this text |
+| `-p`, `--pattern` | Use only the archive folders whose path relative to `<archive_dir>` contains this text |
 | `--since`, `--until` | First and last `date`, `YYYY-MM-DD`. Both are inclusive |
 | `--state` | Keep a job if one of its tasks has one of these states in the efficiency report or in `slurm_output`, e.g. `COMPLETED,TIMEOUT` |
 | `--partition` | Keep a job of one of these partitions, e.g. `grete:shared,standard96` |

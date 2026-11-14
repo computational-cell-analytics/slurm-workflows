@@ -83,7 +83,7 @@ def archive_folders(
 
     Args:
         input_dir: Directory of the archive folders.
-        pattern: Part of the folder path relative to `input_dir`, which can hold wildcards, or None for all folders.
+        pattern: Part of the folder name, which can hold wildcards, or None for all folders.
 
     Returns:
         list: Paths of the archive folders.

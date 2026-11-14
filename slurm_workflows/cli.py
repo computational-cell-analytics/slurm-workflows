@@ -132,7 +132,8 @@ def main_update_metadata():
     parser.add_argument("archive_dir", type=str, help="Archive directory, which holds the archive folders.")
 
     parser.add_argument("-p", "--pattern", type=str, default=None,
-                        help="Part of the archive folder name, matched as *<pattern>*. Supports wildcards.")
+                        help="Part of the archive folder path relative to archive_dir, matched as *<pattern>*. "
+                             "Supports wildcards.")
     parser.add_argument("-s", "--slurm-dir", type=str, default=None,
                         help="Folder of the slurm output files slurm-<jobid>.out or slurm-<jobid>_<array_index>.out, "
                              "usually the folder where deploy ran. Adds slurm_output with the core hours.")
@@ -168,7 +169,8 @@ def main_summary():
                         help="Table with one row per job. An .xlsx file needs openpyxl. "
                              "Any other suffix gives a TSV file.")
     parser.add_argument("-p", "--pattern", type=str, default=None,
-                        help="Part of the archive folder name, matched as *<pattern>*. Supports wildcards.")
+                        help="Part of the archive folder path relative to archive_dir, matched as *<pattern>*. "
+                             "Supports wildcards.")
     parser.add_argument("--since", type=iso_date, default=None, help="First job date, YYYY-MM-DD.")
     parser.add_argument("--until", type=iso_date, default=None, help="Last job date, YYYY-MM-DD.")
     parser.add_argument("--state", type=lambda value: value.split(","), default=None,

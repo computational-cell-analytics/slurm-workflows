@@ -44,12 +44,14 @@ def job_name_parts(
 def submit(
     sbatch_file: str,
     dependency: str = None,
+    hold: bool = False,
 ) -> str:
     """Submit an sbatch script and add its JobID to the log file `<date>_log_<suffix>.txt` beside it.
 
     Args:
         sbatch_file: Path of the sbatch script.
         dependency: JobID which has to complete successfully before this job starts, or None.
+        hold: Submit the job in a held state. It starts only after `scontrol release <jobid>`.
 
     Returns:
         str: JobID of the submitted job.
@@ -61,6 +63,8 @@ def submit(
     if dependency is not None:
         # Give up instead of waiting forever if the dependency fails.
         cmd += [f"--dependency=afterok:{dependency}", "--kill-on-invalid-dep=yes"]
+    if hold:
+        cmd.append("--hold")
     cmd.append(sbatch_file)
 
     try:
@@ -86,6 +90,41 @@ def submit(
         myfile.write(f"{separator}{jobid}\n")
 
     return jobid
+
+
+def release_job(
+    jobid: str,
+) -> None:
+    """Release a held job so that it can start.
+
+    Args:
+        jobid: JobID of the held job.
+    """
+    try:
+        result = subprocess.run(["scontrol", "release", jobid], stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+                                universal_newlines=True)
+    except OSError as exc:
+        raise ValueError(f"Release of job {jobid} failed. scontrol could not be run: {exc}") from exc
+    if result.returncode != 0:
+        raise ValueError(f"Release of job {jobid} failed: {result.stderr.strip()}")
+
+
+def cancel_jobs(
+    jobids: list,
+) -> None:
+    """Cancel submitted jobs.
+
+    Args:
+        jobids: JobIDs of the jobs.
+    """
+    try:
+        result = subprocess.run(["scancel"] + jobids, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+                                universal_newlines=True)
+    except OSError as exc:
+        raise ValueError(f"Cancellation of the jobs {', '.join(jobids)} failed. scancel could not be run: "
+                         f"{exc}") from exc
+    if result.returncode != 0:
+        raise ValueError(f"Cancellation of the jobs {', '.join(jobids)} failed: {result.stderr.strip()}")
 
 
 def move_replaced_job(

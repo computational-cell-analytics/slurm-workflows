@@ -15,7 +15,7 @@ from slurm_workflows.metadata import write_job_metadata
 from slurm_workflows.pipelines import pipeline_names, resolve_pipeline
 from slurm_workflows.repositories import job_repositories, read_repository_file
 from slurm_workflows.settings import load_settings
-from slurm_workflows.submission import archive_job, archive_submitted_job, submit
+from slurm_workflows.submission import archive_job, archive_submitted_job, cancel_jobs, release_job, submit
 from slurm_workflows.summary import summarize
 from slurm_workflows.templates import project_of_template
 from slurm_workflows.update import update_archive
@@ -216,7 +216,7 @@ def main_submit():
     try:
         settings = {} if args.settings is None else load_settings(args.settings)
         repositories = job_repositories(settings, args.repository_file)
-        jobid = submit(args.sbatch_file, args.dependency)
+        jobid = submit(args.sbatch_file, args.dependency, hold=args.archive_dir is not None)
     except (FileNotFoundError, ValueError) as exc:
         sys.exit(str(exc))
 
@@ -225,10 +225,13 @@ def main_submit():
     if args.archive_dir is None:
         return
 
+    # The job is held until it is archived, so that it cannot start without its archive folder.
     try:
         archive_submitted_job(args.sbatch_file, jobid, args.archive_dir, args.move, repositories, args.settings)
+        release_job(jobid)
     except (OSError, ValueError) as exc:
-        sys.exit(f"Job {jobid} was submitted, but its archiving failed: {exc}")
+        cancel_jobs([jobid])
+        sys.exit(f"Archiving of job {jobid} failed, so the job was cancelled: {exc}")
 
 
 def main_archive():

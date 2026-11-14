@@ -4,7 +4,7 @@
 
 Access to the files of an archive folder, and creation of its `metadata.json`.
 """
-import glob
+import fnmatch
 import json
 import os
 import shutil
@@ -83,15 +83,23 @@ def archive_folders(
 
     Args:
         input_dir: Directory of the archive folders.
-        pattern: Part of the folder name, which can hold wildcards, or None for all folders.
+        pattern: Part of the folder path relative to `input_dir`, which can hold wildcards, or None for all folders.
 
     Returns:
         list: Paths of the archive folders.
     """
-    if pattern is None:
-        return [f.path for f in os.scandir(input_dir) if f.is_dir()]
+    folders = []
+    for root_dir, subdirs, files in os.walk(input_dir):
+        if METADATA_FILE in files:
+            folders.append(root_dir)
+            subdirs.clear()
+        elif PREVIOUS_DIR in subdirs:
+            subdirs.remove(PREVIOUS_DIR)
 
-    subfolders = sorted(glob.glob(os.path.join(input_dir, f"*{pattern}*"), recursive=False))
+    if pattern is None:
+        return folders
+
+    subfolders = sorted(f for f in folders if fnmatch.fnmatch(os.path.relpath(f, input_dir), f"*{pattern}*"))
     if len(subfolders) == 0:
         raise ValueError(f"No subfolders match pattern {pattern}.")
     return subfolders

@@ -336,7 +336,7 @@ def check_metadata(subfolders: List[str]):
         print(f"Updated essential metadata for {job_folder}.")
 
 
-def update_slurm_output(subfolders: List[str], slurm_dir: str):
+def update_slurm_output(subfolders: List[str], slurm_dir: Optional[str] = None):
     """Add the data of the slurm output files of each job to its metadata.
 
     Each file `slurm-<jobid>.out` or `slurm-<jobid>_<array_index>.out` gives one entry of the list
@@ -344,7 +344,7 @@ def update_slurm_output(subfolders: List[str], slurm_dir: str):
 
     Args:
         subfolders: Archive folders.
-        slurm_dir: Directory of the slurm output files.
+        slurm_dir: Directory of the slurm output files, or None for the folder of each job.
     """
     update_dir = []
     found = 0

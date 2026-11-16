@@ -47,6 +47,11 @@ The parameter `sgn_version` selects a key of `models.SGN`, `ihc_version` a key o
 `synapse_version` a key of `models.Synapses`.
 An unknown key stops the deploy step with the list of the available keys.
 
+The version key also names the prediction folder, the MoBIE source and the S3 data.
+To keep the results of one model under a new name, add a second key with the same path.
+`SGN_v3b` and `IHC_v11b` use the same models as `SGN_v3` and `IHC_v11`, but name the results of a
+different mask rule, see [The mask rule](#the-mask-rule).
+
 > [!WARNING]
 > Git does not track `project_settings/cochlea-net.json`. New keys and model versions arrive only in the blueprint file.
 > Compare the two files after every pull. An outdated settings file stops a job with a missing key or an unresolved placeholder.
@@ -106,8 +111,8 @@ The archive records the values in each sbatch script anyway.
         "Vglut3",
         "CTBP2"
     ],
-    "sgn_version": "SGN_v3",
-    "ihc_version": "IHC_v11",
+    "sgn_version": "SGN_v3b",
+    "ihc_version": "IHC_v11b",
     "synapse_version": "synapse_v3",
     "stain_synapses": "CTBP2"
 }
@@ -165,6 +170,10 @@ The legacy flag accepts `true` or `false` only.
 A number without `"sgn_legacy_mask": true` or `"ihc_legacy_mask": true` stops the deploy step with an
 error, because the default rule has no absolute threshold.
 Remove the thresholds from older parameter files, or add the legacy flag.
+
+The version key does not select the rule, but it names the prediction folder.
+Use `SGN_v3b` and `IHC_v11b` with the default rule.
+Use `SGN_v3` and `IHC_v11` only with the legacy rule, so that each folder holds the results of one rule.
 
 ### The watershed values of the segmentation
 

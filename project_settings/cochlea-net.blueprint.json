@@ -20,7 +20,8 @@
     "models": {
         "SGN": {
             "SGN_v2": "/path/to/cochlea-lightsheet/trained_models/SGN/v2_cochlea_distance_unet_SGN_supervised_2025-05-27",
-            "SGN_v3": "/path/to/cochlea-lightsheet/trained_models/SGN/v3_cochlea_distance_unet_SGN_supervised_2026-07-10"
+            "SGN_v3": "/path/to/cochlea-lightsheet/trained_models/SGN/v3_cochlea_distance_unet_SGN_supervised_2026-07-10",
+            "SGN_v3b": "/path/to/cochlea-lightsheet/trained_models/SGN/v3_cochlea_distance_unet_SGN_supervised_2026-07-10"
         },
         "IHC": {
             "IHC_v4b": "/path/to/cochlea-lightsheet/trained_models/IHC/v4_cochlea_distance_unet_IHC_supervised_2025-07-14",
@@ -29,7 +30,8 @@
             "IHC_v7": "/path/to/cochlea-lightsheet/trained_models/IHC/v7_cochlea_distance_unet_IHC_supervised_2025-09-08",
             "IHC_v9": "/path/to/cochlea-lightsheet/trained_models/IHC/v9_cochlea_distance_unet_IHC_supervised_2026-06-12",
             "IHC_v10": "/path/to/cochlea-lightsheet/trained_models/IHC/v10_cochlea_distance_unet_IHC_supervised_2026-06-12",
-            "IHC_v11": "/path/to/cochlea-lightsheet/trained_models/IHC/v11_cochlea_distance_unet_IHC_supervised_2026-07-20"
+            "IHC_v11": "/path/to/cochlea-lightsheet/trained_models/IHC/v11_cochlea_distance_unet_IHC_supervised_2026-07-20",
+            "IHC_v11b": "/path/to/cochlea-lightsheet/trained_models/IHC/v11_cochlea_distance_unet_IHC_supervised_2026-07-20"
         },
         "Synapses": {
             "synapse_v3": "/path/to/cochlea-lightsheet/trained_models/Synapses/synapse_detection_model_v3.pt",

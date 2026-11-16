@@ -82,6 +82,12 @@ WATERSHED_DEFAULTS = {
             "distance_smoothing": "0.6"},
 }
 
+# The mask step of a group uses these placeholders as '<group>_<key>', e.g. 'sgn_legacy_mask'. The
+# default rule of cochlea-net (since 2026-11) has no threshold. The legacy rule uses the absolute
+# threshold, or an adaptive one for "None".
+MASK_PLACEHOLDER = "legacy_mask"
+MASK_DEFAULTS = {"masking_threshold": "None", MASK_PLACEHOLDER: "false"}
+
 # One entry per group of jobs. 'stain' is the default of the 'stain_<group>' parameter, 'version'
 # names the parameter which selects the model, and 'models' is the group of the settings file.
 GROUPS = {
@@ -220,6 +226,37 @@ def watershed_parameters(
 
     return {key: str(parameters[key]) for key in
             ("center_distance_threshold", "boundary_distance_threshold", "distance_smoothing")}
+
+
+def mask_parameters(
+    placeholder_values: dict,
+    prefix: str,
+) -> dict:
+    """Return the mask parameters of a group, with the defaults of `MASK_DEFAULTS`.
+
+    cochlea-net rejects a threshold without the legacy rule only when the mask job runs. This check
+    stops the deployment before a job is queued.
+
+    Args:
+        placeholder_values: Settings and parameters of the job.
+        prefix: Group in lower case, e.g. 'ihc'.
+
+    Returns:
+        dict: The placeholders `<prefix>_masking_threshold` and `<prefix>_legacy_mask`. The flag is
+            'true' or 'false', because the template compares it with 'true'.
+    """
+    threshold_key = f"{prefix}_masking_threshold"
+    legacy_key = f"{prefix}_{MASK_PLACEHOLDER}"
+    threshold = str(placeholder_values.get(threshold_key, MASK_DEFAULTS["masking_threshold"]))
+    legacy = str(placeholder_values.get(legacy_key, MASK_DEFAULTS[MASK_PLACEHOLDER])).lower()
+
+    if legacy not in ("true", "false"):
+        raise ValueError(f"'{legacy_key}' must be true or false, not '{legacy}'.")
+    if legacy == "false" and threshold != "None":
+        raise ValueError(f"'{threshold_key}' {threshold} applies only to the legacy rule of the mask. "
+                         f"Remove it, or set '{legacy_key}' to true.")
+
+    return {threshold_key: threshold, legacy_key: legacy}
 
 
 def step_row(
@@ -657,6 +694,8 @@ def prepare_step(
         # A parameter overrides a watershed value of the model, e.g. to tune one cochlea.
         for key, value in watershed_parameters(placeholder_values["model"], group).items():
             placeholder_values.setdefault(f"{group.lower()}_{key}", value)
+    if group is not None and f"{group.lower()}_{MASK_PLACEHOLDER}" in template_placeholders:
+        placeholder_values.update(mask_parameters(placeholder_values, group.lower()))
 
     # The group enters the name of a template which serves more than one group, so that the runs
     # of two groups do not share an archive folder.

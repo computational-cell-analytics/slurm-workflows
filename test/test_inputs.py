@@ -165,10 +165,10 @@ class ResolveInputTest(unittest.TestCase):
         self.assertEqual(values["cochlea_data_multi"], " ".join(files))
         self.assertEqual(values["input_key_multi"], " ".join(["setup0/timepoint0/s0"] * 3))
 
-    def ihc_step(self, download=False, definition=None, step="mask_IHC", **parameters):
+    def ihc_step(self, download=False, definition=None, step="mask_IHC", models=None, **parameters):
         values = {"data_dir": self.tmp.name, "cochlea": self.COCHLEA, "stains": self.STAINS,
                   "ihc_version": "IHC_v11", "s3_remote": "remote:bucket", **parameters}
-        settings = {"data_dir": self.tmp.name, "models": {"IHC": {"IHC_v11": "/path/to/model"}}}
+        settings = {"data_dir": self.tmp.name, "models": models or {"IHC": {"IHC_v11": "/path/to/model"}}}
         values, _, notes = self.module.prepare_step(settings, values, step_template(TEMPLATE_DIR, step),
                                                     deploy_args(download=download), definition)
         return values, " ".join(notes)
@@ -183,7 +183,7 @@ class ResolveInputTest(unittest.TestCase):
     def test_array_size_of_the_species_and_of_a_parameter(self):
         self.add(self.MULTI)
         values, _ = self.ihc_step(step="apply_IHC")
-        self.assertEqual((values["instances"], values["last_instance"]), (5, 4))
+        self.assertEqual((values["instances"], values["last_instance"]), (10, 9))
 
         values, _ = self.ihc_step(step="apply_IHC", instances="2")
         self.assertEqual((values["instances"], values["last_instance"]), ("2", 1))
@@ -206,6 +206,37 @@ class ResolveInputTest(unittest.TestCase):
         self.assertEqual(sgn["sgn_center_distance_threshold"], "0.3")
         self.assertEqual(sgn["sgn_boundary_distance_threshold"], defaults["SGN"]["boundary_distance_threshold"])
         self.assertEqual(ihc["ihc_center_distance_threshold"], defaults["IHC"]["center_distance_threshold"])
+
+    def test_mask_defaults_and_parameters(self):
+        values, _ = self.ihc_step()
+        self.assertEqual((values["ihc_masking_threshold"], values["ihc_legacy_mask"]), ("None", "false"))
+
+        values, _ = self.ihc_step(ihc_masking_threshold="150", ihc_legacy_mask="true")
+        self.assertEqual((values["ihc_masking_threshold"], values["ihc_legacy_mask"]), ("150", "true"))
+
+        # The values of a JSON parameter file.
+        values, _ = self.ihc_step(ihc_masking_threshold=150, ihc_legacy_mask=True)
+        self.assertEqual((values["ihc_masking_threshold"], values["ihc_legacy_mask"]), ("150", "true"))
+        values, _ = self.ihc_step(ihc_masking_threshold=None)
+        self.assertEqual(values["ihc_masking_threshold"], "None")
+
+    def test_mask_threshold_needs_the_legacy_rule(self):
+        with self.assertRaisesRegex(ValueError, "ihc_legacy_mask"):
+            self.ihc_step(ihc_masking_threshold=200)
+        with self.assertRaisesRegex(ValueError, "true or false"):
+            self.ihc_step(ihc_legacy_mask="on")
+
+        # Only the mask step reads the threshold, so a later step accepts an older parameter file.
+        self.add(self.MULTI)
+        values, _ = self.ihc_step(step="apply_IHC", ihc_masking_threshold=200)
+        self.assertNotIn("ihc_legacy_mask", values)
+
+    def test_alias_key_names_the_prediction(self):
+        models = {"IHC": {"IHC_v11": "/path/to/v11", "IHC_v11b": "/path/to/v11"}}
+        values, _ = self.ihc_step(models=models, ihc_version="IHC_v11b", synapse_version="synapse_v3")
+        self.assertEqual(values["model"], "/path/to/v11")
+        self.assertEqual(values["prediction_dir"], "IHC_v11b")
+        self.assertEqual(values["synapse_ihc_prediction"], "synapse_v3_ihc_v11b")
 
     def test_download_reads_the_ome_zarr(self):
         self.add(self.MULTI)

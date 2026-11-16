@@ -207,6 +207,30 @@ class ResolveInputTest(unittest.TestCase):
         self.assertEqual(sgn["sgn_boundary_distance_threshold"], defaults["SGN"]["boundary_distance_threshold"])
         self.assertEqual(ihc["ihc_center_distance_threshold"], defaults["IHC"]["center_distance_threshold"])
 
+    def test_mask_defaults_and_parameters(self):
+        values, _ = self.ihc_step()
+        self.assertEqual((values["ihc_masking_threshold"], values["ihc_legacy_mask"]), ("None", "false"))
+
+        values, _ = self.ihc_step(ihc_masking_threshold="150", ihc_legacy_mask="true")
+        self.assertEqual((values["ihc_masking_threshold"], values["ihc_legacy_mask"]), ("150", "true"))
+
+        # The values of a JSON parameter file.
+        values, _ = self.ihc_step(ihc_masking_threshold=150, ihc_legacy_mask=True)
+        self.assertEqual((values["ihc_masking_threshold"], values["ihc_legacy_mask"]), ("150", "true"))
+        values, _ = self.ihc_step(ihc_masking_threshold=None)
+        self.assertEqual(values["ihc_masking_threshold"], "None")
+
+    def test_mask_threshold_needs_the_legacy_rule(self):
+        with self.assertRaisesRegex(ValueError, "ihc_legacy_mask"):
+            self.ihc_step(ihc_masking_threshold=200)
+        with self.assertRaisesRegex(ValueError, "true or false"):
+            self.ihc_step(ihc_legacy_mask="on")
+
+        # Only the mask step reads the threshold, so a later step accepts an older parameter file.
+        self.add(self.MULTI)
+        values, _ = self.ihc_step(step="apply_IHC", ihc_masking_threshold=200)
+        self.assertNotIn("ihc_legacy_mask", values)
+
     def test_download_reads_the_ome_zarr(self):
         self.add(self.MULTI)
         values, _ = self.ihc_step(download=True, definition={"name": "ihc", "steps": ["mask_IHC", "apply_IHC"]})

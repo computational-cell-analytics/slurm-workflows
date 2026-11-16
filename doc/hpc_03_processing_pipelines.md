@@ -107,9 +107,7 @@ The archive records the values in each sbatch script anyway.
         "CTBP2"
     ],
     "sgn_version": "SGN_v3",
-    "sgn_masking_threshold": 150,
     "ihc_version": "IHC_v11",
-    "ihc_masking_threshold": 200,
     "synapse_version": "synapse_v3",
     "stain_synapses": "CTBP2"
 }
@@ -120,9 +118,9 @@ The archive records the values in each sbatch script anyway.
 | `cochlea` | yes | yes | yes | yes | The cochlea name |
 | `stains` | yes | see text | see text | see text | Every stain of the cochlea, in the order of the setups of the n5 with every stain |
 | `sgn_version` | - | yes | - | - | A key of `models.SGN` |
-| `sgn_masking_threshold` | - | yes | - | - | The absolute threshold of the mask step, `ABSOLUTE_THRESHOLD` |
+| `sgn_masking_threshold`, `sgn_legacy_mask` | - | optional | - | - | The legacy rule of the mask step, see [The mask rule](#the-mask-rule) |
 | `ihc_version` | - | - | yes | yes | A key of `models.IHC`. The `synapses` pipeline reads this IHC segmentation |
-| `ihc_masking_threshold` | - | - | yes | - | The absolute threshold of the mask step, `ABSOLUTE_THRESHOLD` |
+| `ihc_masking_threshold`, `ihc_legacy_mask` | - | - | optional | - | The legacy rule of the mask step, see [The mask rule](#the-mask-rule) |
 | `synapse_version` | - | - | - | optional | A key of `models.Synapses`. Default: `synapse_v3` |
 | `stain_SGN`, `stain_IHC`, `stain_synapses` | - | optional | optional | optional | The stain of the group. Defaults: `PV`, `Vglut3`, `CTBP2` |
 | `time`, `mem` | optional | optional | optional | optional | The resources of every step of the pipeline |
@@ -141,6 +139,32 @@ The stain does not change the model. The model version alone selects it.
 
 > [!IMPORTANT]
 > The `synapses` pipeline needs the IHC segmentation of the same cochlea. Run `ihc` first, and set `ihc_version` in the parameter file.
+
+### The mask rule
+
+The mask steps `mask_SGN` and `mask_IHC` decide which blocks the apply step predicts.
+Since cochlea-net 2026-11, the default rule needs no parameter.
+It compares each block of the stain with the background level of the cochlea, at 8x lower resolution.
+For IHC, it also adds all neighbours of each kept block, so that no IHC is cut at a block face.
+`mask_statistics.json` in the prediction folder records the threshold and the fraction of kept blocks.
+The [input mask documentation of cochlea-net](https://github.com/computational-cell-analytics/cochlea-net/blob/master/doc/input_mask.md)
+gives the analysis behind the rule.
+
+The legacy rule of cochlea-net before 2026-11 compares a percentile of each block at full resolution
+with an absolute threshold. Use it only to reproduce the mask of an older segmentation.
+The same cochlea-net change also enlarged the halos of the prediction and of the watershed, so the
+segmentation can still differ from the older one.
+
+| Value | `sgn` parameter | `ihc` parameter | Default |
+|---|---|---|---|
+| Use the legacy rule | `sgn_legacy_mask` | `ihc_legacy_mask` | `false` |
+| Absolute threshold of the legacy rule | `sgn_masking_threshold` | `ihc_masking_threshold` | `None` |
+
+With the legacy rule, `None` selects the adaptive threshold of the legacy rule.
+The legacy flag accepts `true` or `false` only.
+A number without `"sgn_legacy_mask": true` or `"ihc_legacy_mask": true` stops the deploy step with an
+error, because the default rule has no absolute threshold.
+Remove the thresholds from older parameter files, or add the legacy flag.
 
 ### The watershed values of the segmentation
 
@@ -345,6 +369,7 @@ The cochlea-net deployment adds these placeholder values to the settings and the
 | `cochlea_data`, `input_key` | The file of the cochlea folder which holds the stain, and the key of the stain in it | no |
 | `cochlea_data_multi`, `input_key_multi`, `channel_multi` | MoBIE image templates only: the file, the key and the name of each stain of `stains`, separated by spaces | no |
 | `masking` | `sgn` or `ihc`, for `mask_SGN` and `mask_IHC` | no |
+| `sgn_masking_threshold`, `sgn_legacy_mask`, and the same with `ihc_` | `mask_SGN` and `mask_IHC` only: `None` and `false`, the default rule of the mask, see [The mask rule](#the-mask-rule) | yes |
 | `synapse_version` | `synapse_v3` | yes |
 | `model` | The path of `models.<group>.<version>` | no |
 | `sgn_prediction`, `ihc_prediction`, `synapses_prediction` | The prediction folder of each group whose version is known: `<version>`, or `<stain>_<version>` for a stain which is not the default | no |

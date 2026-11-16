@@ -21,6 +21,7 @@ export OUTPUT_FOLDER=<data_dir>/predictions/<cochlea>/<prediction_dir>
 export SEG_MASKING=<masking>
 export INPUT_KEY=<input_key>
 export ABSOLUTE_THRESHOLD=<ihc_masking_threshold>
+export LEGACY_MASK=<ihc_legacy_mask>
 
 echo "Input directory: ${INPUT}"
 echo "Output directory: ${OUTPUT_FOLDER}"
@@ -37,6 +38,13 @@ if [ ! -d "$OUTPUT_FOLDER" ] ; then
 	mkdir -p "$OUTPUT_FOLDER"
 fi
 
+# The default rule of the mask has no threshold. ABSOLUTE_THRESHOLD applies to the legacy rule only.
+legacy_mask=()
+if [ "$LEGACY_MASK" = true ] ; then
+	legacy_mask=(--legacy_mask)
+fi
+
 flamingo_tools.run_unet_prediction_preprocess_slurm --input_path "$INPUT" --input_key "$INPUT_KEY" \
-	--output_folder "$OUTPUT_FOLDER" --seg_class "$SEG_MASKING" --absolute_threshold "$ABSOLUTE_THRESHOLD"
+	--output_folder "$OUTPUT_FOLDER" --seg_class "$SEG_MASKING" --absolute_threshold "$ABSOLUTE_THRESHOLD" \
+	"${legacy_mask[@]}"
 

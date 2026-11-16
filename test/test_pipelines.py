@@ -177,8 +177,8 @@ class StepRowTest(unittest.TestCase):
 
         self.assertEqual(deployment.step_row(sgn, "M"), ("SGN", {"time": "00:25:00", "mem": "96G", "instances": 10}))
         self.assertEqual(deployment.step_row(sgn, "G"), ("SGN", {"time": "01:30:00", "mem": "128G", "instances": 10}))
-        self.assertEqual(deployment.step_row(ihc, "M")[1]["instances"], 4)
-        self.assertEqual(deployment.step_row(ihc, "G")[1]["instances"], 5)
+        self.assertEqual(deployment.step_row(ihc, "M")[1]["instances"], 6)
+        self.assertEqual(deployment.step_row(ihc, "G")[1]["instances"], 10)
 
     def test_template_without_row_raises(self):
         with tempfile.TemporaryDirectory() as tmp:

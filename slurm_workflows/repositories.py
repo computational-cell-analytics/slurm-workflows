@@ -69,13 +69,37 @@ def job_repositories(
     return repositories
 
 
+def get_repository_status(
+    repo_path: str,
+) -> str:
+    """Return the git status of a repository.
+
+    'clean': no changes. 'untracked': only untracked files. 'dirty': changes to tracked files.
+    `untracked` excludes files matched by .gitignore.
+
+    Args:
+        repo_path: Local path of the repository.
+
+    Returns:
+        str: 'clean', 'untracked' or 'dirty'.
+    """
+    git_status_out = subprocess.run(["git", "status", "--porcelain", "--untracked-files=normal"],
+                                    cwd=repo_path, stdout=subprocess.PIPE).stdout.decode("utf-8")
+    git_status_lines = git_status_out.splitlines()
+    if len(git_status_lines) == 0:
+        return "clean"
+    if all(line.startswith("??") for line in git_status_lines):
+        return "untracked"
+    return "dirty"
+
+
 def add_repository_status(
     metadict: dict,
     repositories: dict,
 ) -> None:
     """Add the git hash and the status of each repository to the metadata.
 
-    The status is 'clean' or 'dirty'.
+    The status is 'clean', 'untracked' or 'dirty'.
 
     Args:
         metadict: Metadata of the job.
@@ -98,9 +122,7 @@ def add_repository_status(
             print(f"Warning: the git hash of {repo_name} is not recorded: {result.stderr.strip()}")
             continue
         repo_version = result.stdout
-        git_status_out = subprocess.run(["git", "status", "--porcelain"],
-                                        cwd=repo_path, stdout=subprocess.PIPE).stdout.decode("utf-8")
-        git_status = "clean" if len(git_status_out) == 0 else "dirty"
+        git_status = get_repository_status(repo_path)
 
         repo_list.append({"repo_name": repo_name,
                           "repo_version": repo_version.strip(),

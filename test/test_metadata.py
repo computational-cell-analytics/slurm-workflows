@@ -12,7 +12,7 @@ import unittest
 from unittest import mock
 
 from slurm_workflows.metadata import init_metadict, read_metadata, write_metadata
-from slurm_workflows.repositories import job_repositories
+from slurm_workflows.repositories import get_repository_status, job_repositories
 from slurm_workflows.slurm import jobids_from_log, reportseff_from_jobid, add_sbatch_parameters
 from stubs import REPOSITORY_DIR, WRITE_METADATA, reportseff_calls, run, set_reportseff_output, stub_env
 from stubs import write_file
@@ -270,6 +270,28 @@ class RepositoriesTest(unittest.TestCase):
 
         repositories = job_repositories({"repositories": {"slurm-workflows": "/other"}})
         self.assertEqual(repositories, {"slurm-workflows": REPOSITORY_DIR})
+
+    def git(self, repository, *args):
+        identity = ["-c", "user.name=test", "-c", "user.email=test@example.org"]
+        result = run(["git", "-C", repository] + identity + list(args))
+        self.assertEqual(result.returncode, 0, result.stderr)
+
+    def test_get_repository_status(self):
+        repository = os.path.join(self.tmp.name, "repository")
+        write_file(os.path.join(repository, ".gitignore"), "ignored.txt\n")
+        write_file(os.path.join(repository, "tracked.txt"), "first\n")
+        self.git(repository, "init", "-q")
+        self.git(repository, "add", ".")
+        self.git(repository, "commit", "-q", "-m", "first")
+
+        write_file(os.path.join(repository, "ignored.txt"))
+        self.assertEqual(get_repository_status(repository), "clean")
+
+        write_file(os.path.join(repository, "new", "untracked.txt"))
+        self.assertEqual(get_repository_status(repository), "untracked")
+
+        write_file(os.path.join(repository, "tracked.txt"), "second\n")
+        self.assertEqual(get_repository_status(repository), "dirty")
 
 
 if __name__ == "__main__":

@@ -59,7 +59,7 @@ The keys are lower case with underscores.
 | `job_name`, `runtime`, `partition`, `gpu`, ... | `#SBATCH` lines | See [the #SBATCH forms](new_template.md#3-keep-the-sbatch-lines-which-the-archive-reads) |
 | `jobid` | `log.txt` | The latest JobID |
 | `reportseff` | `reportseff` | One entry per job or array task: `jobid`, `state`, `elapsed`, `time_eff`, `cpu_eff`, `mem_eff`. A task of an array which never started has a JobID such as `<jobid>_[9]`. An entry with the state `UNTRACKED` also has `last_state`, see update_metadata.py |
-| `repositories` | `git` | One entry per repository: `repo_name`, `repo_version` (the git hash), `status` (`clean` or `dirty`) |
+| `repositories` | `git` | One entry per repository: `repo_name`, `repo_version` (the git hash), `status` (`clean`, `untracked` or `dirty`) |
 | `environment_hash` | `environment.yml`, `pip_freeze.txt` | The sha256 hash of the package list: the dependencies of `environment.yml` and `pip_freeze.txt`. Jobs with the same packages have the same hash, also in a renamed or cloned environment |
 | `project` | Deploy step | The project, e.g. `cochlea-net` |
 | `pipeline` | Deploy step | Only for a step of a pipeline: `name` of the pipeline, `run` (the JobID of the first step of the deploy call), `step` and `of` (the number of the step and of all steps of the deploy call), `step_name` (the template, e.g. `segment_IHC`), `start_at` (after `--start-at`), `depends_on` (the JobID of the previous step), and `failed_at`, see update_metadata.py |

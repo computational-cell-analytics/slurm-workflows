@@ -213,13 +213,21 @@ class DeploySubmissionTest(unittest.TestCase):
                          {"name": "train_evaluate", "run": str(FIRST_JOBID), "step": 1, "of": 1,
                           "step_name": "evaluate", "start_at": "evaluate"})
 
-    def test_failed_archiving_cancels_the_job(self):
-        with self.assertRaisesRegex(ValueError, "Archiving failed"):
-            self.deploy(os.path.join(self.tmp.name, "none"))
+    def test_failed_submission_of_step_2_releases_step_1(self):
+        submit = deploy.submit
+
+        def submit_step_1_only(sbatch_file, dependency, hold):
+            if dependency is not None:
+                raise ValueError("stub failure")
+            return submit(sbatch_file, dependency, hold)
+
+        with mock.patch.object(deploy, "submit", side_effect=submit_step_1_only):
+            with self.assertRaisesRegex(ValueError, "stub failure"):
+                self.deploy(self.archive_dir, MOCKUP_PIPELINE)
 
         self.assertEqual(len(sbatch_calls(self.env)), 1)
-        self.assertEqual(scontrol_calls(self.env), [])
-        self.assertEqual(scancel_calls(self.env), [str(FIRST_JOBID)])
+        self.assertEqual(scontrol_calls(self.env), [f"release {FIRST_JOBID}"])
+        self.assertEqual(scancel_calls(self.env), [])
 
     def test_failed_archiving_of_step_2_cancels_both_steps(self):
         with mock.patch.object(deploy, "archive_submitted_job", side_effect=[None, ValueError("stub failure")]):

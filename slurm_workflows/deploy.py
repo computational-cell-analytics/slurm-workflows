@@ -91,8 +91,8 @@ def deploy_jobs(
        archive directory.
     3. Print the warnings, then the notes. A dry run stops here.
     4. Stop if a check gave a warning, unless `--force` is given.
-    5. Submit each step with a dependency on the previous step, and archive it. The first step is held until all steps
-        are archived. A failed archive cancels all submitted steps.
+    5. Submit each step with a dependency on the previous step, and archive it. The first step is held
+        until all steps are archived. A failed archive cancels all submitted steps.
 
     Args:
         args: Parsed command line options of `slurm_wf.deploy`, including the options of the project.
@@ -187,7 +187,13 @@ def deploy_jobs(
     run = None
     jobids = []
     for step_index, sbatch_file in enumerate(sbatch_files, start=1):
-        jobid = submit(sbatch_file, dependency, hold=bool(archive_dir) and run is None)
+        try:
+            # Only step 1 is held, subsequent steps are submitted with dependency on the previous step.
+            jobid = submit(sbatch_file, dependency, hold=bool(archive_dir) and run is None)
+        except ValueError:
+            if archive_dir and run is not None:
+                release_job(run)
+            raise
         jobids.append(jobid)
         print(f"Step {step_index} of {len(sbatch_files)} submitted as JobID {jobid}.")
         if run is None:

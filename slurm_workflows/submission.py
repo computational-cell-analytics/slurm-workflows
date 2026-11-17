@@ -21,6 +21,7 @@ from slurm_workflows.slurm import jobids_from_log
 ACTIVATE_PATTERN = re.compile(r"^\s*(?:micromamba|mamba|conda|source)\s+activate\s+(\S+)")
 
 ENVIRONMENT_FILE = "environment.yml"
+PIP_FILE = "pip_freeze.txt"
 
 
 def job_name_parts(
@@ -264,13 +265,43 @@ def environment_export(
     return result.stdout
 
 
+@functools.lru_cache(maxsize=None)
+def freeze_pip_packages(
+    environment: str,
+) -> str:
+    """Freeze the pip packages of a micromamba environment. The result is cached, because every step of a chain
+    uses it.
+
+    The freeze gives the git commit of a package installed from git. It leaves out editable installs and conda packages.
+
+    Args:
+        environment: Name or path of the environment.
+
+    Returns:
+        str: The output of `pip freeze`.
+    """
+    executable = os.environ.get("MAMBA_EXE") or shutil.which("micromamba")
+    if executable is None:
+        raise ValueError("micromamba was not found.")
+
+    option = "-p" if os.sep in environment else "-n"
+    result = subprocess.run([executable, "run", option, environment, "python", "-m", "pip", "freeze",
+                             "--exclude-editable"],
+                            stdout=subprocess.PIPE, stderr=subprocess.PIPE, universal_newlines=True)
+    if result.returncode != 0:
+        raise ValueError(result.stderr.strip())
+
+    return "".join(line for line in result.stdout.splitlines(keepends=True) if " @ file://" not in line)
+
+
 def export_environment(
     sbatch_file: str,
     folder: str,
 ) -> None:
-    """Write the export of the environment which a job activates to `environment.yml` in its archive folder.
+    """Write the export of the environment which a job activates to `environment.yml` in its archive folder,
+    and its pip packages to `pip_freeze.txt`.
 
-    A failed export gives a warning, because the job is already submitted.
+    A failed export or freeze gives a warning, because the job is already submitted.
 
     Args:
         sbatch_file: Path of the sbatch script.
@@ -293,6 +324,15 @@ def export_environment(
 
     with open(os.path.join(folder, ENVIRONMENT_FILE), "w") as myfile:
         myfile.write(export)
+
+    try:
+        pip_packages = freeze_pip_packages(environment)
+    except ValueError as exc:
+        print(f"Warning: the pip packages of the environment {environment} are not archived. {exc}")
+        return
+
+    with open(os.path.join(folder, PIP_FILE), "w") as myfile:
+        myfile.write(pip_packages)
 
 
 def archive_submitted_job(

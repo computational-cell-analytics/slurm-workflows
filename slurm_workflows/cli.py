@@ -194,7 +194,8 @@ def main_submit():
     parser = argparse.ArgumentParser(
         description="Submit an sbatch script and add its JobID to the log file <date>_log_<suffix>.txt beside it. "
         "With -a, the files of the job, its environment and its metadata are archived in "
-        "<archive_dir>/<date>_<suffix>/. The sbatch script follows the format <date>_sbatch_<suffix>.sbatch.")
+        "<archive_dir>/<date>_<suffix>/, and the job is held until it is archived. "
+        "The sbatch script follows the format <date>_sbatch_<suffix>.sbatch.")
 
     parser.add_argument("sbatch_file", type=str, help="The sbatch script.")
 

@@ -141,7 +141,8 @@ def add_repository_status(
 
     for repo_name, repo_path in repositories.items():
         if not os.path.isdir(repo_path):
-            print(f"Warning: repository path {repo_path} of {repo_name} is not a directory. Its git hash is not recorded.")
+            print(f"Warning: repository path {repo_path} of {repo_name} is not a directory. "
+                  "Its git hash is not recorded.")
             continue
 
         result = subprocess.run(["git", "rev-parse", "HEAD"], cwd=repo_path, stdout=subprocess.PIPE,

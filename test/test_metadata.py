@@ -15,7 +15,7 @@ from slurm_workflows.metadata import init_metadict, read_metadata, write_metadat
 from slurm_workflows.repositories import get_repository_status, job_repositories
 from slurm_workflows.slurm import jobids_from_log, reportseff_from_jobid, add_sbatch_parameters
 from stubs import REPOSITORY_DIR, WRITE_METADATA, reportseff_calls, run, set_reportseff_output, stub_env
-from stubs import write_file
+from stubs import MOCKUP_SETTINGS, write_file
 
 REPORT_LINES = [
     "JobID State Elapsed TimeEff CPUEff MemEff",
@@ -237,13 +237,27 @@ class WriteMetadataTest(unittest.TestCase):
 
         self.assertEqual(self.metadata()["repositories"][0]["repo_version"], self.git(repository, "rev-parse", "HEAD"))
 
-    def test_missing_repository_file_keeps_git_hash(self):
+    def test_settings_refresh_git_hash(self):
+        env = stub_env(self.tmp.name)
+        repository = self.repository()
+        with open(MOCKUP_SETTINGS) as myfile:
+            settings = json.load(myfile)
+        settings["repositories"] = {"tool": repository}
+        settings_file = write_file(os.path.join(self.tmp.name, "settings.json"), json.dumps(settings))
+
+        run([sys.executable, WRITE_METADATA, "-s", settings_file, self.archived], env=env)
+        self.git(repository, "commit", "-q", "--allow-empty", "-m", "second")
+        result = run([sys.executable, WRITE_METADATA, "-s", settings_file, self.archived], env=env)
+
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(self.metadata()["repositories"][0]["repo_version"], self.git(repository, "rev-parse", "HEAD"))
+
+    def test_without_repositories_keeps_git_hash(self):
         env = stub_env(self.tmp.name)
         repository_file = write_file(os.path.join(self.tmp.name, "repositories.txt"), f"tool\t{self.repository()}\n")
         run([sys.executable, WRITE_METADATA, "-r", repository_file, self.archived], env=env)
 
-        result = run([sys.executable, WRITE_METADATA, "-r", os.path.join(self.tmp.name, "none.txt"), self.archived],
-                     env=env)
+        result = run([sys.executable, WRITE_METADATA, self.archived], env=env)
 
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertEqual(self.metadata()["repositories"][0]["repo_name"], "tool")

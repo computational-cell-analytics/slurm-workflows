@@ -13,7 +13,7 @@ from datetime import datetime
 from slurm_workflows.deploy import deploy_jobs, project_module
 from slurm_workflows.metadata import write_job_metadata
 from slurm_workflows.pipelines import pipeline_names, resolve_pipeline
-from slurm_workflows.repositories import check_dirty, job_repositories, read_repository_file
+from slurm_workflows.repositories import check_dirty, job_repositories
 from slurm_workflows.settings import load_settings
 from slurm_workflows.submission import archive_job, archive_submitted_job, cancel_jobs, release_job, submit
 from slurm_workflows.summary import summarize
@@ -111,15 +111,20 @@ def main_write_metadata():
                         help="JobID of the efficiency report. Default: the last JobID of log.txt.")
     parser.add_argument("-r", "--repository-file", type=str, default=None,
                         help="File of the git repositories to track. Each line holds a name and a path, "
-                             "separated by whitespace, e.g. a tab. Without it, the recorded hashes stay.")
+                             "separated by whitespace, e.g. a tab. Without -s and -r, the recorded hashes stay.")
     parser.add_argument("-s", "--settings", type=str, default=None,
-                        help="Settings file of the project, which names the HPC user.")
+                        help="Settings file of the project, which names the HPC user and the git "
+                             "repositories to track.")
     parser.add_argument("--overwrite", action="store_true",
                         help="Create the metadata anew, instead of updating an existing file.")
     args = parser.parse_args()
 
     try:
-        repositories = None if args.repository_file is None else read_repository_file(args.repository_file)
+        settings = {} if args.settings is None else load_settings(args.settings)
+        if args.settings is None and args.repository_file is None:
+            repositories = None
+        else:
+            repositories = job_repositories(settings, args.repository_file)
         write_job_metadata(args.archive_folder, args.output, args.jobid, repositories, args.overwrite, args.settings)
     except (FileNotFoundError, ValueError) as exc:
         sys.exit(str(exc))

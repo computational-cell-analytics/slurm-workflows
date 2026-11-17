@@ -247,9 +247,11 @@ mkdir my_archive
    python scripts/write_metadata.py --repository-file mockup_example/repository_list.txt \
        --settings mockup_example/project_settings/mockup.json my_archive/YYYY-MM-DD_train/
    ```
-   The settings file gives the HPC user.
-   The repository file gives the repositories whose git hash the archive records.
+   The settings file gives the HPC user and the repositories of its `repositories` entry.
+   The repository file gives more repositories.
    Each line holds a name and a path, separated by whitespace, e.g. a tab.
+   With `--settings` or `--repository-file`, the archive records the git hash of these repositories and of
+   slurm-workflows. Without both, the recorded hashes stay.
 
 ## Older archives
 

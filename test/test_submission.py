@@ -19,7 +19,7 @@ from slurm_workflows import deploy
 from slurm_workflows.projects import default
 from slurm_workflows.submission import environment_export, freeze_pip_packages
 from stubs import (FIRST_JOBID, MOCKUP_PARAMS, MOCKUP_PIPELINE, MOCKUP_SETTINGS, MOCKUP_TEMPLATE, SUBMIT_SCRIPT,
-                   read_file, run, sbatch_calls, stub_env, write_file)
+                   read_file, run, sbatch_calls, scancel_calls, scontrol_calls, stub_env, write_file)
 
 DATE = "2025-01-01"
 SBATCH_NAME = f"{DATE}_sbatch_x.sbatch"
@@ -67,6 +67,20 @@ class SubmitJobTest(unittest.TestCase):
         self.submit()
 
         self.assertEqual(read_file(self.log_file), f"7\n{FIRST_JOBID}\n")
+
+    def test_job_without_archive_is_not_held(self):
+        self.submit()
+
+        self.assertNotIn("--hold", sbatch_calls(self.env)[0])
+        self.assertEqual(scontrol_calls(self.env), [])
+
+    def test_archived_job_is_held_and_released(self):
+        result = self.submit("-a", self.archive_dir)
+
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertIn("--hold", sbatch_calls(self.env)[0])
+        self.assertEqual(scontrol_calls(self.env), [f"release {FIRST_JOBID}"])
+        self.assertEqual(scancel_calls(self.env), [])
 
     def test_dependency(self):
         self.submit("-d", "7")
@@ -116,15 +130,26 @@ class SubmitJobTest(unittest.TestCase):
         with open(os.path.join(folder, "metadata.json")) as myfile:
             self.assertEqual(json.load(myfile)["environment_hash"], ENVIRONMENT_HASH)
 
-    def test_failed_archiving_is_reported(self):
+    def test_failed_archiving_cancels_the_job(self):
         result = self.submit("-a", os.path.join(self.tmp.name, "none"))
 
         self.assertEqual(result.returncode, 1)
-        self.assertIn(f"Job {FIRST_JOBID} was submitted", result.stderr)
+        self.assertIn(f"job {FIRST_JOBID} failed, so the job was cancelled", result.stderr)
+        self.assertEqual(scontrol_calls(self.env), [])
+        self.assertEqual(scancel_calls(self.env), [str(FIRST_JOBID)])
+
+    def test_failed_release_cancels_the_job(self):
+        self.env["SCONTROL_EXIT"] = "1"
+
+        result = self.submit("-a", self.archive_dir)
+
+        self.assertEqual(result.returncode, 1)
+        self.assertEqual(scontrol_calls(self.env), [f"release {FIRST_JOBID}"])
+        self.assertEqual(scancel_calls(self.env), [str(FIRST_JOBID)])
 
 
 class DeploySubmissionTest(unittest.TestCase):
-    """`deploy_jobs()` submits and archives in one process, and the chain goes on if only the archiving fails."""
+    """`deploy_jobs()` submits and archives in one process. A failed archive or release cancels all steps."""
 
     def setUp(self):
         self.tmp = tempfile.TemporaryDirectory()
@@ -169,7 +194,11 @@ class DeploySubmissionTest(unittest.TestCase):
     def test_pipeline_is_a_chain(self):
         self.deploy(self.archive_dir, MOCKUP_PIPELINE)
 
+        self.assertIn("--hold", sbatch_calls(self.env)[0])
+        self.assertNotIn("--hold", sbatch_calls(self.env)[1])
         self.assertIn(f"--dependency=afterok:{FIRST_JOBID}", sbatch_calls(self.env)[1])
+        self.assertEqual(scontrol_calls(self.env), [f"release {FIRST_JOBID}"])
+        self.assertEqual(scancel_calls(self.env), [])
         run = str(FIRST_JOBID)
         self.assertEqual(self.archived_metadata("train")["pipeline"],
                          {"name": "train_evaluate", "run": run, "step": 1, "of": 2, "step_name": "train"})
@@ -184,10 +213,30 @@ class DeploySubmissionTest(unittest.TestCase):
                          {"name": "train_evaluate", "run": str(FIRST_JOBID), "step": 1, "of": 1,
                           "step_name": "evaluate", "start_at": "evaluate"})
 
-    def test_job_is_submitted_if_archiving_fails(self):
-        self.deploy(os.path.join(self.tmp.name, "none"))
+    def test_failed_archiving_cancels_the_job(self):
+        with self.assertRaisesRegex(ValueError, "Archiving failed"):
+            self.deploy(os.path.join(self.tmp.name, "none"))
 
         self.assertEqual(len(sbatch_calls(self.env)), 1)
+        self.assertEqual(scontrol_calls(self.env), [])
+        self.assertEqual(scancel_calls(self.env), [str(FIRST_JOBID)])
+
+    def test_failed_archiving_of_step_2_cancels_both_steps(self):
+        with mock.patch.object(deploy, "archive_submitted_job", side_effect=[None, ValueError("stub failure")]):
+            with self.assertRaisesRegex(ValueError, "Archiving failed"):
+                self.deploy(self.archive_dir, MOCKUP_PIPELINE)
+
+        self.assertEqual(scontrol_calls(self.env), [])
+        self.assertEqual(scancel_calls(self.env), [f"{FIRST_JOBID} {FIRST_JOBID + 1}"])
+
+    def test_failed_release_cancels_all_steps(self):
+        self.env["SCONTROL_EXIT"] = "1"
+
+        with self.assertRaisesRegex(ValueError, "Release failed"):
+            self.deploy(self.archive_dir, MOCKUP_PIPELINE)
+
+        self.assertEqual(scontrol_calls(self.env), [f"release {FIRST_JOBID}"])
+        self.assertEqual(scancel_calls(self.env), [f"{FIRST_JOBID} {FIRST_JOBID + 1}"])
 
     def test_missing_archive_dir_stops_the_chain(self):
         with mock.patch.object(deploy, "check_job_input", return_value=[]):

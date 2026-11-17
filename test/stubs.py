@@ -2,7 +2,7 @@
 # -- coding: utf-8 --
 """Shared helpers of the tests: stub commands for the cluster tools, and access to the scripts.
 
-The stubs replace `sbatch`, `reportseff` and `micromamba`, so the tests run on any machine.
+The stubs replace `sbatch`, `scontrol`, `scancel`, `reportseff` and `micromamba`, so the tests run on any machine.
 """
 import os
 import subprocess
@@ -36,6 +36,19 @@ fi
 count=$(cat "$STUB_STATE"/count 2>/dev/null || echo 0)
 echo $((count + 1)) > "$STUB_STATE"/count
 echo "$(({FIRST_JOBID} + count));cluster"
+"""
+
+# Record the arguments of each call in 'scontrol_calls' and 'scancel_calls' of the state directory.
+# A non-zero SCONTROL_EXIT makes the release fail.
+SCONTROL_STUB = """#!/bin/bash
+echo "$@" >> "$STUB_STATE"/scontrol_calls
+if [ "${SCONTROL_EXIT:-0}" != 0 ] ; then
+    echo "scontrol: error: stub failure" >&2
+    exit "$SCONTROL_EXIT"
+fi
+"""
+SCANCEL_STUB = """#!/bin/bash
+echo "$@" >> "$STUB_STATE"/scancel_calls
 """
 
 # Prints the file 'reportseff' of the state directory, which a test fills with report lines. The real
@@ -88,8 +101,8 @@ def stub_env(
 ) -> dict:
     """Create the stub commands and return an environment which finds them first.
 
-    The PATH holds only the stubs and the system directories, so a real `sbatch`, `reportseff` or
-    `micromamba` is never called.
+    The PATH holds only the stubs and the system directories, so a real `sbatch`, `scontrol`, `scancel`,
+    `reportseff` or `micromamba` is never called.
 
     Args:
         tmp_dir: Temporary directory of the test.
@@ -104,6 +117,8 @@ def stub_env(
     os.makedirs(state_dir, exist_ok=True)
 
     write_executable(os.path.join(bin_dir, "sbatch"), SBATCH_STUB)
+    write_executable(os.path.join(bin_dir, "scontrol"), SCONTROL_STUB)
+    write_executable(os.path.join(bin_dir, "scancel"), SCANCEL_STUB)
     if reportseff:
         write_executable(os.path.join(bin_dir, "reportseff"), REPORTSEFF_STUB)
     micromamba = os.path.join(bin_dir, "micromamba")
@@ -131,6 +146,42 @@ def sbatch_calls(
         list: One string per call.
     """
     path = os.path.join(env["STUB_STATE"], "sbatch_calls")
+    if not os.path.isfile(path):
+        return []
+    with open(path, "r") as myfile:
+        return myfile.read().splitlines()
+
+
+def scontrol_calls(
+    env: dict,
+) -> list:
+    """Return the arguments of each call of the `scontrol` stub.
+
+    Args:
+        env: Output of `stub_env()`.
+
+    Returns:
+        list: One string per call.
+    """
+    path = os.path.join(env["STUB_STATE"], "scontrol_calls")
+    if not os.path.isfile(path):
+        return []
+    with open(path, "r") as myfile:
+        return myfile.read().splitlines()
+
+
+def scancel_calls(
+    env: dict,
+) -> list:
+    """Return the arguments of each call of the `scancel` stub.
+
+    Args:
+        env: Output of `stub_env()`.
+
+    Returns:
+        list: One string per call.
+    """
+    path = os.path.join(env["STUB_STATE"], "scancel_calls")
     if not os.path.isfile(path):
         return []
     with open(path, "r") as myfile:

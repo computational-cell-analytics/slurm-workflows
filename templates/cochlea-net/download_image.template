@@ -24,7 +24,12 @@ INPUT=<cochlea>/images/ome-zarr/<stain>.ome.zarr
 OUTPUT=<data_dir>/<cochlea>/<stain>.ome.zarr
 STAIN=<stain>
 
-echo "Download of $S3_REMOTE/$INPUT to $OUTPUT"
+# The OME-Zarr has about 300k chunks of about 130 KiB. The latency of each chunk limits the rate,
+# not the CPU or the bandwidth, so more parallel transfers give a higher rate. The stats give one
+# line per minute with a time stamp.
+RCLONE_OPTIONS=(--transfers=16 --checkers=16 --stats=1m --stats-one-line --stats-log-level=NOTICE)
+
+echo "Download of $S3_REMOTE/$INPUT to $OUTPUT on node $(hostname)"
 
 module load rclone
 
@@ -41,8 +46,8 @@ fi
 # A new download goes to a temporary folder first, so that an interrupted job leaves no partial
 # OUTPUT, which a later deployment would read.
 if [ -e "$OUTPUT" ] ; then
-	rclone --progress copyto "$S3_REMOTE/$INPUT" "$OUTPUT" || exit 1
+	rclone "${RCLONE_OPTIONS[@]}" copyto "$S3_REMOTE/$INPUT" "$OUTPUT" || exit 1
 else
-	rclone --progress copyto "$S3_REMOTE/$INPUT" "$OUTPUT.part" || exit 1
+	rclone "${RCLONE_OPTIONS[@]}" copyto "$S3_REMOTE/$INPUT" "$OUTPUT.part" || exit 1
 	mv -T "$OUTPUT.part" "$OUTPUT" || exit 1
 fi

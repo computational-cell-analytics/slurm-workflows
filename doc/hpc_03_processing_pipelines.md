@@ -349,6 +349,7 @@ The check needs `rclone`, so run `module load rclone` first.
 `<data_dir>/<cochlea>/<stain>.ome.zarr`, and the other steps read it.
 An interrupted download stays in `<stain>.ome.zarr.part`, so no step reads a partial copy.
 A rerun completes it.
+The slurm output gives the node and one line per minute with the transferred size and the rate.
 `--download` needs a group, so it does not work with the `mobie` pipeline.
 
 `--cleanup-input` adds the step `cleanup_input` at the end of the chain, which removes the image data

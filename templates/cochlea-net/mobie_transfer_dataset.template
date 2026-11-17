@@ -29,7 +29,12 @@ CHANNEL_ARR=(<channel_multi>)
 S3_REMOTE=<s3_remote>
 BUCKET_NAME="${S3_REMOTE#*:}"
 
-echo "Transfer of <cochlea> from ""$MOBIE_PROJECT"" to S3"
+# The OME-Zarr data has several 100k chunks of about 130 KiB. The latency of each chunk limits the
+# rate, not the CPU or the bandwidth, so more parallel transfers give a higher rate. The stats give
+# one line per minute with a time stamp.
+RCLONE_OPTIONS=(--transfers=16 --checkers=16 --stats=1m --stats-one-line --stats-log-level=NOTICE)
+
+echo "Transfer of <cochlea> from ""$MOBIE_PROJECT"" to S3 on node $(hostname)"
 
 for path in "$INPUT" ; do
 	if [ ! -e "$path" ] ; then
@@ -51,7 +56,7 @@ sed -i 's/65535/1400/g' "$INPUT"
 mobie.add_remote_metadata -s <service_endpoint> -b "$BUCKET_NAME" -i "$MOBIE_PROJECT" || exit 1
 
 module load rclone
-rclone --progress copyto "$MOBIE_PROJECT"/<cochlea>/images/ome-zarr <s3_remote>/<cochlea>/images/ome-zarr || exit 1
+rclone "${RCLONE_OPTIONS[@]}" copyto "$MOBIE_PROJECT"/<cochlea>/images/ome-zarr <s3_remote>/<cochlea>/images/ome-zarr || exit 1
 
 # The dataset.json and the project.json of the S3 bucket list the sources and the datasets of every
 # local MoBIE project. The local files must not replace them, so only the stains and the name of

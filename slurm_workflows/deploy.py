@@ -15,7 +15,7 @@ from slurm_workflows import REPOSITORY_DIR
 from slurm_workflows.inputs import check_external_input, check_job_input, check_output_absent
 from slurm_workflows.pipelines import load_pipeline, resolve_pipeline, steps_starting_at
 from slurm_workflows.projects import default
-from slurm_workflows.repositories import job_repositories
+from slurm_workflows.repositories import check_dirty, job_repositories
 from slurm_workflows.settings import blueprint_settings_file, load_settings, settings_file, settings_to_placeholders
 from slurm_workflows.submission import archive_submitted_job, cancel_jobs, release_job, submit
 from slurm_workflows.templates import render_template, step_template
@@ -90,8 +90,9 @@ def deploy_jobs(
     2. Check the scripts with the generic checks and `check_steps()` of the project, and check the
        archive directory.
     3. Print the warnings, then the notes. A dry run stops here.
-    4. Stop if a check gave a warning, unless `--force` is given.
-    5. Submit each step with a dependency on the previous step, and archive it. The first step is held
+    4. Stop if a tracked repository is dirty, unless `--allow-dirty` is given.
+    5. Stop if a check gave a warning, unless `--force` is given.
+    6. Submit each step with a dependency on the previous step, and archive it. The first step is held
         until all steps are archived. A failed archive cancels all submitted steps.
 
     Args:
@@ -153,6 +154,12 @@ def deploy_jobs(
         if archive_dir and not os.path.isdir(archive_dir):
             warnings.append(f"the archive directory {archive_dir} does not exist, so the jobs would not be archived")
 
+        repositories = job_repositories(settings, args.repository_file)
+        dirty = check_dirty(repositories, settings.get("untracked_files_dirty", False))
+        dirty_message = None
+        if dirty and not args.allow_dirty:
+            dirty_message = f"Dirty repositories: {', '.join(dirty)}. Pass --allow-dirty to submit anyway."
+
         if not args.submit:
             for sbatch_file, placeholder_values in zip(sbatch_files, step_values):
                 print(f"Placeholder values of {sbatch_file}: {placeholder_values}")
@@ -162,12 +169,17 @@ def deploy_jobs(
         # The warnings and the notes come last, so that the details of the dry run do not hide them.
         for message in warnings:
             print(f"Warning: {message}")
+        if dirty_message is not None and not args.submit:
+            print(f"Warning: {dirty_message}")
         for message in notes:
             print(f"Note: {message}")
 
         if not args.submit:
             print("Nothing is submitted. Use --submit to submit the jobs.")
             return
+
+        if dirty_message is not None:
+            raise ValueError(dirty_message)
 
         if warnings and not args.force:
             raise ValueError("The checks gave warnings, see above. Use --force to submit the jobs anyway.")
@@ -179,8 +191,6 @@ def deploy_jobs(
 
     if not archive_dir:
         print("Warning: no archive directory is set. The jobs are not archived.")
-
-    repositories = job_repositories(settings, args.repository_file)
 
     dependency = None
 

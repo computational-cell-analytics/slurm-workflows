@@ -64,6 +64,8 @@ def main_deploy():
     parser.add_argument("--force", action="store_true",
                         help="Submit the jobs even if a check gives a warning, e.g. because the input data "
                              "does not exist or a previous result exists.")
+    parser.add_argument("--allow-dirty", action="store_true",
+                        help="Submit the jobs even if a tracked git repository is dirty.")
 
     # The project adds its own options, so it is resolved before the full parse. The pre-parser
     # has no help and no required option, so that '-h' lists the options of the project as well.

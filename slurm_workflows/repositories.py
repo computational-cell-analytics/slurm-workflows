@@ -87,7 +87,7 @@ def get_repository_status(
         raise ValueError(f"Repository path {repo_path} is not a directory.")
 
     result = subprocess.run(["git", "status", "--porcelain", "--untracked-files=normal"], cwd=repo_path,
-                            stdout=subprocess.PIPE, tstderr=subprocess.PIPE, universal_newlines=True)
+                            stdout=subprocess.PIPE, stderr=subprocess.PIPE, universal_newlines=True)
     if result.returncode != 0:
         raise ValueError(f"Failed to check the git status of {repo_path}: {result.stderr.strip()}")
 

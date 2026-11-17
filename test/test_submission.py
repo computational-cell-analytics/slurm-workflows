@@ -170,7 +170,7 @@ class DeploySubmissionTest(unittest.TestCase):
         args = argparse.Namespace(input=MOCKUP_TEMPLATE if pipeline is None else None, pipeline=pipeline,
                                   params=MOCKUP_PARAMS, settings=MOCKUP_SETTINGS, archive_dir=archive_dir,
                                   repository_file=None, submit=True, allow_missing=False, start_at=start_at,
-                                  force=force)
+                                  force=force, allow_dirty=False)
         with mock.patch.dict(os.environ, self.env), contextlib.redirect_stdout(io.StringIO()):
             deploy.deploy_jobs(args, "mockup", default)
 

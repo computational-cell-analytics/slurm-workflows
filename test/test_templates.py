@@ -18,7 +18,7 @@ from slurm_workflows.projects import default
 from slurm_workflows.settings import load_settings, settings_to_placeholders
 from slurm_workflows.templates import fill_placeholders, placeholders_in, render_template
 from stubs import (MOCKUP_DIR, MOCKUP_PARAMS, MOCKUP_PIPELINE, MOCKUP_SETTINGS, MOCKUP_TEMPLATE, REPOSITORY_DIR,
-                   read_file, run, write_file)
+                   patched_command, read_file, run, write_file)
 
 MOCKUP_SBATCH = os.path.join(MOCKUP_DIR, "YYYY-MM-DD_sbatch_train.sbatch")
 DEPLOY_SCRIPT = os.path.join(REPOSITORY_DIR, "scripts", "deploy.py")
@@ -132,7 +132,7 @@ class MockupTest(unittest.TestCase):
         self.tmp.cleanup()
 
     def deploy(self, parameter_file):
-        cmd = [sys.executable, DEPLOY_SCRIPT, "-i", MOCKUP_TEMPLATE, "-j", parameter_file, "-s", MOCKUP_SETTINGS]
+        cmd = patched_command(DEPLOY_SCRIPT) + ["-i", MOCKUP_TEMPLATE, "-j", parameter_file, "-s", MOCKUP_SETTINGS]
         return run(cmd, cwd=self.tmp.name)
 
     def test_render_matches_committed_sbatch(self):
@@ -156,7 +156,7 @@ class MockupTest(unittest.TestCase):
         self.assertEqual(read_file(os.path.join(self.tmp.name, sbatch_files[0])), read_file(MOCKUP_SBATCH))
 
     def test_pipeline_with_its_own_templates(self):
-        cmd = [sys.executable, DEPLOY_SCRIPT, "-p", MOCKUP_PIPELINE, "-j", MOCKUP_PARAMS, "-s", MOCKUP_SETTINGS]
+        cmd = patched_command(DEPLOY_SCRIPT) + ["-p", MOCKUP_PIPELINE, "-j", MOCKUP_PARAMS, "-s", MOCKUP_SETTINGS]
         result = run(cmd, cwd=self.tmp.name)
 
         self.assertEqual(result.returncode, 0, result.stderr)

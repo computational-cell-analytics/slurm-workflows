@@ -6,6 +6,9 @@ The stubs replace `sbatch`, `scontrol`, `scancel`, `reportseff` and `micromamba`
 """
 import os
 import subprocess
+import sys
+
+from slurm_workflows import repositories
 
 REPOSITORY_DIR = os.path.dirname(os.path.dirname(os.path.realpath(__file__)))
 SCRIPTS_DIR = os.path.join(REPOSITORY_DIR, "scripts")
@@ -18,6 +21,9 @@ MOCKUP_PIPELINE = os.path.join(MOCKUP_DIR, "pipelines", "mockup", "train_evaluat
 
 SUBMIT_SCRIPT = os.path.join(SCRIPTS_DIR, "submit_job.py")
 ARCHIVE_SCRIPT = os.path.join(SCRIPTS_DIR, "archive_job.py")
+TEST_DIR = os.path.join(REPOSITORY_DIR, "test")
+
+get_repository_status = repositories.get_repository_status
 WRITE_METADATA = os.path.join(SCRIPTS_DIR, "write_metadata.py")
 
 # JobIDs start here and count up by one per submission.
@@ -273,3 +279,41 @@ def read_file(
     """
     with open(path, "r") as myfile:
         return myfile.read()
+
+
+def get_test_repository_status(
+    repo_path: str,
+) -> str:
+    """Return the git status of a repository which a test made.
+
+    The clone of slurm-workflows and a path which is no directory, e.g. '/path/to/my-tool' of the mockup,
+    are 'clean', so that the tests do not depend on the machine.
+
+    Args:
+        repo_path: Local path of the repository.
+
+    Returns:
+        str: 'clean', 'untracked' or 'dirty'.
+    """
+    if repo_path == REPOSITORY_DIR or not os.path.isdir(repo_path):
+        return "clean"
+    return get_repository_status(repo_path)
+
+
+def patched_command(
+    script: str,
+) -> list:
+    """Return a command which runs a script with `get_test_repository_status()` as the git status.
+
+    Args:
+        script: Path of the script.
+
+    Returns:
+        list: Command for `run()`.
+    """
+    code = (f"import runpy, sys; sys.path[:0] = [{REPOSITORY_DIR!r}, {TEST_DIR!r}]; "
+            "from unittest import mock; import stubs; "
+            "mock.patch('slurm_workflows.repositories.get_repository_status', "
+            "stubs.get_test_repository_status).start(); "
+            f"runpy.run_path({script!r}, run_name='__main__')")
+    return [sys.executable, "-c", code]

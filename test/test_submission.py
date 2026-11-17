@@ -104,6 +104,26 @@ class SubmitJobTest(unittest.TestCase):
         self.assertEqual(result.returncode, 1)
         self.assertEqual(sbatch_calls(self.env), [])
 
+    def test_dirty_repository_is_not_submitted(self):
+        repository = os.path.join(self.tmp.name, "repository")
+        write_file(os.path.join(repository, "tracked.txt"), "first\n")
+        identity = ["-c", "user.name=test", "-c", "user.email=test@example.org"]
+        for args in (["init", "-q"], ["add", "."], ["commit", "-q", "-m", "first"]):
+            run(["git", "-C", repository] + identity + args)
+        write_file(os.path.join(repository, "tracked.txt"), "second\n")
+        repository_file = write_file(os.path.join(self.tmp.name, "repositories.txt"), f"tool\t{repository}\n")
+
+        result = self.submit("-r", repository_file)
+
+        self.assertEqual(result.returncode, 1)
+        self.assertIn("Dirty repositories: tool", result.stderr)
+        self.assertEqual(sbatch_calls(self.env), [])
+
+        result = self.submit("-r", repository_file, "--allow-dirty")
+
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(len(sbatch_calls(self.env)), 1)
+
     def test_two_moved_submissions_keep_both_jobids(self):
         first = self.submit("-m", "-a", self.archive_dir)
         second = self.submit("-m", "-a", self.archive_dir)

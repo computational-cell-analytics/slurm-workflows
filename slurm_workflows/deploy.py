@@ -17,7 +17,7 @@ from slurm_workflows.pipelines import load_pipeline, resolve_pipeline, steps_sta
 from slurm_workflows.projects import default
 from slurm_workflows.repositories import job_repositories
 from slurm_workflows.settings import blueprint_settings_file, load_settings, settings_file, settings_to_placeholders
-from slurm_workflows.submission import archive_submitted_job, submit
+from slurm_workflows.submission import archive_submitted_job, cancel_jobs, release_job, submit
 from slurm_workflows.templates import render_template, step_template
 
 # The functions which `deploy_jobs()` calls on the deployment module of a project.
@@ -91,7 +91,8 @@ def deploy_jobs(
        archive directory.
     3. Print the warnings, then the notes. A dry run stops here.
     4. Stop if a check gave a warning, unless `--force` is given.
-    5. Submit each step with a dependency on the previous step, and archive it.
+    5. Submit each step with a dependency on the previous step, and archive it. The first step is held until all steps
+        are archived. A failed archive cancels all submitted steps.
 
     Args:
         args: Parsed command line options of `slurm_wf.deploy`, including the options of the project.
@@ -184,8 +185,10 @@ def deploy_jobs(
     dependency = None
     # The JobID of the first step identifies the run of a pipeline in the archive.
     run = None
+    jobids = []
     for step_index, sbatch_file in enumerate(sbatch_files, start=1):
-        jobid = submit(sbatch_file, dependency)
+        jobid = submit(sbatch_file, dependency, hold=bool(archive_dir) and run is None)
+        jobids.append(jobid)
         print(f"Step {step_index} of {len(sbatch_files)} submitted as JobID {jobid}.")
         if run is None:
             run = jobid
@@ -203,7 +206,10 @@ def deploy_jobs(
                 archive_submitted_job(sbatch_file, jobid, archive_dir, move=True, repositories=repositories,
                                       settings_file=settings_path, metadata=metadata)
             except (OSError, ValueError) as exc:
-                # The job is queued, so the chain goes on. Only the archive of the job is incomplete.
-                print(f"Warning: job {jobid} was submitted, but its archiving failed: {exc}")
+                cancel_jobs(jobids)
+                raise ValueError(f"Archiving failed, so the jobs {', '.join(jobids)} were cancelled: {exc}") from exc
 
         dependency = jobid
+
+    if archive_dir:
+        release_job(run)

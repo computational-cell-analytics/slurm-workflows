@@ -99,6 +99,28 @@ def get_repository_status(
     return "dirty"
 
 
+def check_dirty(
+    repositories: dict,
+    untracked_files_dirty: bool = False,
+) -> list:
+    """Return the names of the dirty repositories.
+
+    A repository with status 'dirty' has uncommitted changes to tracked files; it always returns as dirty.
+    A repository with status 'untracked' returns as dirty only if untracked_files_dirty is True.
+
+    Args:
+        repositories: Dictionary mapping repository names to their local paths.
+        untracked_files_dirty: Whether a repository with 'untracked' status is dirty.
+
+    Returns:
+        list: Names of the dirty repositories.
+    """
+    dirty_status = ["dirty", "untracked"] if untracked_files_dirty else ["dirty"]
+
+    return [repo_name for repo_name, repo_path in repositories.items()
+            if get_repository_status(repo_path) in dirty_status]
+
+
 def add_repository_status(
     metadict: dict,
     repositories: dict,

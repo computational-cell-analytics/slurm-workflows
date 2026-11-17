@@ -13,7 +13,7 @@ from datetime import datetime
 from slurm_workflows.deploy import deploy_jobs, project_module
 from slurm_workflows.metadata import write_job_metadata
 from slurm_workflows.pipelines import pipeline_names, resolve_pipeline
-from slurm_workflows.repositories import job_repositories, read_repository_file
+from slurm_workflows.repositories import check_dirty, job_repositories, read_repository_file
 from slurm_workflows.settings import load_settings
 from slurm_workflows.submission import archive_job, archive_submitted_job, cancel_jobs, release_job, submit
 from slurm_workflows.summary import summarize
@@ -212,11 +212,16 @@ def main_submit():
                         help="Settings file of the project. It names the HPC user and the git repositories to track.")
     parser.add_argument("-d", "--dependency", type=str, default=None,
                         help="Start the job only after this JobID completed successfully.")
+    parser.add_argument("--allow-dirty", action="store_true",
+                        help="Submit the job even if a tracked git repository has uncommited changes.")
     args = parser.parse_args()
 
     try:
         settings = {} if args.settings is None else load_settings(args.settings)
         repositories = job_repositories(settings, args.repository_file)
+        dirty = check_dirty(repositories, settings.get("untracked_files_dirty", False))
+        if dirty and not args.allow_dirty:
+            sys.exit(f"Dirty repositories: {', '.join(dirty)}. Pass --allow-dirty to submit anyway.")
         jobid = submit(args.sbatch_file, args.dependency, hold=args.archive_dir is not None)
     except (FileNotFoundError, ValueError) as exc:
         sys.exit(str(exc))

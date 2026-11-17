@@ -13,6 +13,7 @@
     "s3_remote": "cochlea-lightsheet:cochlea-lightsheet",
     "service_endpoint": "https://s3.fs.gwdg.de",
 
+    "untracked_files_dirty": false,
     "repositories": {
         "cochlea-net": "/path/to/cochlea-net"
     },

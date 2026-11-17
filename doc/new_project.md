@@ -59,6 +59,7 @@ A project can use more keys:
 | `archive_dir` | `<archive_dir>` | The archive directory, the default of `--archive-dir` |
 | An entry of `repositories`, e.g. `"my-tool": "/path/to/my-tool"` | `<repo:my-tool>` | The path of a git repository. The archive records its git hash with each job |
 | - | `<repo:slurm-workflows>` | The path of this repository, always available and always recorded |
+| `untracked_files_dirty` | `<untracked_files_dirty>` | `true`: untracked files make a repository dirty. Default `false` |
 | Any other nested key, e.g. `models` of cochlea-net | none | Only a deployment module can read it |
 
 ## Pipelines

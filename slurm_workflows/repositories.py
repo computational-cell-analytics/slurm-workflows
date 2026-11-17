@@ -83,9 +83,15 @@ def get_repository_status(
     Returns:
         str: 'clean', 'untracked' or 'dirty'.
     """
-    git_status_out = subprocess.run(["git", "status", "--porcelain", "--untracked-files=normal"],
-                                    cwd=repo_path, stdout=subprocess.PIPE).stdout.decode("utf-8")
-    git_status_lines = git_status_out.splitlines()
+    if not os.path.isdir(repo_path):
+        raise ValueError(f"Repository path {repo_path} is not a directory.")
+
+    result = subprocess.run(["git", "status", "--porcelain", "--untracked-files=normal"], cwd=repo_path,
+                            stdout=subprocess.PIPE, tstderr=subprocess.PIPE, universal_newlines=True)
+    if result.returncode != 0:
+        raise ValueError(f"Failed to check the git status of {repo_path}: {result.stderr.strip()}")
+
+    git_status_lines = result.stdout.splitlines()
     if len(git_status_lines) == 0:
         return "clean"
     if all(line.startswith("??") for line in git_status_lines):
@@ -113,7 +119,7 @@ def add_repository_status(
 
     for repo_name, repo_path in repositories.items():
         if not os.path.isdir(repo_path):
-            print(f"Warning: repository path {repo_path} of {repo_name} is no directory. Its git hash is not recorded.")
+            print(f"Warning: repository path {repo_path} of {repo_name} is not a directory. Its git hash is not recorded.")
             continue
 
         result = subprocess.run(["git", "rev-parse", "HEAD"], cwd=repo_path, stdout=subprocess.PIPE,

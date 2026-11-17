@@ -8,6 +8,7 @@ Its archive folder is `<archive_dir>/<date>_<suffix>/`, which holds each file as
 """
 import functools
 import glob
+import hashlib
 import os
 import re
 import shutil
@@ -297,15 +298,19 @@ def freeze_pip_packages(
 def export_environment(
     sbatch_file: str,
     folder: str,
-) -> None:
+) -> str:
     """Write the export of the environment which a job activates to `environment.yml` in its archive folder,
     and its pip packages to `pip_freeze.txt`.
 
     A failed export or freeze gives a warning, because the job is already submitted.
+    The hash records the environment state from the dependences in both `environment.yml` and `pip_freeze.txt`.
 
     Args:
         sbatch_file: Path of the sbatch script.
         folder: Archive folder of the job.
+
+    Returns:
+        str: sha256 hash of the package list, or None if an environment file is not written.
     """
     # ponytail: only the first activated environment is archived. Export one file per environment if
     # a job activates more than one.
@@ -314,13 +319,13 @@ def export_environment(
         environment = next((match.group(1) for match in matches if match), None)
 
     if environment is None:
-        return
+        return None
 
     try:
         export = environment_export(environment)
     except ValueError as exc:
         print(f"Warning: the environment {environment} is not archived. {exc}")
-        return
+        return None
 
     with open(os.path.join(folder, ENVIRONMENT_FILE), "w") as myfile:
         myfile.write(export)
@@ -329,10 +334,13 @@ def export_environment(
         pip_packages = freeze_pip_packages(environment)
     except ValueError as exc:
         print(f"Warning: the pip packages of the environment {environment} are not archived. {exc}")
-        return
+        return None
 
     with open(os.path.join(folder, PIP_FILE), "w") as myfile:
         myfile.write(pip_packages)
+
+    dependencies = export.split("dependencies:\n", 1)[-1].split("prefix:", 1)[0]
+    return hashlib.sha256((dependencies + pip_packages).encode("utf-8")).hexdigest()
 
 
 def archive_submitted_job(
@@ -362,7 +370,9 @@ def archive_submitted_job(
     date, suffix = job_name_parts(sbatch_file)
 
     folder = archive_job(os.path.dirname(sbatch_file), os.path.realpath(archive_dir), date, suffix, move)
-    export_environment(os.path.join(folder, SBATCH_FILE), folder)
+    environment_hash = export_environment(os.path.join(folder, SBATCH_FILE), folder)
+    if environment_hash is not None:
+        metadata = {**(metadata or {}), "environment_hash": environment_hash}
     write_job_metadata(folder, jobid=jobid, repositories=repositories, settings_file=settings_file,
                        metadata=metadata)
 

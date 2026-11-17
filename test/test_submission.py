@@ -6,6 +6,7 @@
 """
 import argparse
 import contextlib
+import hashlib
 import io
 import json
 import os
@@ -16,13 +17,15 @@ from unittest import mock
 
 from slurm_workflows import deploy
 from slurm_workflows.projects import default
-from slurm_workflows.submission import environment_export
+from slurm_workflows.submission import environment_export, freeze_pip_packages
 from stubs import (FIRST_JOBID, MOCKUP_PARAMS, MOCKUP_PIPELINE, MOCKUP_SETTINGS, MOCKUP_TEMPLATE, SUBMIT_SCRIPT,
                    read_file, run, sbatch_calls, stub_env, write_file)
 
 DATE = "2025-01-01"
 SBATCH_NAME = f"{DATE}_sbatch_x.sbatch"
 LOG_NAME = f"{DATE}_log_x.txt"
+# The package list of the micromamba stub: the dependencies of the export and the pip freeze.
+ENVIRONMENT_HASH = hashlib.sha256("  - python=3.12\nnumpy==1.0\n".encode("utf-8")).hexdigest()
 
 
 class SubmitJobTest(unittest.TestCase):
@@ -106,7 +109,12 @@ class SubmitJobTest(unittest.TestCase):
         result = self.submit("-a", self.archive_dir)
 
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
-        self.assertEqual(read_file(os.path.join(self.archive_dir, f"{DATE}_x", "environment.yml")), "name: tools\n")
+        folder = os.path.join(self.archive_dir, f"{DATE}_x")
+        self.assertEqual(read_file(os.path.join(folder, "environment.yml")),
+                         "name: tools\ndependencies:\n  - python=3.12\nprefix: /envs/tools\n")
+        self.assertEqual(read_file(os.path.join(folder, "pip_freeze.txt")), "numpy==1.0\n")
+        with open(os.path.join(folder, "metadata.json")) as myfile:
+            self.assertEqual(json.load(myfile)["environment_hash"], ENVIRONMENT_HASH)
 
     def test_failed_archiving_is_reported(self):
         result = self.submit("-a", os.path.join(self.tmp.name, "none"))
@@ -126,6 +134,7 @@ class DeploySubmissionTest(unittest.TestCase):
         self.cwd = os.getcwd()
         os.chdir(self.tmp.name)
         environment_export.cache_clear()
+        freeze_pip_packages.cache_clear()
 
     def tearDown(self):
         os.chdir(self.cwd)
@@ -151,8 +160,11 @@ class DeploySubmissionTest(unittest.TestCase):
         metadata = self.archived_metadata()
         self.assertEqual(metadata["project"], "mockup")
         self.assertEqual(metadata["jobid"], str(FIRST_JOBID))
+        self.assertEqual(metadata["environment_hash"], ENVIRONMENT_HASH)
         [folder] = os.listdir(self.archive_dir)
-        self.assertEqual(read_file(os.path.join(self.archive_dir, folder, "environment.yml")), "name: dl-gpu\n")
+        self.assertEqual(read_file(os.path.join(self.archive_dir, folder, "environment.yml")),
+                         "name: dl-gpu\ndependencies:\n  - python=3.12\nprefix: /envs/dl-gpu\n")
+        self.assertEqual(read_file(os.path.join(self.archive_dir, folder, "pip_freeze.txt")), "numpy==1.0\n")
 
     def test_pipeline_is_a_chain(self):
         self.deploy(self.archive_dir, MOCKUP_PIPELINE)

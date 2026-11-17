@@ -52,9 +52,18 @@ cat "$STUB_STATE"/reportseff 2>/dev/null
 exit 0
 """
 
-# Prints a minimal export of the environment named by 'env export -n <name>'.
+# 'env export -n <name>' prints a minimal export of the environment.
+# 'run -n <name> python -m pip freeze' prints a pip package and a conda package, which the freeze leaves out.
 MICROMAMBA_STUB = """#!/bin/bash
-echo "name: $4"
+if [ "$1" = run ] ; then
+    echo "numpy==1.0"
+    echo "skan @ file:///conda/work"
+else
+    echo "name: $4"
+    echo "dependencies:"
+    echo "  - python=3.12"
+    echo "prefix: /envs/$4"
+fi
 """
 
 

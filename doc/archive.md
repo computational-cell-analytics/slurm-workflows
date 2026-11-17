@@ -33,6 +33,7 @@ A missing archive directory gives a warning, which stops `--submit` unless `--fo
     ├── log.txt             # one JobID per line, the latest last
     ├── metadata.json       # see below
     ├── environment.yml     # the export of the micromamba environment of the job
+    ├── pip_freeze.txt      # the pip packages of the environment, with the git commit of a git install
     └── previous/
         └── <jobid>/        # the files of a replaced JobID, except log.txt
 ```
@@ -41,7 +42,9 @@ A second submission on the same day uses the same archive folder.
 Its JobID is added to `log.txt`, and the files of the replaced JobID move to `previous/<jobid>/`.
 So the top level holds the files of the latest JobID, and each earlier JobID keeps its own script,
 environment and metadata.
-`environment.yml` is missing if the job activates no micromamba environment, see
+`pip_freeze.txt` leaves out editable installs and conda packages. A tracked repository records the commit of an
+editable install, and `environment.yml` records the conda packages.
+`environment.yml` and `pip_freeze.txt` are missing if the job activates no micromamba environment, see
 [Create a template](new_template.md#4-activate-a-micromamba-environment).
 `mockup_example/YYYY-MM-DD_train/` is a complete example.
 
@@ -57,6 +60,7 @@ The keys are lower case with underscores.
 | `jobid` | `log.txt` | The latest JobID |
 | `reportseff` | `reportseff` | One entry per job or array task: `jobid`, `state`, `elapsed`, `time_eff`, `cpu_eff`, `mem_eff`. A task of an array which never started has a JobID such as `<jobid>_[9]`. An entry with the state `UNTRACKED` also has `last_state`, see update_metadata.py |
 | `repositories` | `git` | One entry per repository: `repo_name`, `repo_version` (the git hash), `status` (`clean` or `dirty`) |
+| `environment_hash` | `environment.yml`, `pip_freeze.txt` | The sha256 hash of the package list: the dependencies of `environment.yml` and `pip_freeze.txt`. Jobs with the same packages have the same hash, also in a renamed or cloned environment |
 | `project` | Deploy step | The project, e.g. `cochlea-net` |
 | `pipeline` | Deploy step | Only for a step of a pipeline: `name` of the pipeline, `run` (the JobID of the first step of the deploy call), `step` and `of` (the number of the step and of all steps of the deploy call), `step_name` (the template, e.g. `segment_IHC`), `start_at` (after `--start-at`), `depends_on` (the JobID of the previous step), and `failed_at`, see update_metadata.py |
 | `slurm_output` | Slurm output file | One entry per output file: `file`, `array_index` of an array task, `submitted`, `started`, `ended`, `elapsed_min`, `limit_min`, `cpus`, `nodes`, `core_hours`, `elapsed_sec` (from `started` to `ended`), `exit_code` (if the job printed it), `state` and `error` (if the output shows them), see [the format of a slurm output file](#the-format-of-a-slurm-output-file) |
@@ -224,7 +228,7 @@ mkdir my_archive
 
 1. `scripts/submit_job.py` submits an sbatch script and adds the JobID to the log file
    `<date>_log_<suffix>.txt` beside it.
-   With `--archive-dir`, it also does the next two steps and writes `environment.yml`:
+   With `--archive-dir`, it also does the next two steps and writes `environment.yml` and `pip_freeze.txt`:
    ```bash
    python scripts/submit_job.py --archive-dir my_archive/ --settings <settings file> <date>_sbatch_<suffix>.sbatch
    ```

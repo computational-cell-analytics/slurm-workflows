@@ -70,6 +70,8 @@ The archive records the git hash of slurm-workflows, of each entry of `repositor
 settings file, and of each repository of `--repository-file`.
 A repository with uncommitted changes has the status `dirty`, so its hash does not give the exact
 code.
+A dirty repository stops the submission, unless `--allow-dirty` is given. `--force` does not override
+this. With `untracked_files_dirty` set to true, repositories with untracked files also count as dirty.
 
 ## The workflow
 

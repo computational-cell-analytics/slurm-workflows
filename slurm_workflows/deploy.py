@@ -183,12 +183,14 @@ def deploy_jobs(
     repositories = job_repositories(settings, args.repository_file)
 
     dependency = None
+
     # The JobID of the first step identifies the run of a pipeline in the archive.
     run = None
     jobids = []
+
+    # Only step 1 is held, subsequent steps are submitted with dependency on the previous step.
     for step_index, sbatch_file in enumerate(sbatch_files, start=1):
         try:
-            # Only step 1 is held, subsequent steps are submitted with dependency on the previous step.
             jobid = submit(sbatch_file, dependency, hold=bool(archive_dir) and run is None)
         except ValueError:
             if archive_dir and run is not None:
@@ -217,5 +219,10 @@ def deploy_jobs(
 
         dependency = jobid
 
+    # A failed scontrol release leaves all steps waiting, so they are cancelled.
     if archive_dir:
-        release_job(run)
+        try:
+            release_job(run)
+        except ValueError as exc:
+            cancel_jobs(jobids)
+            raise ValueError(f"Release failed, so the jobs {', '.join(jobids)} were cancelled: {exc}") from exc

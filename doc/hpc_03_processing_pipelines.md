@@ -286,6 +286,8 @@ project and transfer the new source to the S3 bucket.
 The `sgn` and the `ihc` pipeline add the segmentation.
 The `synapses` pipeline adds the detections which were matched to the IHCs.
 Only the new source is transferred, so the step is short.
+The slurm output of the segmentation transfer gives the node and one line per minute with the
+transferred size and the rate.
 
 These steps run only if the settings file names a `mobie_project`.
 Remove that key to end the chain with the last processing step.
@@ -350,6 +352,7 @@ The check needs `rclone`, so run `module load rclone` first.
 `<data_dir>/<cochlea>/<stain>.ome.zarr`, and the other steps read it.
 An interrupted download stays in `<stain>.ome.zarr.part`, so no step reads a partial copy.
 A rerun completes it.
+The slurm output gives the node and one line per minute with the transferred size and the rate.
 `--download` needs a group, so it does not work with the `mobie` pipeline.
 
 `--cleanup-input` adds the step `cleanup_input` at the end of the chain, which removes the image data

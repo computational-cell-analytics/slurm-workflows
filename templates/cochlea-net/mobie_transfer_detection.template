@@ -38,7 +38,7 @@ done
 # A spot source holds no image data in the bucket, so it needs no remote metadata. Adding it would
 # rewrite the dataset.json of every dataset of the project.
 module load rclone
-rclone --progress copyto "$INPUT" "$S3_REMOTE"/<cochlea>/tables/<synapse_ihc_prediction>/default.tsv || exit 1
+rclone copyto "$INPUT" "$S3_REMOTE"/<cochlea>/tables/<synapse_ihc_prediction>/default.tsv || exit 1
 
 # The dataset.json of the S3 bucket lists the sources of every local MoBIE project. The local file
 # must not replace it, so only this spot source is added. dataset.json comes last, so that the

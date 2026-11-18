@@ -27,7 +27,12 @@ TABLE_FILE=<mobie_project>/<cochlea>/tables/<prediction_dir>/default.tsv
 S3_REMOTE=<s3_remote>
 BUCKET_NAME="${S3_REMOTE#*:}"
 
-echo "Transfer of the segmentation <prediction_dir> of <cochlea> from ""$MOBIE_PROJECT"" to S3"
+# The OME-Zarr has 1k to 9k chunks. The latency of each chunk limits the rate, not the CPU or
+# the bandwidth, so more parallel transfers give a higher rate. The stats give one line per minute
+# with a time stamp.
+RCLONE_OPTIONS=(--transfers=16 --checkers=16 --stats=1m --stats-one-line --stats-log-level=NOTICE)
+
+echo "Transfer of the segmentation <prediction_dir> of <cochlea> from ""$MOBIE_PROJECT"" to S3 on node $(hostname)"
 
 # Verify the input of the job. A missing input stops the rest of the pipeline.
 for path in "$INPUT" "$DATASET_FILE" "$TABLE_FILE" ; do
@@ -44,8 +49,8 @@ mobie.add_remote_metadata -s <service_endpoint> -b "$BUCKET_NAME" -i "$MOBIE_PRO
 # Only the new segmentation is transferred. The image data is handled by 'mobie_transfer_dataset'.
 # A table of the bucket which was enriched after the last transfer is overwritten here.
 module load rclone
-rclone --progress copyto "$INPUT" <s3_remote>/<cochlea>/images/ome-zarr/<prediction_dir>.ome.zarr || exit 1
-rclone --progress copyto "$TABLE_FILE" <s3_remote>/<cochlea>/tables/<prediction_dir>/default.tsv || exit 1
+rclone "${RCLONE_OPTIONS[@]}" copyto "$INPUT" <s3_remote>/<cochlea>/images/ome-zarr/<prediction_dir>.ome.zarr || exit 1
+rclone copyto "$TABLE_FILE" <s3_remote>/<cochlea>/tables/<prediction_dir>/default.tsv || exit 1
 
 # The dataset.json of the S3 bucket lists the sources of every local MoBIE project. The local file
 # must not replace it, so only this segmentation is added. dataset.json comes last, so that the

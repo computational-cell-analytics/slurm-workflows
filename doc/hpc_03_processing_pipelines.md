@@ -285,6 +285,8 @@ project and transfer the new source to the S3 bucket.
 The `sgn` and the `ihc` pipeline add the segmentation.
 The `synapses` pipeline adds the detections which were matched to the IHCs.
 Only the new source is transferred, so the step is short.
+The slurm output of the segmentation transfer gives the node and one line per minute with the
+transferred size and the rate.
 
 These steps run only if the settings file names a `mobie_project`.
 Remove that key to end the chain with the last processing step.

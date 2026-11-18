@@ -2,10 +2,13 @@
 # -- coding: utf-8 --
 """Shared helpers of the tests: stub commands for the cluster tools, and access to the scripts.
 
-The stubs replace `sbatch`, `reportseff` and `micromamba`, so the tests run on any machine.
+The stubs replace `sbatch`, `scontrol`, `scancel`, `reportseff` and `micromamba`, so the tests run on any machine.
 """
 import os
 import subprocess
+import sys
+
+from slurm_workflows import repositories
 
 REPOSITORY_DIR = os.path.dirname(os.path.dirname(os.path.realpath(__file__)))
 SCRIPTS_DIR = os.path.join(REPOSITORY_DIR, "scripts")
@@ -18,6 +21,9 @@ MOCKUP_PIPELINE = os.path.join(MOCKUP_DIR, "pipelines", "mockup", "train_evaluat
 
 SUBMIT_SCRIPT = os.path.join(SCRIPTS_DIR, "submit_job.py")
 ARCHIVE_SCRIPT = os.path.join(SCRIPTS_DIR, "archive_job.py")
+TEST_DIR = os.path.join(REPOSITORY_DIR, "test")
+
+get_repository_status = repositories.get_repository_status
 WRITE_METADATA = os.path.join(SCRIPTS_DIR, "write_metadata.py")
 
 # JobIDs start here and count up by one per submission.
@@ -38,6 +44,19 @@ echo $((count + 1)) > "$STUB_STATE"/count
 echo "$(({FIRST_JOBID} + count));cluster"
 """
 
+# Record the arguments of each call in 'scontrol_calls' and 'scancel_calls' of the state directory.
+# A non-zero SCONTROL_EXIT makes the release fail.
+SCONTROL_STUB = """#!/bin/bash
+echo "$@" >> "$STUB_STATE"/scontrol_calls
+if [ "${SCONTROL_EXIT:-0}" != 0 ] ; then
+    echo "scontrol: error: stub failure" >&2
+    exit "$SCONTROL_EXIT"
+fi
+"""
+SCANCEL_STUB = """#!/bin/bash
+echo "$@" >> "$STUB_STATE"/scancel_calls
+"""
+
 # Prints the file 'reportseff' of the state directory, which a test fills with report lines. The real
 # command prints only the requested JobIDs. The caller filters the lines in the same way.
 # 'reportseff_calls' gets one line with the arguments of each call.
@@ -52,9 +71,18 @@ cat "$STUB_STATE"/reportseff 2>/dev/null
 exit 0
 """
 
-# Prints a minimal export of the environment named by 'env export -n <name>'.
+# 'env export -n <name>' prints a minimal export of the environment.
+# 'run -n <name> python -m pip freeze' prints a pip package and a conda package, which the freeze leaves out.
 MICROMAMBA_STUB = """#!/bin/bash
-echo "name: $4"
+if [ "$1" = run ] ; then
+    echo "numpy==1.0"
+    echo "skan @ file:///conda/work"
+else
+    echo "name: $4"
+    echo "dependencies:"
+    echo "  - python=3.12"
+    echo "prefix: /envs/$4"
+fi
 """
 
 
@@ -79,8 +107,8 @@ def stub_env(
 ) -> dict:
     """Create the stub commands and return an environment which finds them first.
 
-    The PATH holds only the stubs and the system directories, so a real `sbatch`, `reportseff` or
-    `micromamba` is never called.
+    The PATH holds only the stubs and the system directories, so a real `sbatch`, `scontrol`, `scancel`,
+    `reportseff` or `micromamba` is never called.
 
     Args:
         tmp_dir: Temporary directory of the test.
@@ -95,6 +123,8 @@ def stub_env(
     os.makedirs(state_dir, exist_ok=True)
 
     write_executable(os.path.join(bin_dir, "sbatch"), SBATCH_STUB)
+    write_executable(os.path.join(bin_dir, "scontrol"), SCONTROL_STUB)
+    write_executable(os.path.join(bin_dir, "scancel"), SCANCEL_STUB)
     if reportseff:
         write_executable(os.path.join(bin_dir, "reportseff"), REPORTSEFF_STUB)
     micromamba = os.path.join(bin_dir, "micromamba")
@@ -122,6 +152,42 @@ def sbatch_calls(
         list: One string per call.
     """
     path = os.path.join(env["STUB_STATE"], "sbatch_calls")
+    if not os.path.isfile(path):
+        return []
+    with open(path, "r") as myfile:
+        return myfile.read().splitlines()
+
+
+def scontrol_calls(
+    env: dict,
+) -> list:
+    """Return the arguments of each call of the `scontrol` stub.
+
+    Args:
+        env: Output of `stub_env()`.
+
+    Returns:
+        list: One string per call.
+    """
+    path = os.path.join(env["STUB_STATE"], "scontrol_calls")
+    if not os.path.isfile(path):
+        return []
+    with open(path, "r") as myfile:
+        return myfile.read().splitlines()
+
+
+def scancel_calls(
+    env: dict,
+) -> list:
+    """Return the arguments of each call of the `scancel` stub.
+
+    Args:
+        env: Output of `stub_env()`.
+
+    Returns:
+        list: One string per call.
+    """
+    path = os.path.join(env["STUB_STATE"], "scancel_calls")
     if not os.path.isfile(path):
         return []
     with open(path, "r") as myfile:
@@ -213,3 +279,41 @@ def read_file(
     """
     with open(path, "r") as myfile:
         return myfile.read()
+
+
+def get_test_repository_status(
+    repo_path: str,
+) -> str:
+    """Return the git status of a repository which a test made.
+
+    The clone of slurm-workflows and a path which is no directory, e.g. '/path/to/my-tool' of the mockup,
+    are 'clean', so that the tests do not depend on the machine.
+
+    Args:
+        repo_path: Local path of the repository.
+
+    Returns:
+        str: 'clean', 'untracked' or 'dirty'.
+    """
+    if repo_path == REPOSITORY_DIR or not os.path.isdir(repo_path):
+        return "clean"
+    return get_repository_status(repo_path)
+
+
+def patched_command(
+    script: str,
+) -> list:
+    """Return a command which runs a script with `get_test_repository_status()` as the git status.
+
+    Args:
+        script: Path of the script.
+
+    Returns:
+        list: Command for `run()`.
+    """
+    code = (f"import runpy, sys; sys.path[:0] = [{REPOSITORY_DIR!r}, {TEST_DIR!r}]; "
+            "from unittest import mock; import stubs; "
+            "mock.patch('slurm_workflows.repositories.get_repository_status', "
+            "stubs.get_test_repository_status).start(); "
+            f"runpy.run_path({script!r}, run_name='__main__')")
+    return [sys.executable, "-c", code]

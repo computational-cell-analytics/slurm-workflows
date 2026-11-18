@@ -336,7 +336,7 @@ def check_metadata(subfolders: List[str]):
         print(f"Updated essential metadata for {job_folder}.")
 
 
-def update_slurm_output(subfolders: List[str], slurm_dir: str):
+def update_slurm_output(subfolders: List[str], slurm_dir: Optional[str] = None):
     """Add the data of the slurm output files of each job to its metadata.
 
     Each file `slurm-<jobid>.out` or `slurm-<jobid>_<array_index>.out` gives one entry of the list
@@ -344,7 +344,7 @@ def update_slurm_output(subfolders: List[str], slurm_dir: str):
 
     Args:
         subfolders: Archive folders.
-        slurm_dir: Directory of the slurm output files.
+        slurm_dir: Directory of the slurm output files, or None for the folder of each job.
     """
     update_dir = []
     found = 0
@@ -354,7 +354,7 @@ def update_slurm_output(subfolders: List[str], slurm_dir: str):
         if not jobid:
             continue
 
-        slurm_files = slurm_output_files(slurm_dir, jobid)
+        slurm_files = slurm_output_files(job_folder if slurm_dir is None else slurm_dir, jobid)
 
         if not slurm_files:
             continue
@@ -376,7 +376,8 @@ def update_slurm_output(subfolders: List[str], slurm_dir: str):
         print(f"Updated slurm output information of folder {folder}.")
 
     if found == 0:
-        print("No matching slurm output files found.")
+        if slurm_dir is not None:
+            print("No matching slurm output files found.")
     elif not update_dir:
         print("All slurm output information is up to date.")
 
@@ -450,8 +451,7 @@ def update_archive(
     if general:
         check_metadata(subfolders)
 
-    if slurm_dir is not None:
-        update_slurm_output(subfolders, slurm_dir)
+    update_slurm_output(subfolders, slurm_dir)
 
     all_folders = subfolders if pattern is None else archive_folders(input_dir)
     update_reportseff(subfolders, all_folders)

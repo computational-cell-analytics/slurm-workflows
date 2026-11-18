@@ -13,9 +13,9 @@ from datetime import datetime
 from slurm_workflows.deploy import deploy_jobs, project_module
 from slurm_workflows.metadata import write_job_metadata
 from slurm_workflows.pipelines import pipeline_names, resolve_pipeline
-from slurm_workflows.repositories import job_repositories, read_repository_file
+from slurm_workflows.repositories import check_dirty, job_repositories
 from slurm_workflows.settings import load_settings
-from slurm_workflows.submission import archive_job, archive_submitted_job, submit
+from slurm_workflows.submission import archive_job, archive_submitted_job, cancel_jobs, release_job, submit
 from slurm_workflows.summary import summarize
 from slurm_workflows.templates import project_of_template
 from slurm_workflows.update import update_archive
@@ -64,6 +64,8 @@ def main_deploy():
     parser.add_argument("--force", action="store_true",
                         help="Submit the jobs even if a check gives a warning, e.g. because the input data "
                              "does not exist or a previous result exists.")
+    parser.add_argument("--allow-dirty", action="store_true",
+                        help="Submit the jobs even if a tracked git repository is dirty.")
 
     # The project adds its own options, so it is resolved before the full parse. The pre-parser
     # has no help and no required option, so that '-h' lists the options of the project as well.
@@ -109,15 +111,20 @@ def main_write_metadata():
                         help="JobID of the efficiency report. Default: the last JobID of log.txt.")
     parser.add_argument("-r", "--repository-file", type=str, default=None,
                         help="File of the git repositories to track. Each line holds a name and a path, "
-                             "separated by whitespace, e.g. a tab. Without it, the recorded hashes stay.")
+                             "separated by whitespace, e.g. a tab. Without -s and -r, the recorded hashes stay.")
     parser.add_argument("-s", "--settings", type=str, default=None,
-                        help="Settings file of the project, which names the HPC user.")
+                        help="Settings file of the project, which names the HPC user and the git "
+                             "repositories to track.")
     parser.add_argument("--overwrite", action="store_true",
                         help="Create the metadata anew, instead of updating an existing file.")
     args = parser.parse_args()
 
     try:
-        repositories = None if args.repository_file is None else read_repository_file(args.repository_file)
+        settings = {} if args.settings is None else load_settings(args.settings)
+        if args.settings is None and args.repository_file is None:
+            repositories = None
+        else:
+            repositories = job_repositories(settings, args.repository_file)
         write_job_metadata(args.archive_folder, args.output, args.jobid, repositories, args.overwrite, args.settings)
     except (FileNotFoundError, ValueError) as exc:
         sys.exit(str(exc))
@@ -132,7 +139,8 @@ def main_update_metadata():
     parser.add_argument("archive_dir", type=str, help="Archive directory, which holds the archive folders.")
 
     parser.add_argument("-p", "--pattern", type=str, default=None,
-                        help="Part of the archive folder name, matched as *<pattern>*. Supports wildcards.")
+                        help="Part of the archive folder path relative to archive_dir, matched as *<pattern>*. "
+                             "Supports wildcards.")
     parser.add_argument("-s", "--slurm-dir", type=str, default=None,
                         help="Folder of the slurm output files slurm-<jobid>.out or slurm-<jobid>_<array_index>.out, "
                              "usually the folder where deploy ran. Adds slurm_output with the core hours.")
@@ -168,7 +176,8 @@ def main_summary():
                         help="Table with one row per job. An .xlsx file needs openpyxl. "
                              "Any other suffix gives a TSV file.")
     parser.add_argument("-p", "--pattern", type=str, default=None,
-                        help="Part of the archive folder name, matched as *<pattern>*. Supports wildcards.")
+                        help="Part of the archive folder path relative to archive_dir, matched as *<pattern>*. "
+                             "Supports wildcards.")
     parser.add_argument("--since", type=iso_date, default=None, help="First job date, YYYY-MM-DD.")
     parser.add_argument("--until", type=iso_date, default=None, help="Last job date, YYYY-MM-DD.")
     parser.add_argument("--state", type=lambda value: value.split(","), default=None,
@@ -192,7 +201,8 @@ def main_submit():
     parser = argparse.ArgumentParser(
         description="Submit an sbatch script and add its JobID to the log file <date>_log_<suffix>.txt beside it. "
         "With -a, the files of the job, its environment and its metadata are archived in "
-        "<archive_dir>/<date>_<suffix>/. The sbatch script follows the format <date>_sbatch_<suffix>.sbatch.")
+        "<archive_dir>/<date>_<suffix>/, and the job is held until it is archived. "
+        "The sbatch script follows the format <date>_sbatch_<suffix>.sbatch.")
 
     parser.add_argument("sbatch_file", type=str, help="The sbatch script.")
 
@@ -209,12 +219,17 @@ def main_submit():
                         help="Settings file of the project. It names the HPC user and the git repositories to track.")
     parser.add_argument("-d", "--dependency", type=str, default=None,
                         help="Start the job only after this JobID completed successfully.")
+    parser.add_argument("--allow-dirty", action="store_true",
+                        help="Submit the job even if a tracked git repository has uncommited changes.")
     args = parser.parse_args()
 
     try:
         settings = {} if args.settings is None else load_settings(args.settings)
         repositories = job_repositories(settings, args.repository_file)
-        jobid = submit(args.sbatch_file, args.dependency)
+        dirty = check_dirty(repositories, settings.get("untracked_files_dirty", False))
+        if dirty and not args.allow_dirty:
+            sys.exit(f"Dirty repositories: {', '.join(dirty)}. Pass --allow-dirty to submit anyway.")
+        jobid = submit(args.sbatch_file, args.dependency, hold=args.archive_dir is not None)
     except (FileNotFoundError, ValueError) as exc:
         sys.exit(str(exc))
 
@@ -223,10 +238,13 @@ def main_submit():
     if args.archive_dir is None:
         return
 
+    # The job is held until it is archived, so that it cannot start without its archive folder.
     try:
         archive_submitted_job(args.sbatch_file, jobid, args.archive_dir, args.move, repositories, args.settings)
+        release_job(jobid)
     except (OSError, ValueError) as exc:
-        sys.exit(f"Job {jobid} was submitted, but its archiving failed: {exc}")
+        cancel_jobs([jobid])
+        sys.exit(f"Archiving of job {jobid} failed, so the job was cancelled: {exc}")
 
 
 def main_archive():

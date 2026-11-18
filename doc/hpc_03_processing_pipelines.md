@@ -248,6 +248,7 @@ overwrite the existing result.
 |---|---|
 | `--submit` | Submit the jobs. Without it, the deploy step only writes and checks the sbatch scripts |
 | `--force` | Submit the jobs although a check gave a warning |
+| `--allow-dirty` | Submit the jobs even if a tracked git repository is dirty |
 | `--start-at <step>` | Start the pipeline at this step, e.g. to resume a chain after a failed step |
 | `--no-mobie` | Leave the MoBIE steps out for this run |
 | `--no-cleanup` | Leave the cleanup steps out for this run, to keep the intermediate data |

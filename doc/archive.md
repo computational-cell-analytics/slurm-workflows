@@ -16,6 +16,9 @@ Every file of a job uses the format `<date>_<middle>_<suffix>.<ext>`, with the d
 and a middle part of one word, e.g. `2025-03-19_sbatch_apply_unet.sbatch` and
 `2025-03-19_log_apply_unet.txt`.
 The archive folder of the job is `<archive_dir>/<date>_<suffix>/`.
+Archive folders can also be in subdirectories of `<archive_dir>`.
+The commands take each directory with `metadata.json`, or with `log.txt` and `previous/`, as an archive
+folder. The second case is an archiving which failed before the metadata.
 
 ## The archive folder
 
@@ -31,6 +34,7 @@ A missing archive directory gives a warning, which stops `--submit` unless `--fo
     ├── log.txt             # one JobID per line, the latest last
     ├── metadata.json       # see below
     ├── environment.yml     # the export of the micromamba environment of the job
+    ├── pip_freeze.txt      # the pip packages of the environment, with the git commit of a git install
     └── previous/
         └── <jobid>/        # the files of a replaced JobID, except log.txt
 ```
@@ -39,7 +43,9 @@ A second submission on the same day uses the same archive folder.
 Its JobID is added to `log.txt`, and the files of the replaced JobID move to `previous/<jobid>/`.
 So the top level holds the files of the latest JobID, and each earlier JobID keeps its own script,
 environment and metadata.
-`environment.yml` is missing if the job activates no micromamba environment, see
+`pip_freeze.txt` leaves out editable installs and conda packages. A tracked repository records the commit of an
+editable install, and `environment.yml` records the conda packages.
+`environment.yml` and `pip_freeze.txt` are missing if the job activates no micromamba environment, see
 [Create a template](new_template.md#4-activate-a-micromamba-environment).
 `mockup_example/YYYY-MM-DD_train/` is a complete example.
 
@@ -54,7 +60,8 @@ The keys are lower case with underscores.
 | `job_name`, `runtime`, `partition`, `gpu`, ... | `#SBATCH` lines | See [the #SBATCH forms](new_template.md#3-keep-the-sbatch-lines-which-the-archive-reads) |
 | `jobid` | `log.txt` | The latest JobID |
 | `reportseff` | `reportseff` | One entry per job or array task: `jobid`, `state`, `elapsed`, `time_eff`, `cpu_eff`, `mem_eff`. A task of an array which never started has a JobID such as `<jobid>_[9]`. An entry with the state `UNTRACKED` also has `last_state`, see update_metadata.py |
-| `repositories` | `git` | One entry per repository: `repo_name`, `repo_version` (the git hash), `status` (`clean` or `dirty`) |
+| `repositories` | `git` | One entry per repository: `repo_name`, `repo_version` (the git hash), `status` (`clean`, `untracked` or `dirty`) |
+| `environment_hash` | `environment.yml`, `pip_freeze.txt` | The sha256 hash of the package list: the dependencies of `environment.yml` and `pip_freeze.txt`. Jobs with the same packages have the same hash, also in a renamed or cloned environment |
 | `project` | Deploy step | The project, e.g. `cochlea-net` |
 | `pipeline` | Deploy step | Only for a step of a pipeline: `name` of the pipeline, `run` (the JobID of the first step of the deploy call), `step` and `of` (the number of the step and of all steps of the deploy call), `step_name` (the template, e.g. `segment_IHC`), `start_at` (after `--start-at`), `depends_on` (the JobID of the previous step), and `failed_at`, see update_metadata.py |
 | `slurm_output` | Slurm output file | One entry per output file: `file`, `array_index` of an array task, `submitted`, `started`, `ended`, `elapsed_min`, `limit_min`, `cpus`, `nodes`, `core_hours`, `elapsed_sec` (from `started` to `ended`), `exit_code` (if the job printed it), `state` and `error` (if the output shows them), see [the format of a slurm output file](#the-format-of-a-slurm-output-file) |
@@ -64,6 +71,8 @@ The archive records the git hash of slurm-workflows, of each entry of `repositor
 settings file, and of each repository of `--repository-file`.
 A repository with uncommitted changes has the status `dirty`, so its hash does not give the exact
 code.
+A dirty repository stops the submission, unless `--allow-dirty` is given. `--force` does not override
+this. With `untracked_files_dirty` set to true, repositories with untracked files also count as dirty.
 
 ## The workflow
 
@@ -89,6 +98,8 @@ Without `reportseff`, the commands print a warning and record no report.
 Slurm writes them into the directory where the deploy step ran, unless `#SBATCH -o` names another
 file.
 The core hours come only from these files.
+Without `--slurm-dir`, the command searches the archive folder of each job.
+For a job array, `#SBATCH -o` needs `slurm-%A_%a.out`, because `%j` is the JobID of the task.
 
 ## update_metadata.py
 
@@ -123,8 +134,8 @@ The options add more updates:
 
 | Option | Update |
 |---|---|
-| `-p`, `--pattern` | Update only the archive folders whose name contains this text. The text can hold wildcards |
-| `-s`, `--slurm-dir` | Add `slurm_output` from the files `slurm-<jobid>.out` and `slurm-<jobid>_<array_index>.out` of this folder |
+| `-p`, `--pattern` | Update only the archive folders whose path relative to `<archive_dir>` contains this text. The text can hold wildcards |
+| `-s`, `--slurm-dir` | Add `slurm_output` from the files `slurm-<jobid>.out` and `slurm-<jobid>_<array_index>.out` of this folder. Without this option, the archive folder of each job is searched |
 | `--general` | Correct `date` and `task` from the name of the archive folder. Replace an efficiency report of another JobID |
 | `--sbatch` | Copy the `#SBATCH` values of `sbatch.sbatch` into the metadata again. A folder without `sbatch.sbatch` is skipped |
 | `--backfill` | Create `previous/<jobid>/metadata.json` for each earlier JobID of `log.txt` without metadata, e.g. in an archive folder from before `previous/<jobid>/`. The refresh adds the efficiency report, and `--slurm-dir` the core hours |
@@ -185,7 +196,7 @@ The command only reads the archive.
 | Option | Purpose |
 |---|---|
 | `-o`, `--output` | Write one row per job to this file, ordered by date, task and JobID. A `.xlsx` file needs openpyxl. Any other suffix gives a TSV file |
-| `-p`, `--pattern` | Use only the archive folders whose name contains this text |
+| `-p`, `--pattern` | Use only the archive folders whose path relative to `<archive_dir>` contains this text |
 | `--since`, `--until` | First and last `date`, `YYYY-MM-DD`. Both are inclusive |
 | `--state` | Keep a job if one of its tasks has one of these states in the efficiency report or in `slurm_output`, e.g. `COMPLETED,TIMEOUT` |
 | `--partition` | Keep a job of one of these partitions, e.g. `grete:shared,standard96` |
@@ -220,7 +231,7 @@ mkdir my_archive
 
 1. `scripts/submit_job.py` submits an sbatch script and adds the JobID to the log file
    `<date>_log_<suffix>.txt` beside it.
-   With `--archive-dir`, it also does the next two steps and writes `environment.yml`:
+   With `--archive-dir`, it also does the next two steps and writes `environment.yml` and `pip_freeze.txt`:
    ```bash
    python scripts/submit_job.py --archive-dir my_archive/ --settings <settings file> <date>_sbatch_<suffix>.sbatch
    ```
@@ -237,9 +248,11 @@ mkdir my_archive
    python scripts/write_metadata.py --repository-file mockup_example/repository_list.txt \
        --settings mockup_example/project_settings/mockup.json my_archive/YYYY-MM-DD_train/
    ```
-   The settings file gives the HPC user.
-   The repository file gives the repositories whose git hash the archive records.
+   The settings file gives the HPC user and the repositories of its `repositories` entry.
+   The repository file gives more repositories.
    Each line holds a name and a path, separated by whitespace, e.g. a tab.
+   With `--settings` or `--repository-file`, the archive records the git hash of these repositories and of
+   slurm-workflows. Without both, the recorded hashes stay.
 
 ## Older archives
 

@@ -8,6 +8,7 @@ Its archive folder is `<archive_dir>/<date>_<suffix>/`, which holds each file as
 """
 import functools
 import glob
+import hashlib
 import os
 import re
 import shutil
@@ -21,6 +22,7 @@ from slurm_workflows.slurm import jobids_from_log
 ACTIVATE_PATTERN = re.compile(r"^\s*(?:micromamba|mamba|conda|source)\s+activate\s+(\S+)")
 
 ENVIRONMENT_FILE = "environment.yml"
+PIP_FILE = "pip_freeze.txt"
 
 
 def job_name_parts(
@@ -44,12 +46,14 @@ def job_name_parts(
 def submit(
     sbatch_file: str,
     dependency: str = None,
+    hold: bool = False,
 ) -> str:
     """Submit an sbatch script and add its JobID to the log file `<date>_log_<suffix>.txt` beside it.
 
     Args:
         sbatch_file: Path of the sbatch script.
         dependency: JobID which has to complete successfully before this job starts, or None.
+        hold: Submit the job in a held state. It starts only after `scontrol release <jobid>`.
 
     Returns:
         str: JobID of the submitted job.
@@ -61,6 +65,8 @@ def submit(
     if dependency is not None:
         # Give up instead of waiting forever if the dependency fails.
         cmd += [f"--dependency=afterok:{dependency}", "--kill-on-invalid-dep=yes"]
+    if hold:
+        cmd.append("--hold")
     cmd.append(sbatch_file)
 
     try:
@@ -86,6 +92,41 @@ def submit(
         myfile.write(f"{separator}{jobid}\n")
 
     return jobid
+
+
+def release_job(
+    jobid: str,
+) -> None:
+    """Release a held job so that it can start.
+
+    Args:
+        jobid: JobID of the held job.
+    """
+    try:
+        result = subprocess.run(["scontrol", "release", jobid], stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+                                universal_newlines=True)
+    except OSError as exc:
+        raise ValueError(f"Release of job {jobid} failed. scontrol could not be run: {exc}") from exc
+    if result.returncode != 0:
+        raise ValueError(f"Release of job {jobid} failed: {result.stderr.strip()}")
+
+
+def cancel_jobs(
+    jobids: list,
+) -> None:
+    """Cancel submitted jobs.
+
+    Args:
+        jobids: JobIDs of the jobs.
+    """
+    try:
+        result = subprocess.run(["scancel"] + jobids, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+                                universal_newlines=True)
+    except OSError as exc:
+        raise ValueError(f"Cancellation of the jobs {', '.join(jobids)} failed. scancel could not be run: "
+                         f"{exc}") from exc
+    if result.returncode != 0:
+        raise ValueError(f"Cancellation of the jobs {', '.join(jobids)} failed: {result.stderr.strip()}")
 
 
 def move_replaced_job(
@@ -225,17 +266,51 @@ def environment_export(
     return result.stdout
 
 
+@functools.lru_cache(maxsize=None)
+def freeze_pip_packages(
+    environment: str,
+) -> str:
+    """Freeze the pip packages of a micromamba environment. The result is cached, because every step of a chain
+    uses it.
+
+    The freeze gives the git commit of a package installed from git. It leaves out editable installs and conda packages.
+
+    Args:
+        environment: Name or path of the environment.
+
+    Returns:
+        str: The output of `pip freeze`.
+    """
+    executable = os.environ.get("MAMBA_EXE") or shutil.which("micromamba")
+    if executable is None:
+        raise ValueError("micromamba was not found.")
+
+    option = "-p" if os.sep in environment else "-n"
+    result = subprocess.run([executable, "run", option, environment, "python", "-m", "pip", "freeze",
+                             "--exclude-editable"],
+                            stdout=subprocess.PIPE, stderr=subprocess.PIPE, universal_newlines=True)
+    if result.returncode != 0:
+        raise ValueError(result.stderr.strip())
+
+    return "".join(line for line in result.stdout.splitlines(keepends=True) if " @ file://" not in line)
+
+
 def export_environment(
     sbatch_file: str,
     folder: str,
-) -> None:
-    """Write the export of the environment which a job activates to `environment.yml` in its archive folder.
+) -> str:
+    """Write the export of the environment which a job activates to `environment.yml` in its archive folder,
+    and its pip packages to `pip_freeze.txt`.
 
-    A failed export gives a warning, because the job is already submitted.
+    A failed export or freeze gives a warning, because the job is already submitted.
+    The hash records the environment state from the dependences in both `environment.yml` and `pip_freeze.txt`.
 
     Args:
         sbatch_file: Path of the sbatch script.
         folder: Archive folder of the job.
+
+    Returns:
+        str: sha256 hash of the package list, or None if an environment file is not written.
     """
     # ponytail: only the first activated environment is archived. Export one file per environment if
     # a job activates more than one.
@@ -244,16 +319,28 @@ def export_environment(
         environment = next((match.group(1) for match in matches if match), None)
 
     if environment is None:
-        return
+        return None
 
     try:
         export = environment_export(environment)
     except ValueError as exc:
         print(f"Warning: the environment {environment} is not archived. {exc}")
-        return
+        return None
 
     with open(os.path.join(folder, ENVIRONMENT_FILE), "w") as myfile:
         myfile.write(export)
+
+    try:
+        pip_packages = freeze_pip_packages(environment)
+    except ValueError as exc:
+        print(f"Warning: the pip packages of the environment {environment} are not archived. {exc}")
+        return None
+
+    with open(os.path.join(folder, PIP_FILE), "w") as myfile:
+        myfile.write(pip_packages)
+
+    dependencies = export.split("dependencies:\n", 1)[-1].split("prefix:", 1)[0]
+    return hashlib.sha256((dependencies + pip_packages).encode("utf-8")).hexdigest()
 
 
 def archive_submitted_job(
@@ -283,7 +370,9 @@ def archive_submitted_job(
     date, suffix = job_name_parts(sbatch_file)
 
     folder = archive_job(os.path.dirname(sbatch_file), os.path.realpath(archive_dir), date, suffix, move)
-    export_environment(os.path.join(folder, SBATCH_FILE), folder)
+    environment_hash = export_environment(os.path.join(folder, SBATCH_FILE), folder)
+    if environment_hash is not None:
+        metadata = {**(metadata or {}), "environment_hash": environment_hash}
     write_job_metadata(folder, jobid=jobid, repositories=repositories, settings_file=settings_file,
                        metadata=metadata)
 

@@ -15,9 +15,9 @@ from slurm_workflows import REPOSITORY_DIR
 from slurm_workflows.inputs import check_external_input, check_job_input, check_output_absent
 from slurm_workflows.pipelines import load_pipeline, resolve_pipeline, steps_starting_at
 from slurm_workflows.projects import default
-from slurm_workflows.repositories import job_repositories
+from slurm_workflows.repositories import check_dirty, job_repositories
 from slurm_workflows.settings import blueprint_settings_file, load_settings, settings_file, settings_to_placeholders
-from slurm_workflows.submission import archive_submitted_job, submit
+from slurm_workflows.submission import archive_submitted_job, cancel_jobs, release_job, submit
 from slurm_workflows.templates import render_template, step_template
 
 # The functions which `deploy_jobs()` calls on the deployment module of a project.
@@ -90,8 +90,10 @@ def deploy_jobs(
     2. Check the scripts with the generic checks and `check_steps()` of the project, and check the
        archive directory.
     3. Print the warnings, then the notes. A dry run stops here.
-    4. Stop if a check gave a warning, unless `--force` is given.
-    5. Submit each step with a dependency on the previous step, and archive it.
+    4. Stop if a tracked repository is dirty, unless `--allow-dirty` is given.
+    5. Stop if a check gave a warning, unless `--force` is given.
+    6. Submit each step with a dependency on the previous step, and archive it. The first step is held
+        until all steps are archived. A failed archive cancels all submitted steps.
 
     Args:
         args: Parsed command line options of `slurm_wf.deploy`, including the options of the project.
@@ -152,6 +154,12 @@ def deploy_jobs(
         if archive_dir and not os.path.isdir(archive_dir):
             warnings.append(f"the archive directory {archive_dir} does not exist, so the jobs would not be archived")
 
+        repositories = job_repositories(settings, args.repository_file)
+        dirty = check_dirty(repositories, settings.get("untracked_files_dirty", False))
+        dirty_message = None
+        if dirty and not args.allow_dirty:
+            dirty_message = f"Dirty repositories: {', '.join(dirty)}. Pass --allow-dirty to submit anyway."
+
         if not args.submit:
             for sbatch_file, placeholder_values in zip(sbatch_files, step_values):
                 print(f"Placeholder values of {sbatch_file}: {placeholder_values}")
@@ -161,12 +169,17 @@ def deploy_jobs(
         # The warnings and the notes come last, so that the details of the dry run do not hide them.
         for message in warnings:
             print(f"Warning: {message}")
+        if dirty_message is not None and not args.submit:
+            print(f"Warning: {dirty_message}")
         for message in notes:
             print(f"Note: {message}")
 
         if not args.submit:
             print("Nothing is submitted. Use --submit to submit the jobs.")
             return
+
+        if dirty_message is not None:
+            raise ValueError(dirty_message)
 
         if warnings and not args.force:
             raise ValueError("The checks gave warnings, see above. Use --force to submit the jobs anyway.")
@@ -179,13 +192,21 @@ def deploy_jobs(
     if not archive_dir:
         print("Warning: no archive directory is set. The jobs are not archived.")
 
-    repositories = job_repositories(settings, args.repository_file)
-
     dependency = None
+
     # The JobID of the first step identifies the run of a pipeline in the archive.
     run = None
+    jobids = []
+
+    # Only step 1 is held, subsequent steps are submitted with dependency on the previous step.
     for step_index, sbatch_file in enumerate(sbatch_files, start=1):
-        jobid = submit(sbatch_file, dependency)
+        try:
+            jobid = submit(sbatch_file, dependency, hold=bool(archive_dir) and run is None)
+        except ValueError:
+            if archive_dir and run is not None:
+                release_job(run)
+            raise
+        jobids.append(jobid)
         print(f"Step {step_index} of {len(sbatch_files)} submitted as JobID {jobid}.")
         if run is None:
             run = jobid
@@ -203,7 +224,15 @@ def deploy_jobs(
                 archive_submitted_job(sbatch_file, jobid, archive_dir, move=True, repositories=repositories,
                                       settings_file=settings_path, metadata=metadata)
             except (OSError, ValueError) as exc:
-                # The job is queued, so the chain goes on. Only the archive of the job is incomplete.
-                print(f"Warning: job {jobid} was submitted, but its archiving failed: {exc}")
+                cancel_jobs(jobids)
+                raise ValueError(f"Archiving failed, so the jobs {', '.join(jobids)} were cancelled: {exc}") from exc
 
         dependency = jobid
+
+    # A failed scontrol release leaves all steps waiting, so they are cancelled.
+    if archive_dir:
+        try:
+            release_job(run)
+        except ValueError as exc:
+            cancel_jobs(jobids)
+            raise ValueError(f"Release failed, so the jobs {', '.join(jobids)} were cancelled: {exc}") from exc

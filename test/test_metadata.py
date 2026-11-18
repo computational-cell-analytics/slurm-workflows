@@ -11,11 +11,11 @@ import tempfile
 import unittest
 from unittest import mock
 
-from slurm_workflows.metadata import init_metadict, read_metadata, write_metadata
-from slurm_workflows.repositories import job_repositories
+from slurm_workflows.metadata import archive_folders, init_metadict, read_metadata, write_metadata
+from slurm_workflows.repositories import get_repository_status, job_repositories
 from slurm_workflows.slurm import jobids_from_log, reportseff_from_jobid, add_sbatch_parameters
 from stubs import REPOSITORY_DIR, WRITE_METADATA, reportseff_calls, run, set_reportseff_output, stub_env
-from stubs import write_file
+from stubs import MOCKUP_SETTINGS, write_file
 
 REPORT_LINES = [
     "JobID State Elapsed TimeEff CPUEff MemEff",
@@ -164,6 +164,43 @@ class MetadataFileTest(unittest.TestCase):
             read_metadata(self.path)
 
 
+class ArchiveFoldersTest(unittest.TestCase):
+
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.archive_dir = self.tmp.name
+        for path in ("2026-01-01_top/metadata.json", "2026-01-01_top/inner/metadata.json",
+                     "sub/2026-01-02_nested/metadata.json",
+                     "2026-01-03_replaced/log.txt", "2026-01-03_replaced/previous/1/metadata.json",
+                     "old/previous/2026-01-04_grouped/metadata.json", "old/2026-01-05_kept/metadata.json",
+                     "notes/readme.txt"):
+            write_file(os.path.join(self.archive_dir, *path.split("/")))
+
+    def tearDown(self):
+        self.tmp.cleanup()
+
+    def found(self, pattern=None):
+        return sorted(os.path.relpath(folder, self.archive_dir)
+                      for folder in archive_folders(self.archive_dir, pattern))
+
+    def test_walk(self):
+        # A folder without metadata.json, but with log.txt and previous/, is left by a failed archiving.
+        # previous/ without log.txt groups other folders, so neither "old" nor its "previous" counts.
+        self.assertEqual(self.found(), ["2026-01-01_top", "2026-01-03_replaced",
+                                        os.path.join("old", "2026-01-05_kept"),
+                                        os.path.join("sub", "2026-01-02_nested")])
+
+    def test_archive_folder_as_input(self):
+        folder = os.path.join(self.archive_dir, "2026-01-01_top")
+
+        self.assertEqual(archive_folders(folder), [folder])
+
+    def test_pattern_matches_the_relative_path(self):
+        self.assertEqual(self.found("sub/"), [os.path.join("sub", "2026-01-02_nested")])
+        with self.assertRaisesRegex(ValueError, "No subfolders match pattern missing"):
+            archive_folders(self.archive_dir, "missing")
+
+
 class WriteMetadataTest(unittest.TestCase):
 
     def setUp(self):
@@ -237,13 +274,27 @@ class WriteMetadataTest(unittest.TestCase):
 
         self.assertEqual(self.metadata()["repositories"][0]["repo_version"], self.git(repository, "rev-parse", "HEAD"))
 
-    def test_missing_repository_file_keeps_git_hash(self):
+    def test_settings_refresh_git_hash(self):
+        env = stub_env(self.tmp.name)
+        repository = self.repository()
+        with open(MOCKUP_SETTINGS) as myfile:
+            settings = json.load(myfile)
+        settings["repositories"] = {"tool": repository}
+        settings_file = write_file(os.path.join(self.tmp.name, "settings.json"), json.dumps(settings))
+
+        run([sys.executable, WRITE_METADATA, "-s", settings_file, self.archived], env=env)
+        self.git(repository, "commit", "-q", "--allow-empty", "-m", "second")
+        result = run([sys.executable, WRITE_METADATA, "-s", settings_file, self.archived], env=env)
+
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(self.metadata()["repositories"][0]["repo_version"], self.git(repository, "rev-parse", "HEAD"))
+
+    def test_without_repositories_keeps_git_hash(self):
         env = stub_env(self.tmp.name)
         repository_file = write_file(os.path.join(self.tmp.name, "repositories.txt"), f"tool\t{self.repository()}\n")
         run([sys.executable, WRITE_METADATA, "-r", repository_file, self.archived], env=env)
 
-        result = run([sys.executable, WRITE_METADATA, "-r", os.path.join(self.tmp.name, "none.txt"), self.archived],
-                     env=env)
+        result = run([sys.executable, WRITE_METADATA, self.archived], env=env)
 
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertEqual(self.metadata()["repositories"][0]["repo_name"], "tool")
@@ -270,6 +321,28 @@ class RepositoriesTest(unittest.TestCase):
 
         repositories = job_repositories({"repositories": {"slurm-workflows": "/other"}})
         self.assertEqual(repositories, {"slurm-workflows": REPOSITORY_DIR})
+
+    def git(self, repository, *args):
+        identity = ["-c", "user.name=test", "-c", "user.email=test@example.org"]
+        result = run(["git", "-C", repository] + identity + list(args))
+        self.assertEqual(result.returncode, 0, result.stderr)
+
+    def test_get_repository_status(self):
+        repository = os.path.join(self.tmp.name, "repository")
+        write_file(os.path.join(repository, ".gitignore"), "ignored.txt\n")
+        write_file(os.path.join(repository, "tracked.txt"), "first\n")
+        self.git(repository, "init", "-q")
+        self.git(repository, "add", ".")
+        self.git(repository, "commit", "-q", "-m", "first")
+
+        write_file(os.path.join(repository, "ignored.txt"))
+        self.assertEqual(get_repository_status(repository), "clean")
+
+        write_file(os.path.join(repository, "new", "untracked.txt"))
+        self.assertEqual(get_repository_status(repository), "untracked")
+
+        write_file(os.path.join(repository, "tracked.txt"), "second\n")
+        self.assertEqual(get_repository_status(repository), "dirty")
 
 
 if __name__ == "__main__":

@@ -69,13 +69,65 @@ def job_repositories(
     return repositories
 
 
+def get_repository_status(
+    repo_path: str,
+) -> str:
+    """Return the git status of a repository.
+
+    'clean': no changes. 'untracked': only untracked files. 'dirty': changes to tracked files.
+    `untracked` excludes files matched by .gitignore.
+
+    Args:
+        repo_path: Local path of the repository.
+
+    Returns:
+        str: 'clean', 'untracked' or 'dirty'.
+    """
+    if not os.path.isdir(repo_path):
+        raise ValueError(f"Repository path {repo_path} is not a directory.")
+
+    result = subprocess.run(["git", "status", "--porcelain", "--untracked-files=normal"], cwd=repo_path,
+                            stdout=subprocess.PIPE, stderr=subprocess.PIPE, universal_newlines=True)
+    if result.returncode != 0:
+        raise ValueError(f"Failed to check the git status of {repo_path}: {result.stderr.strip()}")
+
+    git_status_lines = result.stdout.splitlines()
+    if len(git_status_lines) == 0:
+        return "clean"
+    if all(line.startswith("??") for line in git_status_lines):
+        return "untracked"
+    return "dirty"
+
+
+def check_dirty(
+    repositories: dict,
+    untracked_files_dirty: bool = False,
+) -> list:
+    """Return the names of the dirty repositories.
+
+    A repository with status 'dirty' has uncommitted changes to tracked files; it always returns as dirty.
+    A repository with status 'untracked' returns as dirty only if untracked_files_dirty is True.
+
+    Args:
+        repositories: Dictionary mapping repository names to their local paths.
+        untracked_files_dirty: Whether a repository with 'untracked' status is dirty.
+
+    Returns:
+        list: Names of the dirty repositories.
+    """
+    dirty_status = ["dirty", "untracked"] if untracked_files_dirty else ["dirty"]
+
+    return [repo_name for repo_name, repo_path in repositories.items()
+            if get_repository_status(repo_path) in dirty_status]
+
+
 def add_repository_status(
     metadict: dict,
     repositories: dict,
 ) -> None:
     """Add the git hash and the status of each repository to the metadata.
 
-    The status is 'clean' or 'dirty'.
+    The status is 'clean', 'untracked' or 'dirty'.
 
     Args:
         metadict: Metadata of the job.
@@ -89,7 +141,8 @@ def add_repository_status(
 
     for repo_name, repo_path in repositories.items():
         if not os.path.isdir(repo_path):
-            print(f"Warning: repository path {repo_path} of {repo_name} is no directory. Its git hash is not recorded.")
+            print(f"Warning: repository path {repo_path} of {repo_name} is not a directory. "
+                  "Its git hash is not recorded.")
             continue
 
         result = subprocess.run(["git", "rev-parse", "HEAD"], cwd=repo_path, stdout=subprocess.PIPE,
@@ -98,9 +151,7 @@ def add_repository_status(
             print(f"Warning: the git hash of {repo_name} is not recorded: {result.stderr.strip()}")
             continue
         repo_version = result.stdout
-        git_status_out = subprocess.run(["git", "status", "--porcelain"],
-                                        cwd=repo_path, stdout=subprocess.PIPE).stdout.decode("utf-8")
-        git_status = "clean" if len(git_status_out) == 0 else "dirty"
+        git_status = get_repository_status(repo_path)
 
         repo_list.append({"repo_name": repo_name,
                           "repo_version": repo_version.strip(),

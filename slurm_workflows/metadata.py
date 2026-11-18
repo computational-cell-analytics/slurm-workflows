@@ -79,18 +79,23 @@ def archive_folders(
     input_dir: str,
     pattern: Optional[str] = None,
 ) -> List[str]:
-    """List the archive folders in a directory.
+    """List the archive folders in a directory and its subdirectories.
+
+    An archive folder holds `metadata.json`, or `log.txt` and `previous/`. The second case is an
+    archiving which failed before the metadata, and its replaced JobIDs still count. `previous/` alone
+    does not mark an archive folder, because a folder of that name can group other archive folders.
+    The search does not enter an archive folder.
 
     Args:
         input_dir: Directory of the archive folders.
-        pattern: Part of the folder name, which can hold wildcards, or None for all folders.
+        pattern: Part of the path relative to `input_dir`, which can hold wildcards, or None for all folders.
 
     Returns:
         list: Paths of the archive folders.
     """
     folders = []
     for root_dir, subdirs, files in os.walk(input_dir):
-        if METADATA_FILE in files:
+        if METADATA_FILE in files or (LOG_FILE in files and PREVIOUS_DIR in subdirs):
             folders.append(root_dir)
             subdirs.clear()
         elif PREVIOUS_DIR in subdirs:

@@ -11,7 +11,7 @@ import tempfile
 import unittest
 from unittest import mock
 
-from slurm_workflows.metadata import init_metadict, read_metadata, write_metadata
+from slurm_workflows.metadata import archive_folders, init_metadict, read_metadata, write_metadata
 from slurm_workflows.repositories import get_repository_status, job_repositories
 from slurm_workflows.slurm import jobids_from_log, reportseff_from_jobid, add_sbatch_parameters
 from stubs import REPOSITORY_DIR, WRITE_METADATA, reportseff_calls, run, set_reportseff_output, stub_env
@@ -162,6 +162,43 @@ class MetadataFileTest(unittest.TestCase):
 
         with self.assertRaisesRegex(ValueError, f"The metadata file {self.path} is not valid JSON"):
             read_metadata(self.path)
+
+
+class ArchiveFoldersTest(unittest.TestCase):
+
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.archive_dir = self.tmp.name
+        for path in ("2026-01-01_top/metadata.json", "2026-01-01_top/inner/metadata.json",
+                     "sub/2026-01-02_nested/metadata.json",
+                     "2026-01-03_replaced/log.txt", "2026-01-03_replaced/previous/1/metadata.json",
+                     "old/previous/2026-01-04_grouped/metadata.json", "old/2026-01-05_kept/metadata.json",
+                     "notes/readme.txt"):
+            write_file(os.path.join(self.archive_dir, *path.split("/")))
+
+    def tearDown(self):
+        self.tmp.cleanup()
+
+    def found(self, pattern=None):
+        return sorted(os.path.relpath(folder, self.archive_dir)
+                      for folder in archive_folders(self.archive_dir, pattern))
+
+    def test_walk(self):
+        # A folder without metadata.json, but with log.txt and previous/, is left by a failed archiving.
+        # previous/ without log.txt groups other folders, so neither "old" nor its "previous" counts.
+        self.assertEqual(self.found(), ["2026-01-01_top", "2026-01-03_replaced",
+                                        os.path.join("old", "2026-01-05_kept"),
+                                        os.path.join("sub", "2026-01-02_nested")])
+
+    def test_archive_folder_as_input(self):
+        folder = os.path.join(self.archive_dir, "2026-01-01_top")
+
+        self.assertEqual(archive_folders(folder), [folder])
+
+    def test_pattern_matches_the_relative_path(self):
+        self.assertEqual(self.found("sub/"), [os.path.join("sub", "2026-01-02_nested")])
+        with self.assertRaisesRegex(ValueError, "No subfolders match pattern missing"):
+            archive_folders(self.archive_dir, "missing")
 
 
 class WriteMetadataTest(unittest.TestCase):

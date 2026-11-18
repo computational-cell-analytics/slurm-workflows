@@ -301,6 +301,8 @@ class UpdateReportseffTest(ArchiveTestCase):
         write_file(os.path.join(empty, "metadata.json"), "")
         corrupt = self.job("corrupt", "1002", [], previous=True)
         write_file(os.path.join(corrupt, "metadata.json"), '{"jobid": ')
+        # An archiving which failed before the metadata leaves no top-level metadata.json.
+        write_file(os.path.join(self.archive_dir, f"{TODAY}_corrupt", "log.txt"), "1002\n1004\n")
         folder = self.job("valid", "1003", [report("1003", "PENDING")])
 
         output = self.update([line("1003", "COMPLETED")])

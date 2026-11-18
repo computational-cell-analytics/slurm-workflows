@@ -17,7 +17,8 @@ and a middle part of one word, e.g. `2025-03-19_sbatch_apply_unet.sbatch` and
 `2025-03-19_log_apply_unet.txt`.
 The archive folder of the job is `<archive_dir>/<date>_<suffix>/`.
 Archive folders can also be in subdirectories of `<archive_dir>`.
-The commands take each directory with `metadata.json` as an archive folder.
+The commands take each directory with `metadata.json`, or with `log.txt` and `previous/`, as an archive
+folder. The second case is an archiving which failed before the metadata.
 
 ## The archive folder
 

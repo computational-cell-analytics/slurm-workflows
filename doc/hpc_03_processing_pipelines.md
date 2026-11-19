@@ -267,7 +267,8 @@ python /path/to/slurm-workflows/scripts/deploy.py --input /path/to/slurm-workflo
 
 - `squeue --me` lists your jobs, see [HPC 101](hpc_101.md#advanced-scriptsfunctions).
   The later steps of a chain wait with the reason `(Dependency)`.
-- Slurm sends a mail to `user_address` if a job fails.
+- Slurm sends a mail to `user_address` if a job or a task of an apply array fails.
+  Slurm cancels the later steps of the chain without a mail, so the first mail names the step to fix.
 - Read the output `slurm-<jobid>.out` of a failed step in the folder where the deploy step ran.
   A missing input shows the line `Missing input of the job: <path>`.
 - A failed mask or apply step can leave a partial `mask.zarr` or `predictions.zarr` in the prediction

@@ -2,7 +2,7 @@
 #SBATCH --job-name=apply-synapses_<cochlea_job_name>
 #SBATCH -t <time>
 #SBATCH --mail-user=<user_address>
-#SBATCH --mail-type=FAIL
+#SBATCH --mail-type=FAIL,ARRAY_TASKS
 
 #SBATCH -p grete:shared
 #SBATCH -A <account_name>

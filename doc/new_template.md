@@ -66,6 +66,11 @@ The archive does not record other forms, e.g. `-J`, `--gres`, `-N` or `--constra
 Use `--job-name` instead of `-J`, and `-G` instead of `--gres`, if the archive must record the value.
 `##SBATCH` disables a line for Slurm and for the archive.
 
+A job array also needs `#SBATCH --mail-type=FAIL,ARRAY_TASKS`.
+Without `ARRAY_TASKS`, Slurm sends one mail for the whole array.
+This mail does not report a task which fails before it starts.
+`test/test_templates.py` checks the line.
+
 ## 4. Activate a micromamba environment
 
 The archive exports the environment of the job to `environment.yml`.

@@ -7,6 +7,7 @@ import glob
 import io
 import json
 import os
+import re
 import sys
 import tempfile
 import types
@@ -198,6 +199,23 @@ class ExitCodeTrapTest(unittest.TestCase):
                 content = read_file(template)
                 self.assertIn("trap 'exit 143' TERM\n", content)
                 self.assertIn("""trap 'echo "Exit code of the job: $?"' EXIT\n""", content)
+
+
+class MailTypeTest(unittest.TestCase):
+
+    def test_every_array_template_mails_each_failed_task(self):
+        # Without ARRAY_TASKS, Slurm sends one mail for the whole array, which ignores a task that fails
+        # before it starts.
+        templates = glob.glob(os.path.join(REPOSITORY_DIR, "templates", "*", "*.template"))
+        templates += glob.glob(os.path.join(MOCKUP_DIR, "templates", "*", "*.template"))
+        array_templates = [template for template in templates
+                           if re.search(r"^#SBATCH (-a|--array)\b", read_file(template), re.MULTILINE)]
+        self.assertGreater(len(array_templates), 2)
+        for template in array_templates:
+            with self.subTest(template=os.path.basename(template)):
+                mail_type = re.search(r"^#SBATCH --mail-type=(\S+)", read_file(template), re.MULTILINE)
+                self.assertIsNotNone(mail_type)
+                self.assertIn("ARRAY_TASKS", mail_type.group(1).split(","))
 
 
 class ProjectModuleTest(unittest.TestCase):

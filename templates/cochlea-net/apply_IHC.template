@@ -1,5 +1,5 @@
 #!/bin/bash
-#SBATCH --job-name=apply-unet-IHC_<cochlea_job_name>
+#SBATCH --job-name=apply-unet-IHC<stain_job_name>_<cochlea_job_name>
 #SBATCH -t <time>
 #SBATCH --mail-user=<user_address>
 #SBATCH --mail-type=FAIL,ARRAY_TASKS

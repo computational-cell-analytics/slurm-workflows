@@ -347,6 +347,28 @@ def prediction_name(
     return f"{stain}_{version}"
 
 
+def job_stain(
+    group: str,
+    stain: str,
+) -> str:
+    """Return the stain which enters the names of a job, or an empty string for the default stain.
+
+    The sbatch script, its archive folder and the Slurm job name carry a stain which is not the
+    default of the group. So two runs of one step on two stains of a cochlea never share an archive
+    folder.
+
+    Args:
+        group: Key of `GROUPS`, or None for a job without a group.
+        stain: Stain of the job. A job without a group ignores it.
+
+    Returns:
+        str: The stain, or an empty string.
+    """
+    if group is None or stain == GROUPS[group]["stain"]:
+        return ""
+    return stain
+
+
 def version_part(
     version: str,
 ) -> str:
@@ -697,11 +719,17 @@ def prepare_step(
     if group is not None and f"{group.lower()}_{MASK_PLACEHOLDER}" in template_placeholders:
         placeholder_values.update(mask_parameters(placeholder_values, group.lower()))
 
-    # The group enters the name of a template which serves more than one group, so that the runs
-    # of two groups do not share an archive folder.
+    # The group enters the name of a template which serves more than one group, and a stain which
+    # is not the default of the group enters the names of every job with a group, so that the runs
+    # of two groups or of two stains do not share an archive folder.
+    stain = job_stain(group, placeholder_values.get("stain"))
+    placeholder_values["stain_job_name"] = f"-{stain}" if stain else ""
+
     script_str = step_name
     if pipeline_group is not None and step_group is None:
         script_str = f"{script_str}_{pipeline_group}"
+    if stain:
+        script_str = f"{script_str}_{stain}"
 
     return placeholder_values, f"{script_str}_{prefix}{number.lstrip('0')}{side}", notes
 

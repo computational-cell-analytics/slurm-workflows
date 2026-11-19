@@ -140,6 +140,10 @@ example `Homer1` instead of `CTBP2` for synapses.
 A stain which differs from the default becomes part of the prediction folder, of the MoBIE source and
 of the S3 table, e.g. `Homer1_synapse_v3_ihc_v11`.
 So a new stain never overwrites an older prediction.
+The stain is also part of the name of the sbatch script, of its archive folder and of the Slurm job name,
+e.g. `apply_synapses_Homer1_GLR301L` and `apply-synapses-Homer1_G-LR-000301-L`.
+So two stains of one cochlea can run on the same day.
+The default stain of a group keeps the names without a stain.
 The stain does not change the model. The model version alone selects it.
 
 > [!IMPORTANT]
@@ -376,6 +380,7 @@ The cochlea-net deployment adds these placeholder values to the settings and the
 | Placeholder | Value | A parameter overrides it |
 |---|---|---|
 | `cochlea_job_name` | `cochlea` with `-` instead of `_`, for `#SBATCH --job-name` | no |
+| `stain_job_name` | `-<stain>` for a stain which is not the default of the group of the template, else empty, for `#SBATCH --job-name` | no |
 | `stain_SGN`, `stain_IHC`, `stain_synapses` | `PV`, `Vglut3`, `CTBP2` | yes |
 | `time`, `mem`, `instances` | The row of the template in `templates/cochlea-net/steps.json`, with the values of the species. `instances` is the number of tasks of an apply array | yes |
 | `last_instance` | `instances` - 1, for `#SBATCH -a 0-<last_instance>` | no |
@@ -394,6 +399,8 @@ The cochlea-net deployment adds these placeholder values to the settings and the
 
 The deployment also names each sbatch script with the cochlea, e.g.
 `<date>_sbatch_mask_SGN_MAMD137L.sbatch`.
+A stain which is not the default of the group comes before the cochlea, e.g.
+`<date>_sbatch_mask_IHC_Myo7a_MAMD137L.sbatch`.
 
 ## Next steps
 

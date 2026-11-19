@@ -13,7 +13,7 @@ from unittest import mock
 
 from slurm_workflows.projects.cochlea_net import deployment, mobie
 from slurm_workflows.inputs import check_external_input, check_job_input, check_output_absent, job_variables
-from slurm_workflows.templates import render_template, step_template
+from slurm_workflows.templates import fill_placeholders, render_template, step_template
 from stubs import MICROMAMBA_STUB, TEMPLATE_DIR, read_file, run, write_executable, write_file
 
 
@@ -342,6 +342,49 @@ class SynapseNameTest(unittest.TestCase):
         for args, name in cases:
             self.assertEqual(module.synapse_ihc_prediction_name(*args), name)
             self.assertTrue(mobie.SYNAPSE_NAME.fullmatch(name), name)
+
+
+class JobNameTest(unittest.TestCase):
+    """A stain which is not the default of the group enters the names, so two stains never share an archive folder."""
+
+    COCHLEA = "G_LR_000301_L"
+    MODELS = {"IHC": {"IHC_v11": "/path/to/model"}, "Synapses": {"synapse_v3": "/path/to/model"}}
+
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+
+    def tearDown(self):
+        self.tmp.cleanup()
+
+    def names(self, step, definition=None, **parameters):
+        """Return the name of the sbatch script and the rendered Slurm job name."""
+        values = {"data_dir": self.tmp.name, "cochlea": self.COCHLEA, "ihc_version": "IHC_v11", **parameters}
+        template = step_template(TEMPLATE_DIR, step)
+        values, script_name, _ = deployment.prepare_step({"data_dir": self.tmp.name, "models": self.MODELS}, values,
+                                                         template, deploy_args(), definition)
+        job_name_line = read_file(template).splitlines()[1]
+        return script_name, fill_placeholders([job_name_line], values)[0][0].split("=")[1]
+
+    def test_default_stain_keeps_the_names(self):
+        for parameters in ({}, {"stain_synapses": "CTBP2"}):
+            with self.subTest(parameters):
+                self.assertEqual(self.names("apply_synapses", **parameters),
+                                 ("apply_synapses_GLR301L", "apply-synapses_G-LR-000301-L"))
+
+    def test_other_stain_enters_the_names(self):
+        self.assertEqual(self.names("apply_synapses", stain_synapses="Homer1"),
+                         ("apply_synapses_Homer1_GLR301L", "apply-synapses-Homer1_G-LR-000301-L"))
+        self.assertEqual(self.names("mask_IHC", stain_IHC="Myo7a"),
+                         ("mask_IHC_Myo7a_GLR301L", "mask-IHC-Myo7a_G-LR-000301-L"))
+
+        # The stain of another group does not change the names.
+        self.assertEqual(self.names("mask_IHC", stain_synapses="Homer1"),
+                         ("mask_IHC_GLR301L", "mask-IHC_G-LR-000301-L"))
+
+    def test_template_of_every_group_names_the_group_and_the_stain(self):
+        definition = {"name": "synapses", "group": "synapses", "steps": ["mask_synapses"]}
+        self.assertEqual(self.names("mobie_add_detection", definition, stain_synapses="Homer1"),
+                         ("mobie_add_detection_synapses_Homer1_GLR301L", "mobie-detection-Homer1_G-LR-000301-L"))
 
 
 class PreviousRunTest(unittest.TestCase):

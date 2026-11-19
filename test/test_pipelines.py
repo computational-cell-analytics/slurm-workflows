@@ -1,20 +1,22 @@
 #!/usr/bin/python
 # -- coding: utf-8 --
 """Tests of the step selection of a pipeline: `select_steps()` and `step_row()` of cochlea-net,
-and the `download_image` and `cleanup_input` jobs which `--download` and `--cleanup-input` add."""
+the `download_image` and `cleanup_input` jobs which `--download` and `--cleanup-input` add, and the
+stain in the Slurm job name of every template with a group."""
 import argparse
 import contextlib
 import glob
 import io
 import json
 import os
+import re
 import tempfile
 import unittest
 
 from slurm_workflows.pipelines import load_pipeline, resolve_pipeline
 from slurm_workflows.projects.cochlea_net import deployment
 from slurm_workflows.templates import TEMPLATE_SUFFIX, project_of_template, render_template, step_template
-from stubs import TEMPLATE_DIR, read_file, run, write_executable, write_file
+from stubs import REPOSITORY_DIR, TEMPLATE_DIR, read_file, run, write_executable, write_file
 from test_mobie import RCLONE_STUB, REMOTE
 
 SETTINGS = {"mobie_project": "/path/to/mobie_project"}
@@ -100,7 +102,7 @@ class S3TemplateTest(unittest.TestCase):
         write_file(os.path.join(self.bucket, self.COCHLEA, "dataset.json"), json.dumps({"sources": self.sources}))
 
     def run_step(self, step, stain, cochlea_data="", input_key=""):
-        values = {"cochlea_job_name": "job", "user_address": "a", "account_name": "b",
+        values = {"cochlea_job_name": "job", "stain_job_name": "", "user_address": "a", "account_name": "b",
                   "data_dir": self.data_dir, "cochlea": self.COCHLEA, "cochlea_data": cochlea_data,
                   "input_key": input_key, "s3_remote": REMOTE, "stain": stain, "time": "01:00:00", "mem": "1G"}
         sbatch_file = os.path.join(self.tmp.name, f"{step}.sbatch")
@@ -190,6 +192,29 @@ class StepRowTest(unittest.TestCase):
 
     def test_project_of_template(self):
         self.assertEqual(project_of_template(step_template(TEMPLATE_DIR, "apply_SGN")), "cochlea-net")
+
+
+class JobNameTest(unittest.TestCase):
+    """A stain which is not the default of the group enters the Slurm job name of every job with a group."""
+
+    def test_every_template_with_a_group_names_the_stain(self):
+        rows = json.loads(read_file(os.path.join(TEMPLATE_DIR, deployment.STEPS_FILE)))
+        steps = {step for step, row in rows.items() if row[deployment.GROUP_KEY] is not None}
+        steps.update([deployment.DOWNLOAD_STEP, deployment.CLEANUP_INPUT_STEP])
+        for pipeline_file in glob.glob(os.path.join(REPOSITORY_DIR, "pipelines", "cochlea-net", "*.json")):
+            definition = load_pipeline(pipeline_file)
+            if definition.get(deployment.GROUP_KEY) is not None:
+                for key in ("steps", deployment.MOBIE_STEPS_KEY, deployment.CLEANUP_STEPS_KEY,
+                            deployment.MOBIE_CLEANUP_STEPS_KEY):
+                    steps.update(definition.get(key, []))
+
+        self.assertGreater(len(steps), 10)
+        for step in sorted(steps):
+            with self.subTest(step):
+                job_name = re.search(r"^#SBATCH --job-name=(\S+)", read_file(step_template(TEMPLATE_DIR, step)),
+                                     re.MULTILINE)
+                self.assertIsNotNone(job_name)
+                self.assertIn("<stain_job_name>_<cochlea_job_name>", job_name.group(1))
 
 
 if __name__ == "__main__":

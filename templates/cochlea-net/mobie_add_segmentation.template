@@ -1,5 +1,5 @@
 #!/bin/bash
-#SBATCH --job-name=mobie-segmentation_<cochlea_job_name>
+#SBATCH --job-name=mobie-segmentation<stain_job_name>_<cochlea_job_name>
 #SBATCH -t <time>
 #SBATCH --mail-user=<user_address>
 #SBATCH --mail-type=FAIL

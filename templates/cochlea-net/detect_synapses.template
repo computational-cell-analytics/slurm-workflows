@@ -1,5 +1,5 @@
 #!/bin/bash
-#SBATCH --job-name=detect-synapses_<cochlea_job_name>
+#SBATCH --job-name=detect-synapses<stain_job_name>_<cochlea_job_name>
 #SBATCH -t <time>
 #SBATCH --mail-user=<user_address>
 #SBATCH --mail-type=FAIL

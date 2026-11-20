@@ -16,7 +16,8 @@ from slurm_workflows.inputs import check_external_input, check_job_input, check_
 from slurm_workflows.pipelines import load_pipeline, resolve_pipeline, steps_starting_at
 from slurm_workflows.projects import default
 from slurm_workflows.repositories import check_dirty, job_repositories
-from slurm_workflows.settings import blueprint_settings_file, load_settings, settings_file, settings_to_placeholders
+from slurm_workflows.settings import blueprint_settings_file, load_settings, project_settings_file
+from slurm_workflows.settings import settings_to_placeholders
 from slurm_workflows.submission import archive_submitted_job, cancel_jobs, release_job, submit
 from slurm_workflows.templates import render_template, step_template
 
@@ -71,7 +72,7 @@ def load_project_settings(
             str  - the settings file, or None if it does not exist
     """
     if settings_path is None:
-        settings_path = settings_file(project)
+        settings_path = project_settings_file(project)
 
     if not os.path.isfile(settings_path):
         print(f"Warning: settings file {settings_path} not found. Copy {blueprint_settings_file(project)} "

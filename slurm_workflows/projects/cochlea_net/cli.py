@@ -12,7 +12,7 @@ from slurm_workflows.projects.cochlea_net.mobie import (add_s3_dataset, add_s3_s
                                                         generate_local_project, generate_s3_project,
                                                         repair_s3_dataset)
 from slurm_workflows.projects.cochlea_net.processing_metadata import add_processing_metadata
-from slurm_workflows.settings import load_settings, settings_file
+from slurm_workflows.settings import load_settings, project_settings_file
 
 PROJECT = "cochlea-net"
 
@@ -99,7 +99,7 @@ def main_add_processing_metadata():
         "only the version part, e.g. v3, so its key comes from the settings file. A job keeps existing entries.")
 
     parser.add_argument("archive_dir", type=str, help="Archive directory, which holds the archive folders.")
-    parser.add_argument("-s", "--settings", type=str, default=settings_file(PROJECT),
+    parser.add_argument("-s", "--settings", type=str, default=project_settings_file(PROJECT),
                         help="Settings file of cochlea-net. Its 'models' give the key of a version part. "
                              "Default: %(default)s")
     parser.add_argument("-p", "--pattern", type=str, default=None,

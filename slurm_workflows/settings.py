@@ -17,7 +17,7 @@ SETTINGS_DIR = os.path.join(REPOSITORY_DIR, "project_settings")
 USER_SETTINGS = ("academic_id", "hpc_user")
 
 
-def settings_file(
+def project_settings_file(
     project: str,
 ) -> str:
     """Return the default settings file of a project.

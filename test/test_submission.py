@@ -370,6 +370,23 @@ class DeploySubmissionTest(unittest.TestCase):
         with self.assertRaises(ValueError):
             self.deploy(self.archive_dir)
 
+    def test_chain_with_defaults_has_no_generic_metadata(self):
+        jobids = self.submit_chain([SBATCH_NAME], self.archive_dir)
+
+        self.assertEqual(jobids, [str(FIRST_JOBID)])
+        self.assertIn("--hold", sbatch_calls(self.env)[0])
+        self.assertEqual(scontrol_calls(self.env), [f"release {FIRST_JOBID}"])
+        metadata = self.archived_metadata("x")
+        self.assertNotIn("project", metadata)
+        self.assertNotIn("pipeline", metadata)
+
+    def test_chain_without_archive_is_not_held(self):
+        self.submit_chain([SBATCH_NAME], None)
+
+        self.assertNotIn("--hold", sbatch_calls(self.env)[0])
+        self.assertEqual(scontrol_calls(self.env), [])
+        self.assertEqual(os.listdir(self.archive_dir), [])
+
     def test_wrong_number_of_step_entries_submits_nothing(self):
         sbatch_names = [SBATCH_NAME, f"{DATE}_sbatch_y.sbatch"]
         for options in ({"step_metadata": [{}]}, {"step_metadata": [{}, {}, {}]},
@@ -377,6 +394,12 @@ class DeploySubmissionTest(unittest.TestCase):
             with self.subTest(str(options)):
                 with self.assertRaisesRegex(ValueError, "entries for 2 sbatch scripts"):
                     self.submit_chain(sbatch_names, self.archive_dir, **options)
+
+        self.assertEqual(sbatch_calls(self.env), [])
+
+    def test_pipeline_without_step_names_submits_nothing(self):
+        with self.assertRaisesRegex(ValueError, "needs the step names"):
+            self.submit_chain([SBATCH_NAME], self.archive_dir, pipeline={"name": "chain"})
 
         self.assertEqual(sbatch_calls(self.env), [])
 

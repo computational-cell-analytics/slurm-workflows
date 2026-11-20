@@ -120,7 +120,7 @@ The archive records the values in each sbatch script anyway.
 
 | Parameter | `mobie` | `sgn` | `ihc` | `synapses` | Purpose |
 |---|---|---|---|---|---|
-| `cochlea` | yes | yes | yes | yes | The cochlea name |
+| `cochlea` | yes | yes | yes | yes | The cochlea name, `<species>_<initials>_<index>_<side>[_v<N>]`, e.g. `M_AMD_000137_L` |
 | `stains` | yes | see text | see text | see text | Every stain of the cochlea, in the order of the setups of the n5 with every stain |
 | `sgn_version` | - | yes | - | - | A key of `models.SGN` |
 | `sgn_masking_threshold`, `sgn_legacy_mask` | - | optional | - | - | The legacy rule of the mask step, see [The mask rule](#the-mask-rule) |
@@ -141,10 +141,23 @@ A stain which differs from the default becomes part of the prediction folder, of
 of the S3 table, e.g. `Homer1_synapse_v3_ihc_v11`.
 So a new stain never overwrites an older prediction.
 The stain is also part of the name of the sbatch script, of its archive folder and of the Slurm job name,
-e.g. `apply_synapses_Homer1_GLR301L` and `apply-synapses-Homer1_G-LR-000301-L`.
+e.g. `apply_synapses_Homer1_v3_ihc_v11_GLR301L` and `apply-synapses-Homer1-v3-ihc-v11_G-LR-000301-L`.
 So two stains of one cochlea can run on the same day.
 The default stain of a group keeps the names without a stain.
 The stain does not change the model. The model version alone selects it.
+
+The model version is part of the same names, in the short form of the prediction folder: `v11b` of
+`IHC_v11b`, and `v3_ihc_v11b` for the synapse jobs, which depend on two models.
+Every step of a group gets it, also `download_image` and `cleanup_input`, e.g.
+`download_image_IHC_v11b_GEK233L`.
+So two model versions of one cochlea can run on the same day, and each run has its own archive folders.
+The Slurm job name is the name of the sbatch script with `-` instead of `_`, e.g.
+`download-image-IHC-v11b_G-EK-000233-L`.
+The `metadata.json` of each job records the full values: `cochlea`, e.g. `G_EK_000233_L`, and for a
+job with a group `stains` and `models`, e.g. `{"Synapses": "CTBP2", "IHC": "Vglut3"}` and
+`{"Synapses": "synapse_v3", "IHC": "IHC_v11b"}`.
+`stains` also names a default stain, which the names leave out.
+See [The archive](archive.md#the-keys-of-metadatajson).
 
 > [!IMPORTANT]
 > The `synapses` pipeline needs the IHC segmentation of the same cochlea. Run `ihc` first, and set `ihc_version` in the parameter file.
@@ -379,8 +392,7 @@ The cochlea-net deployment adds these placeholder values to the settings and the
 
 | Placeholder | Value | A parameter overrides it |
 |---|---|---|
-| `cochlea_job_name` | `cochlea` with `-` instead of `_`, for `#SBATCH --job-name` | no |
-| `stain_job_name` | `-<stain>` for a stain which is not the default of the group of the template, else empty, for `#SBATCH --job-name` | no |
+| `job_name` | The name of the sbatch script without the date, with `-` instead of `_`, then `_` and `cochlea` with `-` instead of `_`, for `#SBATCH --job-name`, e.g. `download-image-IHC-v11b_G-EK-000233-L` | no |
 | `stain_SGN`, `stain_IHC`, `stain_synapses` | `PV`, `Vglut3`, `CTBP2` | yes |
 | `time`, `mem`, `instances` | The row of the template in `templates/cochlea-net/steps.json`, with the values of the species. `instances` is the number of tasks of an apply array | yes |
 | `last_instance` | `instances` - 1, for `#SBATCH -a 0-<last_instance>` | no |
@@ -397,10 +409,13 @@ The cochlea-net deployment adds these placeholder values to the settings and the
 | `prediction_dir` | The prediction folder of the group of the template. For `synapses`, it is `synapse_ihc_prediction` | no |
 | `sgn_center_distance_threshold`, `sgn_boundary_distance_threshold`, `sgn_distance_smoothing`, and the same with `ihc_` | `segment_SGN` and `segment_IHC` only: the watershed values of `best_best_params.json` in the model folder, else the defaults of the group, see [The watershed values of the segmentation](#the-watershed-values-of-the-segmentation) | yes |
 
-The deployment also names each sbatch script with the cochlea, e.g.
-`<date>_sbatch_mask_SGN_MAMD137L.sbatch`.
-A stain which is not the default of the group comes before the cochlea, e.g.
-`<date>_sbatch_mask_IHC_Myo7a_MAMD137L.sbatch`.
+The deployment also names each sbatch script with the model version and the cochlea, e.g.
+`<date>_sbatch_mask_SGN_v3b_MAMD137L.sbatch`.
+A stain which is not the default of the group comes before the version, e.g.
+`<date>_sbatch_mask_IHC_Myo7a_v11b_MAMD137L.sbatch`.
+A step without a group, e.g. `mobie_add_image`, has no version in its name.
+The cochlea part leaves out the `_` and the leading zeros of the index, but keeps a version suffix of the
+cochlea, e.g. `MAMD137Lv2` for `M_AMD_000137_L_v2`.
 
 ## Next steps
 

@@ -14,6 +14,7 @@ from slurm_workflows.metadata import LOG_FILE, METADATA_FILE, PREVIOUS_DIR, SBAT
 from slurm_workflows.metadata import archive_folders, archived_jobs, as_list, init_metadict, write_metadata
 from slurm_workflows.slurm import jobids_from_log, matches_jobid, reportseff_entries, reportseff_from_jobid
 from slurm_workflows.slurm import add_sbatch_parameters, slurm_output_files, slurm_output_to_dict
+from slurm_workflows.templates import TEMPLATE_ROOT, template_names
 
 # The state of a task which is not final and which `reportseff` does not list, e.g. after the purge.
 # `last_state` keeps the state of the last report.
@@ -30,6 +31,9 @@ FINAL_STATES = ("COMPLETED",) + FAILED_STATES
 
 # The elapsed time of a task which was cancelled before it started.
 NOT_STARTED_ELAPSED = "00:00:00"
+
+# The keys of the `pipeline` entry in the order of `deploy_jobs()`. Other keys, such as `failed_at`, follow.
+PIPELINE_KEYS = ("name", "run", "step", "of", "step_name", "start_at", "depends_on")
 
 # GWDG purges a job from the Slurm database 365 days after its end, so `reportseff` cannot list an older job.
 SLURM_PURGE_DAYS = 365
@@ -303,16 +307,101 @@ def update_reportseff(
         print("All directories contain updated efficiency reports.")
 
 
-def check_metadata(subfolders: List[str]):
+def pipeline_run(
+    jobid: str,
+    metadicts: dict,
+) -> Optional[str]:
+    """Return the run of a pipeline step: the JobID of the first step of its deploy call.
+
+    The chain of `pipeline.depends_on` leads back to the first step, which has no `depends_on`.
+
+    Args:
+        jobid: JobID of the step.
+        metadicts: The metadata of every job of the archive, by JobID.
+
+    Returns:
+        str: The JobID of the first step, or None if a link of the chain is missing.
+    """
+    seen = set()
+    while jobid not in seen:
+        seen.add(jobid)
+        pipeline = metadicts.get(jobid, {}).get("pipeline")
+        if not pipeline:
+            return None
+        if not pipeline.get("depends_on"):
+            return jobid
+        jobid = pipeline["depends_on"]
+    return None
+
+
+def step_of_task(
+    task: str,
+    project: str,
+) -> Optional[str]:
+    """Return the template of a job from its task, e.g. 'cleanup_input' of 'cleanup_input_IHC_MAMD112L'.
+
+    Args:
+        task: Suffix of the archive folder.
+        project: Project of the job. Its templates are in `TEMPLATE_ROOT`.
+
+    Returns:
+        str: The longest template name which is the task or starts it with '_', or None.
+    """
+    names = [name for name in template_names(os.path.join(TEMPLATE_ROOT, project))
+             if task == name or task.startswith(f"{name}_")]
+    return max(names, key=len) if names else None
+
+
+def complete_pipeline(
+    metadict: dict,
+    metadicts: dict,
+) -> bool:
+    """Add `run` and `step_name` to the `pipeline` entry of a step, which `deploy_jobs()` writes since 2026-11.
+
+    Args:
+        metadict: Metadata of the job. It is changed in place.
+        metadicts: The metadata of every job of the archive, by JobID.
+
+    Returns:
+        bool: True if the entry changed.
+    """
+    pipeline = metadict.get("pipeline")
+    if not pipeline:
+        return False
+
+    additions = {}
+    if "run" not in pipeline and metadict.get("jobid"):
+        run = pipeline_run(metadict["jobid"], metadicts)
+        if run is not None:
+            additions["run"] = run
+    if "step_name" not in pipeline and metadict.get("project"):
+        step = step_of_task(metadict.get("task", ""), metadict["project"])
+        if step is not None:
+            additions["step_name"] = step
+    if not additions:
+        return False
+
+    merged = dict(pipeline, **additions)
+    ordered = {key: merged[key] for key in PIPELINE_KEYS if key in merged}
+    ordered.update((key, value) for key, value in merged.items() if key not in PIPELINE_KEYS)
+    metadict["pipeline"] = ordered
+    return True
+
+
+def check_metadata(subfolders: List[str], all_folders: List[str]):
     """Correct the date and the task from the folder name, and the efficiency report from the JobID.
 
     The replaced JobIDs in `previous/<jobid>/` take the date and the task from the name of their
     archive folder too. A report with an entry of another JobID is queried again, see
-    `reportseff_from_jobid()`.
+    `reportseff_from_jobid()`. A pipeline step from before 2026-11 also gets `run` and `step_name`,
+    see `complete_pipeline()`.
 
     Args:
         subfolders: Archive folders.
+        all_folders: Every archive folder of the archive, so that a chain can leave `subfolders`.
     """
+    metadicts = {metadict["jobid"]: metadict for _, _, metadict in archived_jobs(all_folders)
+                 if metadict.get("jobid")}
     updated = []
     for folder, job_folder, metadict in archived_jobs(subfolders):
         contents = os.path.basename(folder).split("_")
@@ -321,6 +410,8 @@ def check_metadata(subfolders: List[str]):
             if metadict.get(key) != value:
                 metadict[key] = value
                 changed = True
+        if complete_pipeline(metadict, metadicts):
+            changed = True
 
         jobid = metadict.get("jobid")
         reports = as_list(metadict.get("reportseff", []))
@@ -448,10 +539,11 @@ def update_archive(
     if sbatch:
         update_sbatch_data(subfolders)
 
+    all_folders = subfolders if pattern is None else archive_folders(input_dir)
+
     if general:
-        check_metadata(subfolders)
+        check_metadata(subfolders, all_folders)
 
     update_slurm_output(subfolders, slurm_dir)
 
-    all_folders = subfolders if pattern is None else archive_folders(input_dir)
     update_reportseff(subfolders, all_folders)

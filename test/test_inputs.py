@@ -110,9 +110,9 @@ class ResolveInputTest(unittest.TestCase):
 
     def mobie_values(self):
         values = {"data_dir": self.tmp.name, "cochlea": self.COCHLEA, "stains": self.STAINS}
-        values, _, _ = self.module.prepare_step({"data_dir": self.tmp.name, "models": {}}, values,
-                                                step_template(TEMPLATE_DIR, "mobie_add_image"),
-                                                deploy_args())
+        values, _, _, _ = self.module.prepare_step({"data_dir": self.tmp.name, "models": {}}, values,
+                                                   step_template(TEMPLATE_DIR, "mobie_add_image"),
+                                                   deploy_args())
         return values
 
     def test_multi_n5_wins(self):
@@ -169,8 +169,8 @@ class ResolveInputTest(unittest.TestCase):
         values = {"data_dir": self.tmp.name, "cochlea": self.COCHLEA, "stains": self.STAINS,
                   "ihc_version": "IHC_v11", "s3_remote": "remote:bucket", **parameters}
         settings = {"data_dir": self.tmp.name, "models": models or {"IHC": {"IHC_v11": "/path/to/model"}}}
-        values, _, notes = self.module.prepare_step(settings, values, step_template(TEMPLATE_DIR, step),
-                                                    deploy_args(download=download), definition)
+        values, _, notes, _ = self.module.prepare_step(settings, values, step_template(TEMPLATE_DIR, step),
+                                                       deploy_args(download=download), definition)
         return values, " ".join(notes)
 
     def test_resources_of_the_species_and_of_a_parameter(self):
@@ -197,10 +197,10 @@ class ResolveInputTest(unittest.TestCase):
                     "models": {"SGN": {"SGN_v3": "/path/to/model"}, "IHC": {"IHC_v11": "/path/to/model"}}}
         parameters = {"data_dir": self.tmp.name, "cochlea": self.COCHLEA, "sgn_version": "SGN_v3",
                       "ihc_version": "IHC_v11", "sgn_center_distance_threshold": "0.3"}
-        sgn, _, _ = self.module.prepare_step(settings, dict(parameters), step_template(TEMPLATE_DIR, "segment_SGN"),
-                                             deploy_args())
-        ihc, _, _ = self.module.prepare_step(settings, dict(parameters), step_template(TEMPLATE_DIR, "segment_IHC"),
-                                             deploy_args())
+        sgn, _, _, _ = self.module.prepare_step(settings, dict(parameters), step_template(TEMPLATE_DIR, "segment_SGN"),
+                                                deploy_args())
+        ihc, _, _, _ = self.module.prepare_step(settings, dict(parameters), step_template(TEMPLATE_DIR, "segment_IHC"),
+                                                deploy_args())
 
         defaults = self.module.WATERSHED_DEFAULTS
         self.assertEqual(sgn["sgn_center_distance_threshold"], "0.3")
@@ -280,8 +280,8 @@ class ConversionTest(unittest.TestCase):
 
     def prepare(self, args=None, **parameters):
         values = {"data_dir": self.tmp.name, "cochlea": self.COCHLEA, **parameters}
-        values, script_name, _ = deployment.prepare_step({"data_dir": self.tmp.name, "models": {}}, values,
-                                                         self.template, args or deploy_args())
+        values, script_name, _, _ = deployment.prepare_step({"data_dir": self.tmp.name, "models": {}}, values,
+                                                            self.template, args or deploy_args())
         return values, script_name
 
     def test_defaults(self):
@@ -343,12 +343,53 @@ class SynapseNameTest(unittest.TestCase):
             self.assertEqual(module.synapse_ihc_prediction_name(*args), name)
             self.assertTrue(mobie.SYNAPSE_NAME.fullmatch(name), name)
 
+    def test_parse_prediction_name_reads_the_names_back(self):
+        """The backfill of `add_processing_metadata` reads the model versions and the stains of a job from its
+        prediction folders."""
+        for stain_ihc in ("Vglut3", "Myo7a"):
+            for stain_synapses in ("CTBP2", "Homer1"):
+                values = {"stain_IHC": stain_ihc, "stain_synapses": stain_synapses, "stain_SGN": "PV",
+                          "ihc_version": "IHC_v11b", "synapse_version": "synapses_v3", "sgn_version": "SGN_v3"}
+                with self.subTest(stain_ihc=stain_ihc, stain_synapses=stain_synapses):
+                    for group in ("SGN", "IHC"):
+                        [(models_group, key)] = deployment.job_models(group, values).items()
+                        stain = deployment.job_stains(group, values)[models_group]
+                        name = deployment.prediction_name(group, stain, key)
+                        prefix = None if stain == deployment.GROUPS[group]["stain"] else stain
+                        self.assertEqual(deployment.parse_prediction_name(name),
+                                         {models_group: {"part": deployment.version_part(key), "key": key,
+                                                         "stain": prefix}})
+
+                    name = deployment.synapse_ihc_prediction_name(stain_synapses, "synapses_v3", stain_ihc, "IHC_v11b")
+                    fields = deployment.parse_prediction_name(name)
+                    self.assertEqual({group: entry["part"] for group, entry in fields.items()},
+                                     {group: deployment.version_part(key)
+                                      for group, key in deployment.job_models("synapses", values).items()})
+                    self.assertEqual(fields["Synapses"]["stain"], None if stain_synapses == "CTBP2" else stain_synapses)
+                    self.assertEqual(fields["IHC"]["stain"], None if stain_ihc == "Vglut3" else stain_ihc.lower())
+
+        for name in ("PV", "Vglut3", "predictions.zarr", "G_LR_000301_L", "GLR_301L_PV_Vglut3_fused.n5",
+                     "synapse_detection_model_v3.pt", "mask_synapses", "setup2", "IHC_v11.json",
+                     'IHC_v11-"$VERSION', 'synapse_v3_ihc_v11-"$VERSION'):
+            with self.subTest(name):
+                self.assertEqual(deployment.parse_prediction_name(name), {})
+
+    def test_short_cochlea_name_keeps_the_version_suffix(self):
+        self.assertEqual(deployment.short_cochlea_name("M_AMD_000137_L"), "MAMD137L")
+        self.assertEqual(deployment.short_cochlea_name("M_AMD_000137_L_v2"), "MAMD137Lv2")
+        self.assertEqual(deployment.cochlea_parts("M_AMD_000137_L_v2"), ("M", "AMD", "000137", "L", "_v2"))
+        for cochlea in ("M_AMD_000137", "M_AMD_000137_L_x2", "M_AMD_000137_L_"):
+            with self.subTest(cochlea), self.assertRaisesRegex(ValueError, "does not have the format"):
+                deployment.cochlea_parts(cochlea)
+
 
 class JobNameTest(unittest.TestCase):
-    """A stain which is not the default of the group enters the names, so two stains never share an archive folder."""
+    """A stain which is not the default of the group and the model version enter the names, so two stains or two
+    model versions never share an archive folder. metadata.json records the full model keys."""
 
     COCHLEA = "G_LR_000301_L"
-    MODELS = {"IHC": {"IHC_v11": "/path/to/model"}, "Synapses": {"synapse_v3": "/path/to/model"}}
+    MODELS = {"IHC": {"IHC_v11": "/path/to/model", "IHC_v11b": "/path/to/model"},
+              "Synapses": {"synapse_v3": "/path/to/model", "synapses_v3": "/path/to/model"}}
 
     def setUp(self):
         self.tmp = tempfile.TemporaryDirectory()
@@ -356,35 +397,91 @@ class JobNameTest(unittest.TestCase):
     def tearDown(self):
         self.tmp.cleanup()
 
-    def names(self, step, definition=None, **parameters):
-        """Return the name of the sbatch script and the rendered Slurm job name."""
+    def prepare(self, step, definition=None, **parameters):
+        """Return the name of the sbatch script, the rendered Slurm job name and the metadata of the job."""
         values = {"data_dir": self.tmp.name, "cochlea": self.COCHLEA, "ihc_version": "IHC_v11", **parameters}
         template = step_template(TEMPLATE_DIR, step)
-        values, script_name, _ = deployment.prepare_step({"data_dir": self.tmp.name, "models": self.MODELS}, values,
-                                                         template, deploy_args(), definition)
+        values, script_name, _, metadata = deployment.prepare_step(
+            {"data_dir": self.tmp.name, "models": self.MODELS}, values, template, deploy_args(), definition)
         job_name_line = read_file(template).splitlines()[1]
-        return script_name, fill_placeholders([job_name_line], values)[0][0].split("=")[1]
+        return script_name, fill_placeholders([job_name_line], values)[0][0].split("=")[1], metadata
 
-    def test_default_stain_keeps_the_names(self):
+    def names(self, step, definition=None, **parameters):
+        """Return the name of the sbatch script and the rendered Slurm job name."""
+        return self.prepare(step, definition, **parameters)[:2]
+
+    def test_default_stain_keeps_the_stain_out_of_the_names(self):
         for parameters in ({}, {"stain_synapses": "CTBP2"}):
             with self.subTest(parameters):
                 self.assertEqual(self.names("apply_synapses", **parameters),
-                                 ("apply_synapses_GLR301L", "apply-synapses_G-LR-000301-L"))
+                                 ("apply_synapses_v3_ihc_v11_GLR301L", "apply-synapses-v3-ihc-v11_G-LR-000301-L"))
 
     def test_other_stain_enters_the_names(self):
         self.assertEqual(self.names("apply_synapses", stain_synapses="Homer1"),
-                         ("apply_synapses_Homer1_GLR301L", "apply-synapses-Homer1_G-LR-000301-L"))
+                         ("apply_synapses_Homer1_v3_ihc_v11_GLR301L", "apply-synapses-Homer1-v3-ihc-v11_G-LR-000301-L"))
         self.assertEqual(self.names("mask_IHC", stain_IHC="Myo7a"),
-                         ("mask_IHC_Myo7a_GLR301L", "mask-IHC-Myo7a_G-LR-000301-L"))
+                         ("mask_IHC_Myo7a_v11_GLR301L", "mask-IHC-Myo7a-v11_G-LR-000301-L"))
 
-        # The stain of another group does not change the names.
+        # The stain of another group does not change the names, except the IHC stain of a synapse job.
         self.assertEqual(self.names("mask_IHC", stain_synapses="Homer1"),
-                         ("mask_IHC_GLR301L", "mask-IHC_G-LR-000301-L"))
+                         ("mask_IHC_v11_GLR301L", "mask-IHC-v11_G-LR-000301-L"))
+        self.assertEqual(self.names("apply_synapses", stain_IHC="Myo7a"),
+                         ("apply_synapses_v3_ihc_myo7a_v11_GLR301L", "apply-synapses-v3-ihc-myo7a-v11_G-LR-000301-L"))
+
+    def test_model_version_enters_the_names(self):
+        definition = {"name": "ihc", "group": "IHC", "steps": ["mask_IHC"]}
+        self.assertEqual(self.names("download_image", definition),
+                         ("download_image_IHC_v11_GLR301L", "download-image-IHC-v11_G-LR-000301-L"))
+        self.assertEqual(self.names("download_image", definition, ihc_version="IHC_v11b"),
+                         ("download_image_IHC_v11b_GLR301L", "download-image-IHC-v11b_G-LR-000301-L"))
+
+        # The spelling of the model key does not change the names.
+        self.assertEqual(self.names("apply_synapses", synapse_version="synapses_v3"),
+                         self.names("apply_synapses", synapse_version="synapse_v3"))
 
     def test_template_of_every_group_names_the_group_and_the_stain(self):
         definition = {"name": "synapses", "group": "synapses", "steps": ["mask_synapses"]}
         self.assertEqual(self.names("mobie_add_detection", definition, stain_synapses="Homer1"),
-                         ("mobie_add_detection_synapses_Homer1_GLR301L", "mobie-detection-Homer1_G-LR-000301-L"))
+                         ("mobie_add_detection_synapses_Homer1_v3_ihc_v11_GLR301L",
+                          "mobie-add-detection-synapses-Homer1-v3-ihc-v11_G-LR-000301-L"))
+
+    def test_job_name_is_the_script_name(self):
+        definition = {"name": "ihc", "group": "IHC", "steps": ["mask_IHC"]}
+        cases = [("apply_IHC", None, {"stain_IHC": "Myo7a"}), ("segment_IHC", None, {}),
+                 ("mobie_transfer_segmentation", definition, {}), ("cleanup_input", definition, {}),
+                 ("mobie_add_image", None, {"stains": ["PV", "Vglut3"]}), ("convert_data", None, {})]
+        for step, step_definition, parameters in cases:
+            with self.subTest(step):
+                script_name, job_name = self.names(step, step_definition, **parameters)
+                self.assertEqual(job_name, script_name.rsplit("_", 1)[0].replace("_", "-") + "_G-LR-000301-L")
+
+        self.assertEqual(self.names("apply_IHC")[1], "apply-IHC-v11_G-LR-000301-L")
+        self.assertEqual(self.names("mobie_add_image", stains=["PV"])[1], "mobie-add-image_G-LR-000301-L")
+
+    def test_metadata_holds_the_full_names(self):
+        definition = {"name": "ihc", "group": "IHC", "steps": ["mask_IHC"]}
+        cochlea = {"cochlea": self.COCHLEA}
+        cases = [(("mask_IHC", None, {"stain_IHC": "Myo7a"}),
+                  dict(cochlea, stains={"IHC": "Myo7a"}, models={"IHC": "IHC_v11"})),
+                 (("download_image", definition, {"ihc_version": "IHC_v11b"}),
+                  dict(cochlea, stains={"IHC": "Vglut3"}, models={"IHC": "IHC_v11b"})),
+                 (("apply_synapses", None, {"synapse_version": "synapses_v3", "stain_IHC": "Myo7a"}),
+                  dict(cochlea, stains={"Synapses": "CTBP2", "IHC": "Myo7a"},
+                       models={"Synapses": "synapses_v3", "IHC": "IHC_v11"})),
+                 (("mobie_add_image", None, {"stains": ["PV", "Vglut3"]}), cochlea),
+                 (("convert_data", None, {}), cochlea)]
+        for (step, step_definition, parameters), metadata in cases:
+            with self.subTest(step):
+                self.assertEqual(self.prepare(step, step_definition, **parameters)[2], metadata)
+
+        script_name, _, metadata = self.prepare("apply_synapses")
+        self.assertEqual(list(metadata), ["cochlea", "stains", "models"])
+        self.assertEqual(list(metadata["models"]), ["Synapses", "IHC"])
+        self.assertEqual(script_name, "apply_synapses_v3_ihc_v11_GLR301L")
+
+    def test_cochlea_version_suffix_enters_the_names(self):
+        self.assertEqual(self.names("mask_IHC", cochlea="M_AMD_000137_L_v2"),
+                         ("mask_IHC_v11_MAMD137Lv2", "mask-IHC-v11_M-AMD-000137-L-v2"))
 
 
 class PreviousRunTest(unittest.TestCase):

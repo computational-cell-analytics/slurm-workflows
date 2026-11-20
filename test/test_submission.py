@@ -11,6 +11,7 @@ import io
 import json
 import os
 import tempfile
+import types
 import unittest
 from unittest import mock
 
@@ -190,14 +191,14 @@ class DeploySubmissionTest(unittest.TestCase):
         os.chdir(self.cwd)
         self.tmp.cleanup()
 
-    def deploy(self, archive_dir, pipeline=None, force=True, start_at=None):
+    def deploy(self, archive_dir, pipeline=None, force=True, start_at=None, module=default):
         # The input of the mockup does not exist, so only force=True submits it.
         args = argparse.Namespace(input=MOCKUP_TEMPLATE if pipeline is None else None, pipeline=pipeline,
                                   params=MOCKUP_PARAMS, settings=MOCKUP_SETTINGS, archive_dir=archive_dir,
                                   repository_file=None, submit=True, allow_missing=False, start_at=start_at,
                                   force=force, allow_dirty=False)
         with mock.patch.dict(os.environ, self.env), contextlib.redirect_stdout(io.StringIO()):
-            deploy.deploy_jobs(args, "mockup", default)
+            deploy.deploy_jobs(args, "mockup", module)
 
     def archived_metadata(self, step="train"):
         [folder] = [name for name in os.listdir(self.archive_dir) if name.endswith(f"_{step}")]
@@ -230,6 +231,38 @@ class DeploySubmissionTest(unittest.TestCase):
         self.assertEqual(self.archived_metadata("evaluate")["pipeline"],
                          {"name": "train_evaluate", "run": run, "step": 2, "of": 2, "step_name": "evaluate",
                           "depends_on": run})
+
+    def test_metadata_of_the_project_is_archived(self):
+        def prepare_step(*args):
+            values, script_name, notes, _ = default.prepare_step(*args)
+            return values, script_name, notes, {"models": {"IHC": "IHC_v11b"}, "project": "other",
+                                                "pipeline": {"name": "other"}}
+
+        module = types.SimpleNamespace(**{name: getattr(default, name) for name in deploy.DEPLOYMENT_FUNCTIONS})
+        module.prepare_step = prepare_step
+        self.deploy(self.archive_dir, MOCKUP_PIPELINE, module=module)
+
+        for step in ("train", "evaluate"):
+            with self.subTest(step):
+                metadata = self.archived_metadata(step)
+                # The project cannot replace the generic entries.
+                self.assertEqual((metadata["project"], metadata["models"]), ("mockup", {"IHC": "IHC_v11b"}))
+                self.assertEqual(metadata["pipeline"]["name"], "train_evaluate")
+                keys = list(metadata)
+                self.assertEqual(keys[keys.index("project") + 1:keys.index("project") + 3], ["models", "pipeline"])
+
+    def test_single_job_gets_no_pipeline_of_the_project(self):
+        def prepare_step(*args):
+            values, script_name, notes, _ = default.prepare_step(*args)
+            return values, script_name, notes, {"models": {"IHC": "IHC_v11b"}, "pipeline": {"name": "other"}}
+
+        module = types.SimpleNamespace(**{name: getattr(default, name) for name in deploy.DEPLOYMENT_FUNCTIONS})
+        module.prepare_step = prepare_step
+        self.deploy(self.archive_dir, module=module)
+
+        metadata = self.archived_metadata()
+        self.assertEqual(metadata["models"], {"IHC": "IHC_v11b"})
+        self.assertNotIn("pipeline", metadata)
 
     def test_resumed_pipeline_names_its_start(self):
         self.deploy(self.archive_dir, MOCKUP_PIPELINE, start_at="evaluate")

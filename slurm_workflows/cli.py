@@ -146,7 +146,8 @@ def main_update_metadata():
                              "usually the folder where deploy ran. Adds slurm_output with the core hours.")
     parser.add_argument("--general", action="store_true",
                         help="Correct the date and the task from the folder name, and replace an efficiency "
-                             "report of another JobID.")
+                             "report of another JobID. Add run and step_name to a pipeline step from before "
+                             "2026-11.")
     parser.add_argument("--sbatch", action="store_true",
                         help="Copy the #SBATCH parameters of sbatch.sbatch into the metadata.")
     parser.add_argument("--backfill", action="store_true",

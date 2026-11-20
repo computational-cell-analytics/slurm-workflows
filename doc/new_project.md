@@ -123,7 +123,7 @@ The docstrings of `default.py` give the full contract.
 |---|---|---|
 | `add_arguments(parser)` | nothing | Add the options of the project to the `argparse` parser of `deploy.py` |
 | `select_steps(definition, settings, args)` | list of step names | Select the steps of a pipeline to submit |
-| `prepare_step(settings, placeholder_values, template_file, args, definition)` | `(placeholder_values, script_name, notes)` | Add the placeholder values of one job, and name its sbatch script |
+| `prepare_step(settings, placeholder_values, template_file, args, definition)` | `(placeholder_values, script_name, notes, metadata)` | Add the placeholder values of one job, name its sbatch script, and give entries of its `metadata.json` |
 | `check_steps(template_files, sbatch_files)` | list of warnings | Check the sbatch scripts before the submission |
 
 The arguments:
@@ -139,6 +139,8 @@ The arguments:
   writes `<date>_sbatch_<script_name>.sbatch`.
 - `notes` are messages, which the deploy step prints after the warnings. A note never stops the
   submission.
+- `metadata` is a dictionary of entries, which the deploy step adds to the `metadata.json` of the job,
+  e.g. `models` of cochlea-net. The generic entries `project` and `pipeline` take precedence.
 - A warning of `check_steps()` stops `--submit`, unless `--force` is given.
 
 `deploy.py` calls `select_steps()` before it applies `--start-at`, so `--start-at` can name a step
@@ -148,7 +150,8 @@ which the project adds.
 
 This module computes the placeholder `<run_name>` from two parameters.
 It also adds the run name to the name of the sbatch script, so two runs on the same day get two
-archive folders:
+archive folders.
+The `metadata.json` of the job records the run name:
 
 ```python
 # slurm_workflows/projects/my_project/deployment.py
@@ -164,11 +167,11 @@ def prepare_step(
     args,
     definition: dict = None,
 ) -> tuple:
-    """Add the run name, and add it to the name of the sbatch script."""
+    """Add the run name, and add it to the name of the sbatch script and to the metadata."""
     run_name = f"{placeholder_values['dataset']}_lr{placeholder_values['learning_rate']}"
     placeholder_values["run_name"] = run_name
     step = os.path.basename(template_file)[:-len(TEMPLATE_SUFFIX)]
-    return placeholder_values, f"{step}_{run_name}", []
+    return placeholder_values, f"{step}_{run_name}", [], {"run_name": run_name}
 ```
 
 Add an empty `slurm_workflows/projects/my_project/__init__.py` beside it.

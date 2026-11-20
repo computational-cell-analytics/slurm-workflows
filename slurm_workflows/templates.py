@@ -7,7 +7,12 @@ Access to the templates of the projects, and filling of their placeholders.
 import os
 import re
 
+from slurm_workflows import REPOSITORY_DIR
+
 TEMPLATE_SUFFIX = ".template"
+
+# Folder of the template folders `<project>/` of the projects of this repository.
+TEMPLATE_ROOT = os.path.join(REPOSITORY_DIR, "templates")
 
 # A placeholder name holds no whitespace, '<' or '>'. A backslash before it gives the literal text,
 # e.g. '\<name>' gives '<name>'.
@@ -42,6 +47,22 @@ def step_template(
         str: Path of the template file.
     """
     return os.path.join(template_dir, f"{step}{TEMPLATE_SUFFIX}")
+
+
+def template_names(
+    template_dir: str,
+) -> list:
+    """Return the step names of the templates in a folder.
+
+    Args:
+        template_dir: Template folder of a project.
+
+    Returns:
+        list: The template names without the suffix, sorted. Empty if the folder does not exist.
+    """
+    if not os.path.isdir(template_dir):
+        return []
+    return sorted(name[:-len(TEMPLATE_SUFFIX)] for name in os.listdir(template_dir) if name.endswith(TEMPLATE_SUFFIX))
 
 
 def placeholders_in(

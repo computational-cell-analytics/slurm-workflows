@@ -7,6 +7,7 @@ ribbon synapses, and the export of the results to MoBIE and the S3 bucket.
 """
 import json
 import os
+import re
 import shlex
 import sys
 
@@ -99,9 +100,24 @@ GROUPS = {
 # Model version which is used if 'synapse_version' is not a parameter of the job.
 DEFAULT_SYNAPSE_VERSION = "synapse_v3"
 
-# Name of the prediction folder and the MoBIE source of the synapse jobs. The fields are the version
-# parts of the model keys, e.g. 'v3' of 'synapse_v3'. cochlea-net reads the source by this name.
-SYNAPSE_SOURCE = "synapse_{synapse}_ihc_{ihc}"
+# Model versions of a synapse job, which also name its jobs. The fields are the version parts of the
+# model keys, e.g. 'v3' of 'synapse_v3'.
+SYNAPSE_VERSIONS = "{synapse}_ihc_{ihc}"
+
+# Name of the prediction folder and the MoBIE source of the synapse jobs, filled with `SYNAPSE_VERSIONS`.
+# cochlea-net reads the source by this name.
+SYNAPSE_SOURCE = "synapse_{versions}"
+
+# The prediction folder of an SGN or IHC job is '[<stain>_]<key>', and the key is '<model group>_<version
+# part>'. A synapse prediction folder has the format `SYNAPSE_SOURCE`. The patterns read the model
+# versions back from an archived script. They assume that a stain and a version part hold only letters,
+# digits and '-'. So a file name such as 'IHC_v11.json' is no prediction folder, and a name with a shell
+# variable such as 'IHC_v11-"$VERSION' gives no truncated version.
+NAME_PART = "[A-Za-z0-9-]+"
+GROUP_MODELS = "|".join(spec["models"] for name, spec in GROUPS.items() if name != "synapses")
+GROUP_PREDICTION = re.compile(rf"(?:({NAME_PART})_)?(({GROUP_MODELS})_{NAME_PART})")
+SYNAPSE_PREDICTION = re.compile(rf"(?:({NAME_PART})_)?" + SYNAPSE_SOURCE.format(
+    versions=SYNAPSE_VERSIONS.format(synapse=f"({NAME_PART})", ihc=f"(?:({NAME_PART})_)?({NAME_PART})")))
 
 # rclone reads its remotes from this file, unless the environment variable RCLONE_CONFIG names another one.
 RCLONE_CONFIG = os.path.join("~", ".config", "rclone", "rclone.conf")
@@ -299,6 +315,46 @@ def step_row(
     return group, resources
 
 
+def cochlea_parts(
+    cochlea: str,
+) -> tuple:
+    """Split the name of a cochlea, e.g. 'M_AMD_000137_L' or 'M_AMD_000137_L_v2'.
+
+    Args:
+        cochlea: Name of the cochlea.
+
+    Returns:
+        tuple of str: the species, the experimenter initials, the animal index, the side, and the
+            version suffix with its '_', e.g. '_v2', or an empty string.
+
+    Raises:
+        ValueError: If the name does not have the format of a cochlea.
+    """
+    content = cochlea.split("_")
+    if len(content) < 4 or (len(content) > 4 and not content[4].startswith("v")):
+        raise ValueError(f"The parameter cochlea '{cochlea}' does not have the format "
+                         "<species>_<initials>_<index>_<side>[_v<N>], e.g. M_AMD_000137_L.")
+    version = "_" + content[4] if len(content) > 4 else ""
+    return content[0], content[1], content[2], content[3], version
+
+
+def short_cochlea_name(
+    cochlea: str,
+) -> str:
+    """Return the cochlea part of the names of a job, e.g. 'MAMD137L' or 'MAMD137Lv2'.
+
+    The version suffix stays, so two versions of a cochlea do not share an archive folder.
+
+    Args:
+        cochlea: Name of the cochlea.
+
+    Returns:
+        str: The name without '_' and without the leading zeros of the animal index.
+    """
+    species, experimenter, number, side, version = cochlea_parts(cochlea)
+    return f"{species}{experimenter}{number.lstrip('0')}{side}{version[1:]}"
+
+
 def n5_name(
     prefix: str,
     number: str,
@@ -383,6 +439,29 @@ def version_part(
     return version.split("_", 1)[-1].lower()
 
 
+def synapse_versions(
+    synapse_version: str,
+    stain_ihc: str,
+    ihc_version: str,
+) -> str:
+    """Return the model versions of a synapse job in the format `SYNAPSE_VERSIONS`, e.g. 'v3_ihc_v11'.
+
+    The spelling of the model keys does not change the result. A non-default IHC stain is part of the
+    IHC field, e.g. 'v3_ihc_myo7a_v11'.
+
+    Args:
+        synapse_version: Model key of the synapse detection.
+        stain_ihc: Stain of the IHC segmentation.
+        ihc_version: Model key of the IHC segmentation.
+
+    Returns:
+        str: The version parts of both models.
+    """
+    return SYNAPSE_VERSIONS.format(
+        synapse=version_part(synapse_version),
+        ihc=prediction_name("IHC", stain_ihc, version_part(ihc_version)).lower())
+
+
 def synapse_ihc_prediction_name(
     stain_synapses: str,
     synapse_version: str,
@@ -396,9 +475,8 @@ def synapse_ihc_prediction_name(
     segmentation from overwriting an earlier one.
 
     The name is also the MoBIE source of the detections, which cochlea-net reads by name.
-    `SYNAPSE_SOURCE` sets the format. The spelling of the model keys does not change the name.
-    A non-default synapse stain is a prefix of the name. A non-default IHC stain is part of the
-    IHC field, e.g. 'synapse_v3_ihc_myo7a_v11'.
+    `SYNAPSE_SOURCE` sets the format, e.g. 'synapse_v3_ihc_myo7a_v11', see `synapse_versions()`.
+    A non-default synapse stain is a prefix of the name.
 
     Args:
         stain_synapses: Stain of the synapse jobs.
@@ -409,10 +487,119 @@ def synapse_ihc_prediction_name(
     Returns:
         str: Name of the prediction folder.
     """
-    name = SYNAPSE_SOURCE.format(
-        synapse=version_part(synapse_version),
-        ihc=prediction_name("IHC", stain_ihc, version_part(ihc_version)).lower())
+    name = SYNAPSE_SOURCE.format(versions=synapse_versions(synapse_version, stain_ihc, ihc_version))
     return prediction_name("synapses", stain_synapses, name)
+
+
+def job_version(
+    group: str,
+    placeholder_values: dict,
+) -> str:
+    """Return the model version which enters the names of a job, e.g. 'v11' or 'v3_ihc_v11'.
+
+    The names carry the version part of the model key, not the full key, to keep them short. Two
+    runs of one step with two model versions of a cochlea therefore never share an archive folder.
+
+    Args:
+        group: Key of `GROUPS`, or None for a job without a group.
+        placeholder_values: Placeholder values of the job, with the version parameter of the group.
+
+    Returns:
+        str: The version part of the group, the versions of `synapse_versions()` for the synapse
+            jobs, or an empty string for a job without a group.
+    """
+    if group is None:
+        return ""
+    if group == "synapses":
+        return synapse_versions(placeholder_values["synapse_version"], placeholder_values["stain_IHC"],
+                                placeholder_values["ihc_version"])
+    return version_part(placeholder_values[GROUPS[group]["version"]])
+
+
+def job_models(
+    group: str,
+    placeholder_values: dict,
+) -> dict:
+    """Return the model keys of a job, for the key 'models' of its metadata.json.
+
+    The values are the full keys of the settings file, because a later model can have a key without a
+    version part. The synapse jobs also depend on the IHC segmentation.
+
+    Args:
+        group: Key of `GROUPS`, or None for a job without a group.
+        placeholder_values: Placeholder values of the job, with the version parameter of the group.
+
+    Returns:
+        dict: The model key of each model group of the settings file, e.g. {"IHC": "IHC_v11b"}, or an
+            empty dictionary for a job without a group.
+    """
+    return {GROUPS[name]["models"]: placeholder_values[GROUPS[name]["version"]] for name in job_groups(group)}
+
+
+def job_stains(
+    group: str,
+    placeholder_values: dict,
+) -> dict:
+    """Return the stains of a job, for the key 'stains' of its metadata.json.
+
+    The names of a job hold only a stain which is not the default, so the metadata names every stain.
+    The keys are the same as of `job_models()`.
+
+    Args:
+        group: Key of `GROUPS`, or None for a job without a group.
+        placeholder_values: Placeholder values of the job, with the stain parameters of the groups.
+
+    Returns:
+        dict: The stain of each model group of the settings file, e.g. {"IHC": "Vglut3"}, or an empty
+            dictionary for a job without a group.
+    """
+    return {GROUPS[name]["models"]: placeholder_values[f"stain_{name}"] for name in job_groups(group)}
+
+
+def job_groups(
+    group: str,
+) -> list:
+    """Return the groups whose model a job uses: its own group, and the IHC group for a synapse job.
+
+    Args:
+        group: Key of `GROUPS`, or None for a job without a group.
+
+    Returns:
+        list: Keys of `GROUPS`.
+    """
+    if group is None:
+        return []
+    return [group, "IHC"] if group == "synapses" else [group]
+
+
+def parse_prediction_name(
+    name: str,
+) -> dict:
+    """Read the model versions and the stains from the name of a prediction folder or a MoBIE source.
+
+    This is the inverse of `prediction_name()` and `synapse_ihc_prediction_name()`. An SGN or IHC
+    name holds the full model key. A synapse name holds only the version parts of both models, and the
+    IHC stain in lower case.
+
+    Args:
+        name: Name of the prediction folder, e.g. 'Myo7a_IHC_v11b' or 'synapse_v3_ihc_v11b'.
+
+    Returns:
+        dict: Per model group of the settings file, the dictionary {"part", "key", "stain"}. 'key' is
+            None if the name does not hold it. 'stain' is None for the default stain of the group. An
+            empty dictionary if the name is not a prediction folder.
+    """
+    match = SYNAPSE_PREDICTION.fullmatch(name)
+    if match is not None:
+        return {GROUPS["synapses"]["models"]: {"part": match.group(2), "key": None, "stain": match.group(1)},
+                GROUPS["IHC"]["models"]: {"part": match.group(4), "key": None, "stain": match.group(3)}}
+
+    match = GROUP_PREDICTION.fullmatch(name)
+    if match is not None:
+        key = match.group(2)
+        return {match.group(3): {"part": version_part(key), "key": key, "stain": match.group(1)}}
+
+    return {}
 
 
 def n5_candidates(
@@ -563,6 +750,8 @@ def prepare_step(
             dict - the placeholder values
             str  - the name of the sbatch script, without the date and the extension
             list - notes, which deploy prints after the warnings
+            dict - entries of metadata.json: 'cochlea', and for a job with a group 'stains' with
+                   `job_stains()` and 'models' with `job_models()`
     """
     notes = []
 
@@ -592,23 +781,7 @@ def prepare_step(
         placeholder_values.setdefault(f"stain_{group_name}", group_spec["stain"])
 
     cochlea = placeholder_values["cochlea"]
-    placeholder_values["cochlea_job_name"] = "-".join(cochlea.split("_"))
-
-    cochlea_content = cochlea.split("_")
-    version = ""
-    cochlea_format = (f"The parameter cochlea '{cochlea}' does not have the format "
-                      "<species>_<initials>_<index>_<side>[_v<N>], e.g. M_AMD_000137_L.")
-    if len(cochlea_content) < 4:
-        raise ValueError(cochlea_format)
-    if len(cochlea_content) > 4:
-        if cochlea_content[4][0] != "v":
-            raise ValueError(cochlea_format)
-        version = "_" + cochlea_content[4]
-
-    species = cochlea_content[0]
-    experimenter = cochlea_content[1]
-    number = cochlea_content[2]
-    side = cochlea_content[3]
+    species, experimenter, number, side, version = cochlea_parts(cochlea)
     stains = placeholder_values.get("stains")
 
     prefix = "".join([species, experimenter])
@@ -719,19 +892,24 @@ def prepare_step(
     if group is not None and f"{group.lower()}_{MASK_PLACEHOLDER}" in template_placeholders:
         placeholder_values.update(mask_parameters(placeholder_values, group.lower()))
 
-    # The group enters the name of a template which serves more than one group, and a stain which
-    # is not the default of the group enters the names of every job with a group, so that the runs
-    # of two groups or of two stains do not share an archive folder.
-    stain = job_stain(group, placeholder_values.get("stain"))
-    placeholder_values["stain_job_name"] = f"-{stain}" if stain else ""
+    # The group enters the name of a template which serves more than one group. A stain which is not
+    # the default of the group and the model version enter the names of every job with a group. So
+    # the runs of two groups, two stains or two model versions do not share an archive folder. The
+    # Slurm job name is the same name with '-', so it names the same parts.
+    name_parts = [part for part in (job_stain(group, placeholder_values.get("stain")),
+                                    job_version(group, placeholder_values)) if part]
 
     script_str = step_name
     if pipeline_group is not None and step_group is None:
         script_str = f"{script_str}_{pipeline_group}"
-    if stain:
-        script_str = f"{script_str}_{stain}"
+    script_str = "_".join([script_str] + name_parts)
+    placeholder_values["job_name"] = script_str.replace("_", "-") + "_" + "-".join(cochlea.split("_"))
 
-    return placeholder_values, f"{script_str}_{prefix}{number.lstrip('0')}{side}", notes
+    metadata = {"cochlea": cochlea}
+    if group is not None:
+        metadata.update(stains=job_stains(group, placeholder_values), models=job_models(group, placeholder_values))
+
+    return placeholder_values, f"{script_str}_{short_cochlea_name(cochlea)}", notes, metadata
 
 
 def check_prediction_absent(

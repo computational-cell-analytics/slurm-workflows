@@ -22,7 +22,9 @@ def report(state, cpu):
 
 # Folder name -> metadata. The dates are not in the order of the folder names.
 JOBS = {
-    "b_array": {"date": "2026-02-01", "task": "array", "partition": "grete:shared",
+    "b_array": {"date": "2026-02-01", "task": "array", "partition": "grete:shared", "cochlea": "M_AMD_N179_L",
+                "stains": {"Synapses": "CTBP2", "IHC": "Vglut3"},
+                "models": {"Synapses": "synapse_v3", "IHC": "IHC_v11b"},
                 "reportseff": [report("COMPLETED", "40.0%"), report("FAILED", "20.0%")],
                 "slurm_output": [{"core_hours": 1.5}, {"core_hours": 2.5}]},
     "a_late": {"date": "2026-03-01", "task": "late", "partition": "standard96",
@@ -137,6 +139,9 @@ class SummaryTest(unittest.TestCase):
         self.assertEqual((rows[1]["tasks"], rows[1]["state"], rows[1]["cpu_eff"], rows[1]["core_hours"]),
                          ("2", "COMPLETED,FAILED", "30.0", "4.0"))
         self.assertEqual(rows[2]["core_hours"], "")
+        self.assertEqual((rows[1]["cochlea"], rows[1]["stains"], rows[1]["models"]),
+                         ("M_AMD_N179_L", "CTBP2, Vglut3", "synapse_v3, IHC_v11b"))
+        self.assertEqual((rows[0]["cochlea"], rows[0]["stains"], rows[0]["models"]), ("", "", ""))
 
     @unittest.skipIf(summary.openpyxl is None, "openpyxl is not installed")
     def test_xlsx_rows(self):

@@ -72,8 +72,10 @@ def prepare_step(
             str  - the name of the sbatch script without the date and the extension. The default is
                    the template name
             list - notes, which `deploy_jobs()` prints after the warnings. The default is empty
+            dict - entries which `deploy_jobs()` adds to the metadata.json of the job. The generic
+                   entries `project` and `pipeline` take precedence. The default is empty
     """
-    return placeholder_values, os.path.basename(template_file)[:-len(TEMPLATE_SUFFIX)], []
+    return placeholder_values, os.path.basename(template_file)[:-len(TEMPLATE_SUFFIX)], [], {}
 
 
 def check_steps(

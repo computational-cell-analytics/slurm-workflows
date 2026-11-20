@@ -50,6 +50,7 @@ Each command runs the same code as its script.
 | `slurm_wf.update_metadata` | `scripts/update_metadata.py` | Refresh the efficiency reports, and add the data of the slurm output files |
 | `slurm_wf.summary` | `scripts/summary.py` | Print the efficiency of the archived jobs, and write one row per job to a table |
 | `slurm_wf.add_s3_dataset` | `scripts/add_s3_dataset.py` | Only for `cochlea-net`: add a dataset and its sources to the MoBIE project in the S3 bucket, and check or repair the bucket |
+| `slurm_wf.add_processing_metadata` | `scripts/add_processing_metadata.py` | Only for `cochlea-net`: add the cochlea, the stains and the model keys of each job to the `metadata.json` of an older archive |
 
 Each command prints its options with `-h`.
 

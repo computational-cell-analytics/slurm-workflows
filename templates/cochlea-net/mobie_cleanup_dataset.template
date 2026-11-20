@@ -1,5 +1,5 @@
 #!/bin/bash
-#SBATCH --job-name=mobie-cleanup_<cochlea_job_name>
+#SBATCH --job-name=<job_name>
 #SBATCH -t <time>
 #SBATCH --mail-user=<user_address>
 #SBATCH --mail-type=FAIL

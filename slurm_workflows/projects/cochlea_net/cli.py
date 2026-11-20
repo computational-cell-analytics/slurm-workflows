@@ -2,7 +2,8 @@
 # -- coding: utf-8 --
 """author: Martin Schilling (martin.schilling@med.uni-goettingen.de), 2025
 
-Command line interface of `slurm_wf.add_s3_dataset`, which only the project cochlea-net uses.
+Command line interface of `slurm_wf.add_s3_dataset` and `slurm_wf.add_processing_metadata`, which only the
+project cochlea-net uses.
 """
 import argparse
 import sys
@@ -10,6 +11,10 @@ import sys
 from slurm_workflows.projects.cochlea_net.mobie import (add_s3_dataset, add_s3_sources, check_s3_datasets,
                                                         generate_local_project, generate_s3_project,
                                                         repair_s3_dataset)
+from slurm_workflows.projects.cochlea_net.processing_metadata import add_processing_metadata
+from slurm_workflows.settings import load_settings, settings_file
+
+PROJECT = "cochlea-net"
 
 
 def main_add_s3_dataset():
@@ -81,5 +86,31 @@ def main_add_s3_dataset():
             if args.source:
                 add_s3_sources(args.mobie_project, args.s3_remote, args.dataset, args.source)
             add_s3_dataset(args.mobie_project, args.s3_remote, args.dataset)
+    except (FileNotFoundError, ValueError) as exc:
+        sys.exit(str(exc))
+
+
+def main_add_processing_metadata():
+    parser = argparse.ArgumentParser(
+        description="Add the cochlea, the stains and the model keys of each job, e.g. 'cochlea': 'G_EK_000233_L', "
+        "'stains': {\"IHC\": \"Vglut3\"} and 'models': {\"IHC\": \"IHC_v11b\"}, to its metadata.json. The deploy "
+        "step writes them for a new job. An older job gets them from the names in its archived sbatch.sbatch, from "
+        "the other jobs of its archive folder, or from the other steps of its pipeline run. A synapse folder holds "
+        "only the version part, e.g. v3, so its key comes from the settings file. A job keeps existing entries.")
+
+    parser.add_argument("archive_dir", type=str, help="Archive directory, which holds the archive folders.")
+    parser.add_argument("-s", "--settings", type=str, default=settings_file(PROJECT),
+                        help="Settings file of cochlea-net. Its 'models' give the key of a version part. "
+                             "Default: %(default)s")
+    parser.add_argument("-p", "--pattern", type=str, default=None,
+                        help="Update only the archive folders whose path relative to archive_dir contains this "
+                             "text. The text can hold wildcards. The other folders still give the versions of "
+                             "their runs.")
+    parser.add_argument("--dry-run", dest="dry_run", action="store_true",
+                        help="Print the new entries of each job, but write nothing.")
+    args = parser.parse_args()
+
+    try:
+        add_processing_metadata(args.archive_dir, load_settings(args.settings), args.pattern, args.dry_run)
     except (FileNotFoundError, ValueError) as exc:
         sys.exit(str(exc))

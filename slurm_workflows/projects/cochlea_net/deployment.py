@@ -99,9 +99,13 @@ GROUPS = {
 # Model version which is used if 'synapse_version' is not a parameter of the job.
 DEFAULT_SYNAPSE_VERSION = "synapse_v3"
 
-# Name of the prediction folder and the MoBIE source of the synapse jobs. The fields are the version
-# parts of the model keys, e.g. 'v3' of 'synapse_v3'. cochlea-net reads the source by this name.
-SYNAPSE_SOURCE = "synapse_{synapse}_ihc_{ihc}"
+# Model versions of a synapse job, which also name its jobs. The fields are the version parts of the
+# model keys, e.g. 'v3' of 'synapse_v3'.
+SYNAPSE_VERSIONS = "{synapse}_ihc_{ihc}"
+
+# Name of the prediction folder and the MoBIE source of the synapse jobs, filled with `SYNAPSE_VERSIONS`.
+# cochlea-net reads the source by this name.
+SYNAPSE_SOURCE = "synapse_{versions}"
 
 # rclone reads its remotes from this file, unless the environment variable RCLONE_CONFIG names another one.
 RCLONE_CONFIG = os.path.join("~", ".config", "rclone", "rclone.conf")
@@ -299,6 +303,46 @@ def step_row(
     return group, resources
 
 
+def cochlea_parts(
+    cochlea: str,
+) -> tuple:
+    """Split the name of a cochlea, e.g. 'M_AMD_000137_L' or 'M_AMD_000137_L_v2'.
+
+    Args:
+        cochlea: Name of the cochlea.
+
+    Returns:
+        tuple of str: the species, the experimenter initials, the animal index, the side, and the
+            version suffix with its '_', e.g. '_v2', or an empty string.
+
+    Raises:
+        ValueError: If the name does not have the format of a cochlea.
+    """
+    content = cochlea.split("_")
+    if len(content) < 4 or (len(content) > 4 and not content[4].startswith("v")):
+        raise ValueError(f"The parameter cochlea '{cochlea}' does not have the format "
+                         "<species>_<initials>_<index>_<side>[_v<N>], e.g. M_AMD_000137_L.")
+    version = "_" + content[4] if len(content) > 4 else ""
+    return content[0], content[1], content[2], content[3], version
+
+
+def short_cochlea_name(
+    cochlea: str,
+) -> str:
+    """Return the cochlea part of the names of a job, e.g. 'MAMD137L' or 'MAMD137Lv2'.
+
+    The version suffix stays, so two versions of a cochlea do not share an archive folder.
+
+    Args:
+        cochlea: Name of the cochlea.
+
+    Returns:
+        str: The name without '_' and without the leading zeros of the animal index.
+    """
+    species, experimenter, number, side, version = cochlea_parts(cochlea)
+    return f"{species}{experimenter}{number.lstrip('0')}{side}{version[1:]}"
+
+
 def n5_name(
     prefix: str,
     number: str,
@@ -383,6 +427,29 @@ def version_part(
     return version.split("_", 1)[-1].lower()
 
 
+def synapse_versions(
+    synapse_version: str,
+    stain_ihc: str,
+    ihc_version: str,
+) -> str:
+    """Return the model versions of a synapse job in the format `SYNAPSE_VERSIONS`, e.g. 'v3_ihc_v11'.
+
+    The spelling of the model keys does not change the result. A non-default IHC stain is part of the
+    IHC field, e.g. 'v3_ihc_myo7a_v11'.
+
+    Args:
+        synapse_version: Model key of the synapse detection.
+        stain_ihc: Stain of the IHC segmentation.
+        ihc_version: Model key of the IHC segmentation.
+
+    Returns:
+        str: The version parts of both models.
+    """
+    return SYNAPSE_VERSIONS.format(
+        synapse=version_part(synapse_version),
+        ihc=prediction_name("IHC", stain_ihc, version_part(ihc_version)).lower())
+
+
 def synapse_ihc_prediction_name(
     stain_synapses: str,
     synapse_version: str,
@@ -396,9 +463,8 @@ def synapse_ihc_prediction_name(
     segmentation from overwriting an earlier one.
 
     The name is also the MoBIE source of the detections, which cochlea-net reads by name.
-    `SYNAPSE_SOURCE` sets the format. The spelling of the model keys does not change the name.
-    A non-default synapse stain is a prefix of the name. A non-default IHC stain is part of the
-    IHC field, e.g. 'synapse_v3_ihc_myo7a_v11'.
+    `SYNAPSE_SOURCE` sets the format, e.g. 'synapse_v3_ihc_myo7a_v11', see `synapse_versions()`.
+    A non-default synapse stain is a prefix of the name.
 
     Args:
         stain_synapses: Stain of the synapse jobs.
@@ -409,10 +475,33 @@ def synapse_ihc_prediction_name(
     Returns:
         str: Name of the prediction folder.
     """
-    name = SYNAPSE_SOURCE.format(
-        synapse=version_part(synapse_version),
-        ihc=prediction_name("IHC", stain_ihc, version_part(ihc_version)).lower())
+    name = SYNAPSE_SOURCE.format(versions=synapse_versions(synapse_version, stain_ihc, ihc_version))
     return prediction_name("synapses", stain_synapses, name)
+
+
+def job_version(
+    group: str,
+    placeholder_values: dict,
+) -> str:
+    """Return the model version which enters the names of a job, e.g. 'v11' or 'v3_ihc_v11'.
+
+    The names carry the version part of the model key, not the full key, to keep them short. Two
+    runs of one step with two model versions of a cochlea therefore never share an archive folder.
+
+    Args:
+        group: Key of `GROUPS`, or None for a job without a group.
+        placeholder_values: Placeholder values of the job, with the version parameter of the group.
+
+    Returns:
+        str: The version part of the group, the versions of `synapse_versions()` for the synapse
+            jobs, or an empty string for a job without a group.
+    """
+    if group is None:
+        return ""
+    if group == "synapses":
+        return synapse_versions(placeholder_values["synapse_version"], placeholder_values["stain_IHC"],
+                                placeholder_values["ihc_version"])
+    return version_part(placeholder_values[GROUPS[group]["version"]])
 
 
 def n5_candidates(
@@ -592,23 +681,7 @@ def prepare_step(
         placeholder_values.setdefault(f"stain_{group_name}", group_spec["stain"])
 
     cochlea = placeholder_values["cochlea"]
-    placeholder_values["cochlea_job_name"] = "-".join(cochlea.split("_"))
-
-    cochlea_content = cochlea.split("_")
-    version = ""
-    cochlea_format = (f"The parameter cochlea '{cochlea}' does not have the format "
-                      "<species>_<initials>_<index>_<side>[_v<N>], e.g. M_AMD_000137_L.")
-    if len(cochlea_content) < 4:
-        raise ValueError(cochlea_format)
-    if len(cochlea_content) > 4:
-        if cochlea_content[4][0] != "v":
-            raise ValueError(cochlea_format)
-        version = "_" + cochlea_content[4]
-
-    species = cochlea_content[0]
-    experimenter = cochlea_content[1]
-    number = cochlea_content[2]
-    side = cochlea_content[3]
+    species, experimenter, number, side, version = cochlea_parts(cochlea)
     stains = placeholder_values.get("stains")
 
     prefix = "".join([species, experimenter])
@@ -719,19 +792,20 @@ def prepare_step(
     if group is not None and f"{group.lower()}_{MASK_PLACEHOLDER}" in template_placeholders:
         placeholder_values.update(mask_parameters(placeholder_values, group.lower()))
 
-    # The group enters the name of a template which serves more than one group, and a stain which
-    # is not the default of the group enters the names of every job with a group, so that the runs
-    # of two groups or of two stains do not share an archive folder.
-    stain = job_stain(group, placeholder_values.get("stain"))
-    placeholder_values["stain_job_name"] = f"-{stain}" if stain else ""
+    # The group enters the name of a template which serves more than one group. A stain which is not
+    # the default of the group and the model version enter the names of every job with a group. So
+    # the runs of two groups, two stains or two model versions do not share an archive folder. The
+    # Slurm job name is the same name with '-', so it names the same parts.
+    name_parts = [part for part in (job_stain(group, placeholder_values.get("stain")),
+                                    job_version(group, placeholder_values)) if part]
 
     script_str = step_name
     if pipeline_group is not None and step_group is None:
         script_str = f"{script_str}_{pipeline_group}"
-    if stain:
-        script_str = f"{script_str}_{stain}"
+    script_str = "_".join([script_str] + name_parts)
+    placeholder_values["job_name"] = script_str.replace("_", "-") + "_" + "-".join(cochlea.split("_"))
 
-    return placeholder_values, f"{script_str}_{prefix}{number.lstrip('0')}{side}", notes
+    return placeholder_values, f"{script_str}_{short_cochlea_name(cochlea)}", notes
 
 
 def check_prediction_absent(

@@ -18,7 +18,6 @@ micromamba activate <cochlea-net_environment>
 
 export INPUT=<data_dir>/<cochlea>/<cochlea_data>
 export OUTPUT_FOLDER=<data_dir>/predictions/<cochlea>/<prediction_dir>
-export SEG_MASKING=<masking>
 export INPUT_KEY=<input_key>
 export ABSOLUTE_THRESHOLD=<ihc_masking_threshold>
 export LEGACY_MASK=<ihc_legacy_mask>
@@ -44,7 +43,7 @@ if [ "$LEGACY_MASK" = true ] ; then
 	legacy_mask=(--legacy_mask)
 fi
 
-flamingo_tools.run_unet_prediction_preprocess_slurm --input_path "$INPUT" --input_key "$INPUT_KEY" \
-	--output_folder "$OUTPUT_FOLDER" --seg_class "$SEG_MASKING" --absolute_threshold "$ABSOLUTE_THRESHOLD" \
+flamingo_tools.run_segmentation --stage mask --model_type IHC --input_path "$INPUT" \
+	--input_key "$INPUT_KEY" --output_folder "$OUTPUT_FOLDER" --absolute_threshold "$ABSOLUTE_THRESHOLD" \
 	"${legacy_mask[@]}"
 

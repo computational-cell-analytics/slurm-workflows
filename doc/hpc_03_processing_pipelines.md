@@ -399,7 +399,6 @@ The cochlea-net deployment adds these placeholder values to the settings and the
 | `stain` | The stain of the group of the template | no |
 | `cochlea_data`, `input_key` | The file of the cochlea folder which holds the stain, and the key of the stain in it | no |
 | `cochlea_data_multi`, `input_key_multi`, `channel_multi` | MoBIE image templates only: the file, the key and the name of each stain of `stains`, separated by spaces | no |
-| `masking` | `sgn` or `ihc`, for `mask_SGN` and `mask_IHC` | no |
 | `sgn_masking_threshold`, `sgn_legacy_mask`, and the same with `ihc_` | `mask_SGN` and `mask_IHC` only: `None` and `false`, the default rule of the mask, see [The mask rule](#the-mask-rule) | yes |
 | `synapse_version` | `synapse_v3` | yes |
 | `model` | The path of `models.<group>.<version>` | no |

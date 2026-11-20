@@ -67,9 +67,9 @@ Each job runs `source ~/.bashrc` and `micromamba activate`, and the archive find
    ```
 
 `environment.yaml` creates the environment `cochlea-net`, which also holds the [MoBIE utils](https://github.com/mobie/mobie-utils-python) of the MoBIE jobs.
-The processing jobs call the commands of cochlea-net, e.g. `flamingo_tools.run_unet_prediction_slurm`.
+The processing jobs call the commands of cochlea-net, e.g. `flamingo_tools.run_segmentation --stage predict`.
 The editable install runs the code of the clone, so the git hash in the archive matches it.
-Run `pip install -e .` again after a pull which adds a command.
+Run `pip install -e .` again after a pull which adds or removes a command.
 
 ## Clone slurm-workflows and create the settings file
 

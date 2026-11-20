@@ -92,9 +92,9 @@ MASK_DEFAULTS = {"masking_threshold": "None", MASK_PLACEHOLDER: "false"}
 # One entry per group of jobs. 'stain' is the default of the 'stain_<group>' parameter, 'version'
 # names the parameter which selects the model, and 'models' is the group of the settings file.
 GROUPS = {
-    "SGN": {"stain": "PV", "version": "sgn_version", "models": "SGN", "masking": "sgn"},
-    "IHC": {"stain": "Vglut3", "version": "ihc_version", "models": "IHC", "masking": "ihc"},
-    "synapses": {"stain": "CTBP2", "version": "synapse_version", "models": "Synapses", "masking": None},
+    "SGN": {"stain": "PV", "version": "sgn_version", "models": "SGN"},
+    "IHC": {"stain": "Vglut3", "version": "ihc_version", "models": "IHC"},
+    "synapses": {"stain": "CTBP2", "version": "synapse_version", "models": "Synapses"},
 }
 
 # Model version which is used if 'synapse_version' is not a parameter of the job.
@@ -844,9 +844,6 @@ def prepare_step(
                 not path_exists(os.path.join(cochlea_dir, placeholder_values["cochlea_data"],
                                              placeholder_values["input_key"]))):
             notes.append(s3_image_note(placeholder_values.get("s3_remote"), cochlea, stain))
-
-        if group_spec["masking"] is not None:
-            placeholder_values["masking"] = group_spec["masking"]
 
         if group == "synapses":
             placeholder_values.setdefault(group_spec["version"], DEFAULT_SYNAPSE_VERSION)

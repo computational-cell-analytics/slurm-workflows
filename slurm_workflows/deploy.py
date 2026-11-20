@@ -78,45 +78,13 @@ def load_project_settings(
     return load_settings(settings_path), settings_path
 
 
-def get_step_metadata(
-    project: str,
-    pipeline_name: str,
-    step_names: list,
-    start_at: str,
-    n_steps: int,
-) -> list:
-    """Return the metadata of each step, without the JobIDs.
-
-    `submit_chain()` adds `run` and `depends_on` to the `pipeline` entry after the submission.
-
-    Args:
-        project: Name of the project.
-        pipeline_name: Name of the pipeline, or None for a single job.
-        step_names: Names of the steps, in the order of submission.
-        start_at: Step of `--start-at`, or None.
-        n_steps: Number of the steps.
-
-    Returns:
-        list: One metadata dictionary per step.
-    """
-    step_metadata = []
-    for step_index in range(1, n_steps + 1):
-        metadata = {"project": project}
-        if pipeline_name is not None:
-            metadata["pipeline"] = {"name": pipeline_name, "step": step_index, "of": n_steps,
-                                    "step_name": step_names[step_index - 1]}
-            if start_at is not None:
-                metadata["pipeline"]["start_at"] = start_at
-        step_metadata.append(metadata)
-    return step_metadata
-
-
 def submit_chain(
     sbatch_files: list,
     archive_dir: str,
     repositories: dict,
     settings_file: str,
-    step_metadata: list,
+    metadata: dict = None,
+    step_names: list = None,
 ) -> list:
     """Submit sbatch scripts as a chain of jobs and archive each job.
 
@@ -128,12 +96,16 @@ def submit_chain(
         archive_dir: Directory of the archive folders, or None to not archive the jobs.
         repositories: Names and paths of the git repositories to track.
         settings_file: Settings file of the project, or None.
-        step_metadata: One metadata dictionary per step. If a dictionary has a `pipeline` entry, the function
-            adds `run` (the JobID of the first step) and `depends_on` (the JobID of the previous step) to it.
+        metadata: Entries to add to the metadata, or None. Accepts keys `project` and `pipeline`.
+        step_names: Name of each step, in the order of `sbatch_files`. Required for a `pipeline` metadata entry.
 
     Returns:
         list: JobIDs of the submitted jobs.
     """
+    pipeline = (metadata or {}).get("pipeline")
+    if pipeline is not None and step_names is None:
+        raise ValueError("A pipeline entry in the metadata needs the step names.")
+
     dependency = None
 
     # The JobID of the first step identifies the run of a pipeline in the archive.
@@ -141,7 +113,7 @@ def submit_chain(
     jobids = []
 
     # Only step 1 is held, subsequent steps are submitted with dependency on the previous step.
-    for step_index, sbatch_file in enumerate(sbatch_files, start=1):
+    for step, sbatch_file in enumerate(sbatch_files, start=1):
         try:
             jobid = submit(sbatch_file, dependency, hold=bool(archive_dir) and run is None)
         except ValueError:
@@ -149,17 +121,18 @@ def submit_chain(
                 release_job(run)
             raise
         jobids.append(jobid)
-        print(f"Step {step_index} of {len(sbatch_files)} submitted as JobID {jobid}.")
+        print(f"Step {step} of {len(sbatch_files)} submitted as JobID {jobid}.")
         if run is None:
             run = jobid
 
         if archive_dir:
-            metadata = step_metadata[step_index - 1]
-            if "pipeline" in metadata:
-                pipeline = {**metadata["pipeline"], "run": run}
+            metadata = dict(metadata or {})
+            if pipeline is not None:
+                metadata["pipeline"] = {
+                    **pipeline, "run": run, "step": step, "of": len(sbatch_files), "step_name": step_names[step - 1]
+                    }
                 if dependency is not None:
-                    pipeline["depends_on"] = dependency
-                metadata = {**metadata, "pipeline": pipeline}
+                    metadata["pipeline"]["depends_on"] = dependency
             try:
                 archive_submitted_job(sbatch_file, jobid, archive_dir, move=True, repositories=repositories,
                                       settings_file=settings_file, metadata=metadata)
@@ -211,7 +184,6 @@ def deploy_jobs(
     if args.pipeline is None:
         template_files = [args.input]
         definition = None
-        step_names = None
     else:
         _, pipeline_file = resolve_pipeline(args.pipeline)
         definition = load_pipeline(pipeline_file)
@@ -295,6 +267,11 @@ def deploy_jobs(
     if not archive_dir:
         print("Warning: no archive directory is set. The jobs are not archived.")
 
-    pipeline_name = definition["name"] if definition is not None else None
-    step_metadata = get_step_metadata(project, pipeline_name, step_names, args.start_at, len(sbatch_files))
-    submit_chain(sbatch_files, archive_dir, repositories, settings_path, step_metadata)
+    metadata = {"project": project}
+    if definition is None:
+        step_names = None
+    else:
+        metadata["pipeline"] = {"name": definition["name"]}
+        if args.start_at is not None:
+            metadata["pipeline"]["start_at"] = args.start_at
+    submit_chain(sbatch_files, archive_dir, repositories, settings_path, metadata, step_names)

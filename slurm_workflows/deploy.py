@@ -116,9 +116,18 @@ def submit_chain(
     for step, sbatch_file in enumerate(sbatch_files, start=1):
         try:
             jobid = submit(sbatch_file, dependency, hold=bool(archive_dir) and run is None)
-        except ValueError:
+        except ValueError as submit_exc:
+            # A failed scontrol release leaves all steps waiting, so they are cancelled.
             if archive_dir and run is not None:
-                release_job(run)
+                try:
+                    release_job(run)
+                except ValueError as release_exc:
+                    cancel_jobs(jobids)
+                    raise ValueError(
+                        f"{submit_exc}\nRelease failed, so the jobs {', '.join(jobids)} were cancelled: {release_exc}"
+                    ) from release_exc
+
+            # Raises the submit error if the current step failed.
             raise
         jobids.append(jobid)
         print(f"Step {step} of {len(sbatch_files)} submitted as JobID {jobid}.")
@@ -130,7 +139,7 @@ def submit_chain(
             if pipeline is not None:
                 metadata["pipeline"] = {
                     **pipeline, "run": run, "step": step, "of": len(sbatch_files), "step_name": step_names[step - 1]
-                    }
+                }
                 if dependency is not None:
                     metadata["pipeline"]["depends_on"] = dependency
             try:

@@ -83,7 +83,8 @@ def submit_chain(
     archive_dir: str,
     repositories: dict,
     settings_file: str,
-    metadata: dict = None,
+    project: str = None,
+    pipeline: dict = None,
     step_names: list = None,
 ) -> list:
     """Submit sbatch scripts as a chain of jobs and archive each job.
@@ -96,13 +97,13 @@ def submit_chain(
         archive_dir: Directory of the archive folders, or None to not archive the jobs.
         repositories: Names and paths of the git repositories to track.
         settings_file: Settings file of the project, or None.
-        metadata: Entries to add to the metadata, or None. Accepts keys `project` and `pipeline`.
+        project: Name of the project for the metadata, or None.
+        pipeline: Pipeline entry of the metadata, e.g. `{"name": ...}`, or None.
         step_names: Name of each step, in the order of `sbatch_files`. Required for a `pipeline` metadata entry.
 
     Returns:
         list: JobIDs of the submitted jobs.
     """
-    pipeline = (metadata or {}).get("pipeline")
     if pipeline is not None and step_names is None:
         raise ValueError("A pipeline entry in the metadata needs the step names.")
 
@@ -135,7 +136,9 @@ def submit_chain(
             run = jobid
 
         if archive_dir:
-            metadata = dict(metadata or {})
+            metadata = {}
+            if project is not None:
+                metadata["project"] = project
             if pipeline is not None:
                 metadata["pipeline"] = {
                     **pipeline, "run": run, "step": step, "of": len(sbatch_files), "step_name": step_names[step - 1]
@@ -276,11 +279,12 @@ def deploy_jobs(
     if not archive_dir:
         print("Warning: no archive directory is set. The jobs are not archived.")
 
-    metadata = {"project": project}
+    pipeline = None
     if definition is None:
         step_names = None
     else:
-        metadata["pipeline"] = {"name": definition["name"]}
+        pipeline = {"name": definition["name"]}
         if args.start_at is not None:
-            metadata["pipeline"]["start_at"] = args.start_at
-    submit_chain(sbatch_files, archive_dir, repositories, settings_path, metadata, step_names)
+            pipeline["start_at"] = args.start_at
+    submit_chain(sbatch_files, archive_dir, repositories, settings_path, project=project, pipeline=pipeline,
+                 step_names=step_names)

@@ -280,9 +280,10 @@ class DeploySubmissionTest(unittest.TestCase):
     def test_resumed_pipeline_names_its_start(self):
         self.deploy(self.archive_dir, MOCKUP_PIPELINE, start_at="evaluate")
 
-        self.assertEqual(self.archived_metadata("evaluate")["pipeline"],
-                         {"name": "train_evaluate", "run": str(FIRST_JOBID), "step": 1, "of": 1,
-                          "step_name": "evaluate", "start_at": "evaluate"})
+        # The order of the keys counts, so the items are compared as a list.
+        self.assertEqual(list(self.archived_metadata("evaluate")["pipeline"].items()),
+                         [("name", "train_evaluate"), ("run", str(FIRST_JOBID)), ("step", 1), ("of", 1),
+                          ("step_name", "evaluate"), ("start_at", "evaluate")])
 
     def test_failed_submission_of_step_2_releases_step_1(self):
         submit = deploy.submit

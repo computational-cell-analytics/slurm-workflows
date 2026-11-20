@@ -13,6 +13,7 @@ from datetime import date
 
 from slurm_workflows import REPOSITORY_DIR
 from slurm_workflows.inputs import check_external_input, check_job_input, check_output_absent
+from slurm_workflows.metadata import ordered_pipeline
 from slurm_workflows.pipelines import load_pipeline, resolve_pipeline, steps_starting_at
 from slurm_workflows.projects import default
 from slurm_workflows.repositories import check_dirty, job_repositories
@@ -24,7 +25,7 @@ from slurm_workflows.templates import render_template, step_template
 # The functions which `deploy_jobs()` calls on the deployment module of a project.
 DEPLOYMENT_FUNCTIONS = ("add_arguments", "select_steps", "prepare_step", "check_steps")
 
-# Entries of metadata.json which `deploy_jobs()` writes. An entry of `prepare_step()` cannot replace them.
+# Entries of metadata.json which `submit_chain()` writes. An entry of `step_metadata` cannot replace them.
 GENERIC_METADATA = ("project", "pipeline")
 
 
@@ -150,11 +151,11 @@ def submit_chain(
                 metadata.update((key, value) for key, value in step_metadata[step - 1].items()
                                 if key not in GENERIC_METADATA)
             if pipeline is not None:
-                metadata["pipeline"] = {
-                    **pipeline, "run": run, "step": step, "of": len(sbatch_files), "step_name": step_names[step - 1]
-                }
+                entry = {**pipeline, "run": run, "step": step, "of": len(sbatch_files),
+                         "step_name": step_names[step - 1]}
                 if dependency is not None:
-                    metadata["pipeline"]["depends_on"] = dependency
+                    entry["depends_on"] = dependency
+                metadata["pipeline"] = ordered_pipeline(entry)
             try:
                 archive_submitted_job(sbatch_file, jobid, archive_dir, move=True, repositories=repositories,
                                       settings_file=settings_file, metadata=metadata)

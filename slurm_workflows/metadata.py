@@ -19,6 +19,8 @@ SBATCH_FILE = "sbatch.sbatch"
 LOG_FILE = "log.txt"
 # Subfolder of an archive folder with one folder `<jobid>/` per replaced JobID.
 PREVIOUS_DIR = "previous"
+# The keys of the `pipeline` entry in the order of `submit_chain()`. Other keys, such as `failed_at`, follow.
+PIPELINE_KEYS = ("name", "run", "step", "of", "step_name", "start_at", "depends_on")
 
 
 def read_metadata(
@@ -73,6 +75,22 @@ def as_list(
         list: The value itself if it is a list, otherwise a list with the value as its only entry.
     """
     return value if isinstance(value, list) else [value]
+
+
+def ordered_pipeline(
+    pipeline: dict,
+) -> dict:
+    """Order the keys of a `pipeline` entry.
+
+    Args:
+        pipeline: `pipeline` entry of the metadata.
+
+    Returns:
+        dict: The entry with the keys of `PIPELINE_KEYS` first, in that order, and the other keys after them.
+    """
+    ordered = {key: pipeline[key] for key in PIPELINE_KEYS if key in pipeline}
+    ordered.update((key, value) for key, value in pipeline.items() if key not in PIPELINE_KEYS)
+    return ordered
 
 
 def archive_folders(

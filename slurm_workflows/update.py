@@ -11,7 +11,8 @@ from datetime import date, datetime
 from typing import List, Optional
 
 from slurm_workflows.metadata import LOG_FILE, METADATA_FILE, PREVIOUS_DIR, SBATCH_FILE
-from slurm_workflows.metadata import archive_folders, archived_jobs, as_list, init_metadict, write_metadata
+from slurm_workflows.metadata import archive_folders, archived_jobs, as_list, init_metadict, ordered_pipeline
+from slurm_workflows.metadata import write_metadata
 from slurm_workflows.slurm import jobids_from_log, matches_jobid, reportseff_entries, reportseff_from_jobid
 from slurm_workflows.slurm import add_sbatch_parameters, slurm_output_files, slurm_output_to_dict
 from slurm_workflows.templates import TEMPLATE_ROOT, template_names
@@ -31,9 +32,6 @@ FINAL_STATES = ("COMPLETED",) + FAILED_STATES
 
 # The elapsed time of a task which was cancelled before it started.
 NOT_STARTED_ELAPSED = "00:00:00"
-
-# The keys of the `pipeline` entry in the order of `deploy_jobs()`. Other keys, such as `failed_at`, follow.
-PIPELINE_KEYS = ("name", "run", "step", "of", "step_name", "start_at", "depends_on")
 
 # GWDG purges a job from the Slurm database 365 days after its end, so `reportseff` cannot list an older job.
 SLURM_PURGE_DAYS = 365
@@ -381,10 +379,7 @@ def complete_pipeline(
     if not additions:
         return False
 
-    merged = dict(pipeline, **additions)
-    ordered = {key: merged[key] for key in PIPELINE_KEYS if key in merged}
-    ordered.update((key, value) for key, value in merged.items() if key not in PIPELINE_KEYS)
-    metadict["pipeline"] = ordered
+    metadict["pipeline"] = ordered_pipeline(dict(pipeline, **additions))
     return True
 
 

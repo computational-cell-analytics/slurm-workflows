@@ -254,6 +254,23 @@ class DeploySubmissionTest(unittest.TestCase):
         self.assertEqual(scontrol_calls(self.env), [f"release {FIRST_JOBID}"])
         self.assertEqual(scancel_calls(self.env), [])
 
+    def test_failed_submission_and_release_cancels_step_1(self):
+        self.env["SCONTROL_EXIT"] = "1"
+        submit = deploy.submit
+
+        def submit_step_1_only(sbatch_file, dependency, hold):
+            if dependency is not None:
+                raise ValueError("stub failure")
+            return submit(sbatch_file, dependency, hold)
+
+        with mock.patch.object(deploy, "submit", side_effect=submit_step_1_only):
+            with self.assertRaisesRegex(ValueError, "stub failure\nRelease failed"):
+                self.deploy(self.archive_dir, MOCKUP_PIPELINE)
+
+        self.assertEqual(len(sbatch_calls(self.env)), 1)
+        self.assertEqual(scontrol_calls(self.env), [f"release {FIRST_JOBID}"])
+        self.assertEqual(scancel_calls(self.env), [str(FIRST_JOBID)])
+
     def test_failed_archiving_of_step_2_cancels_both_steps(self):
         with mock.patch.object(deploy, "archive_submitted_job", side_effect=[None, ValueError("stub failure")]):
             with self.assertRaisesRegex(ValueError, "Archiving failed"):

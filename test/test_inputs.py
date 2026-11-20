@@ -343,6 +343,37 @@ class SynapseNameTest(unittest.TestCase):
             self.assertEqual(module.synapse_ihc_prediction_name(*args), name)
             self.assertTrue(mobie.SYNAPSE_NAME.fullmatch(name), name)
 
+    def test_parse_prediction_name_reads_the_names_back(self):
+        """The backfill of `add_processing_metadata` reads the model versions and the stains of a job from its
+        prediction folders."""
+        for stain_ihc in ("Vglut3", "Myo7a"):
+            for stain_synapses in ("CTBP2", "Homer1"):
+                values = {"stain_IHC": stain_ihc, "stain_synapses": stain_synapses, "stain_SGN": "PV",
+                          "ihc_version": "IHC_v11b", "synapse_version": "synapses_v3", "sgn_version": "SGN_v3"}
+                with self.subTest(stain_ihc=stain_ihc, stain_synapses=stain_synapses):
+                    for group in ("SGN", "IHC"):
+                        [(models_group, key)] = deployment.job_models(group, values).items()
+                        stain = deployment.job_stains(group, values)[models_group]
+                        name = deployment.prediction_name(group, stain, key)
+                        prefix = None if stain == deployment.GROUPS[group]["stain"] else stain
+                        self.assertEqual(deployment.parse_prediction_name(name),
+                                         {models_group: {"part": deployment.version_part(key), "key": key,
+                                                         "stain": prefix}})
+
+                    name = deployment.synapse_ihc_prediction_name(stain_synapses, "synapses_v3", stain_ihc, "IHC_v11b")
+                    fields = deployment.parse_prediction_name(name)
+                    self.assertEqual({group: entry["part"] for group, entry in fields.items()},
+                                     {group: deployment.version_part(key)
+                                      for group, key in deployment.job_models("synapses", values).items()})
+                    self.assertEqual(fields["Synapses"]["stain"], None if stain_synapses == "CTBP2" else stain_synapses)
+                    self.assertEqual(fields["IHC"]["stain"], None if stain_ihc == "Vglut3" else stain_ihc.lower())
+
+        for name in ("PV", "Vglut3", "predictions.zarr", "G_LR_000301_L", "GLR_301L_PV_Vglut3_fused.n5",
+                     "synapse_detection_model_v3.pt", "mask_synapses", "setup2", "IHC_v11.json",
+                     'IHC_v11-"$VERSION', 'synapse_v3_ihc_v11-"$VERSION'):
+            with self.subTest(name):
+                self.assertEqual(deployment.parse_prediction_name(name), {})
+
     def test_short_cochlea_name_keeps_the_version_suffix(self):
         self.assertEqual(deployment.short_cochlea_name("M_AMD_000137_L"), "MAMD137L")
         self.assertEqual(deployment.short_cochlea_name("M_AMD_000137_L_v2"), "MAMD137Lv2")

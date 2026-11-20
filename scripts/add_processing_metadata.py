@@ -1,0 +1,15 @@
+#!/usr/bin/python
+# -- coding: utf-8 --
+"""author: Martin Schilling (martin.schilling@med.uni-goettingen.de), 2026
+
+Standalone entry point of `slurm_wf.add_processing_metadata`, which works without an installation of `slurm_workflows`.
+"""
+import os
+import sys
+
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.realpath(__file__))))
+
+from slurm_workflows.projects.cochlea_net.cli import main_add_processing_metadata  # noqa: E402
+
+if __name__ == "__main__":
+    main_add_processing_metadata()

@@ -68,7 +68,10 @@ The keys are lower case with underscores.
 | `models` | Deploy step | cochlea-net only, for a job with a group: the key of `models` in the settings file of each model which the job uses, e.g. `{"IHC": "IHC_v11b"}`. A synapse job also names its IHC model, e.g. `{"Synapses": "synapse_v3", "IHC": "IHC_v11b"}` |
 | `pipeline` | Deploy step | Only for a step of a pipeline: `name` of the pipeline, `run` (the JobID of the first step of the deploy call), `step` and `of` (the number of the step and of all steps of the deploy call), `step_name` (the template, e.g. `segment_IHC`), `start_at` (after `--start-at`), `depends_on` (the JobID of the previous step), and `failed_at`, see update_metadata.py |
 | `slurm_output` | Slurm output file | One entry per output file: `file`, `array_index` of an array task, `submitted`, `started`, `ended`, `elapsed_min`, `limit_min`, `cpus`, `nodes`, `core_hours`, `elapsed_sec` (from `started` to `ended`), `exit_code` (if the job printed it), `state` and `error` (if the output shows them), see [the format of a slurm output file](#the-format-of-a-slurm-output-file) |
-| `backfilled` | `update_metadata.py --backfill` | `true` if `--backfill` created the metadata. Such metadata holds only `date`, `task`, `jobid`, `reportseff` and `slurm_output` |
+| `backfilled` | `update_metadata.py --backfill` | `true` if `--backfill` created the metadata. Such metadata holds only `date`, `task`, `jobid`, `reportseff` and `slurm_output`, and `cochlea` after `add_processing_metadata.py` |
+
+`add_processing_metadata.py` adds `cochlea`, `stains` and `models` to an older job, see
+[The processing keys of an older job](#the-processing-keys-of-an-older-job).
 
 The archive records the git hash of slurm-workflows, of each entry of `repositories` in the
 settings file, and of each repository of `--repository-file`.
@@ -271,3 +274,46 @@ python scripts/migrate_metadata_keys.py <archive_dir>
 
 `scripts/migrate_metadata_keys.py` is temporary and will be removed after the migration of the
 cluster archive.
+
+### The processing keys of an older job
+
+The deploy step of cochlea-net writes `cochlea`, `stains` and `models` since 2026-11.
+`scripts/add_processing_metadata.py` adds them to an older job of cochlea-net:
+
+```bash
+python scripts/add_processing_metadata.py --dry-run <archive_dir>   # list the jobs which change
+python scripts/add_processing_metadata.py [--settings <settings file>] [--pattern <text>] <archive_dir>
+```
+
+`cochlea` comes from the archive folder.
+The command looks for a cochlea name in the `sbatch.sbatch` files of the folder, e.g. `G_EK_000233_L`,
+whose short form is the last part of the folder name, e.g. `GEK233L`.
+A folder name from before 2026-11-20 has no version suffix of the cochlea, e.g. `MAMDN163L` for
+`M_AMD_N163_L_v2`, and an older folder name can keep the leading zeros, e.g. `MAMD000137L`.
+Both forms match.
+Every job of the folder gets it, also a backfilled job in `previous/<jobid>/` without `sbatch.sbatch`.
+
+`stains` and `models` come from the prediction folders which `sbatch.sbatch` names, e.g.
+`predictions/<cochlea>/IHC_v11b`.
+A prediction folder without a stain prefix holds the default stain of its group.
+A name with a shell variable, e.g. `IHC_v11-"$VERSION"`, gives no model, because the script does not
+hold the full name.
+A step without a prediction folder, e.g. `download_image`, gets the values of the other steps of its
+pipeline run.
+The command joins the steps of a run with `run` and `depends_on` of the `pipeline` entry.
+
+A synapse folder, e.g. `synapse_v3_ihc_v11b`, holds only the version parts `v3` and `v11b`.
+The IHC key comes from the IHC mask of `mask_synapses`, e.g. `IHC_v11b.ome.zarr`.
+The synapse key is the one key of `models.Synapses` in the settings file with the version part, e.g.
+`synapse_v3` for `v3`.
+Without `--settings`, the command reads `project_settings/cochlea-net.json`.
+
+- A job keeps an existing entry. A different result gives a warning.
+- A run whose scripts name two versions or two stains of one model gets no `stains` and no `models`.
+  The command prints a warning.
+- A run whose version part matches no key, or more than one key, of the settings file gets no
+  `stains` and no `models`. The command prints a warning.
+- `--pattern` selects the jobs to update. The other jobs still give the values of their folders and runs.
+- The command lists the jobs without a cochlea and the jobs without a model version, e.g. the jobs
+  without a group, the jobs which were submitted by hand, and the backfilled jobs in `previous/<jobid>/`.
+- A note lists the keys of the scripts which the settings file does not have.

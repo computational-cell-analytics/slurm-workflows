@@ -7,6 +7,7 @@ ribbon synapses, and the export of the results to MoBIE and the S3 bucket.
 """
 import json
 import os
+import re
 import shlex
 import sys
 
@@ -106,6 +107,17 @@ SYNAPSE_VERSIONS = "{synapse}_ihc_{ihc}"
 # Name of the prediction folder and the MoBIE source of the synapse jobs, filled with `SYNAPSE_VERSIONS`.
 # cochlea-net reads the source by this name.
 SYNAPSE_SOURCE = "synapse_{versions}"
+
+# The prediction folder of an SGN or IHC job is '[<stain>_]<key>', and the key is '<model group>_<version
+# part>'. A synapse prediction folder has the format `SYNAPSE_SOURCE`. The patterns read the model
+# versions back from an archived script. They assume that a stain and a version part hold only letters,
+# digits and '-'. So a file name such as 'IHC_v11.json' is no prediction folder, and a name with a shell
+# variable such as 'IHC_v11-"$VERSION' gives no truncated version.
+NAME_PART = "[A-Za-z0-9-]+"
+GROUP_MODELS = "|".join(spec["models"] for name, spec in GROUPS.items() if name != "synapses")
+GROUP_PREDICTION = re.compile(rf"(?:({NAME_PART})_)?(({GROUP_MODELS})_{NAME_PART})")
+SYNAPSE_PREDICTION = re.compile(rf"(?:({NAME_PART})_)?" + SYNAPSE_SOURCE.format(
+    versions=SYNAPSE_VERSIONS.format(synapse=f"({NAME_PART})", ihc=f"(?:({NAME_PART})_)?({NAME_PART})")))
 
 # rclone reads its remotes from this file, unless the environment variable RCLONE_CONFIG names another one.
 RCLONE_CONFIG = os.path.join("~", ".config", "rclone", "rclone.conf")
@@ -558,6 +570,36 @@ def job_groups(
     if group is None:
         return []
     return [group, "IHC"] if group == "synapses" else [group]
+
+
+def parse_prediction_name(
+    name: str,
+) -> dict:
+    """Read the model versions and the stains from the name of a prediction folder or a MoBIE source.
+
+    This is the inverse of `prediction_name()` and `synapse_ihc_prediction_name()`. An SGN or IHC
+    name holds the full model key. A synapse name holds only the version parts of both models, and the
+    IHC stain in lower case.
+
+    Args:
+        name: Name of the prediction folder, e.g. 'Myo7a_IHC_v11b' or 'synapse_v3_ihc_v11b'.
+
+    Returns:
+        dict: Per model group of the settings file, the dictionary {"part", "key", "stain"}. 'key' is
+            None if the name does not hold it. 'stain' is None for the default stain of the group. An
+            empty dictionary if the name is not a prediction folder.
+    """
+    match = SYNAPSE_PREDICTION.fullmatch(name)
+    if match is not None:
+        return {GROUPS["synapses"]["models"]: {"part": match.group(2), "key": None, "stain": match.group(1)},
+                GROUPS["IHC"]["models"]: {"part": match.group(4), "key": None, "stain": match.group(3)}}
+
+    match = GROUP_PREDICTION.fullmatch(name)
+    if match is not None:
+        key = match.group(2)
+        return {match.group(3): {"part": version_part(key), "key": key, "stain": match.group(1)}}
+
+    return {}
 
 
 def n5_candidates(

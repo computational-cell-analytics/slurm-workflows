@@ -114,6 +114,10 @@ def submit_chain(
     """
     if pipeline is not None and step_names is None:
         raise ValueError("A pipeline entry in the metadata needs the step names.")
+    # A wrong length found after the first submission would leave the held step 1 in the queue.
+    for name, entries in (("step_names", step_names), ("step_metadata", step_metadata)):
+        if entries is not None and len(entries) != len(sbatch_files):
+            raise ValueError(f"{name} has {len(entries)} entries for {len(sbatch_files)} sbatch scripts.")
 
     dependency = None
 

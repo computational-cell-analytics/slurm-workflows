@@ -205,6 +205,12 @@ class DeploySubmissionTest(unittest.TestCase):
         with open(os.path.join(self.archive_dir, folder, "metadata.json")) as myfile:
             return json.load(myfile)
 
+    def submit_chain(self, sbatch_names, archive_dir, **options):
+        sbatch_files = [write_file(os.path.join(self.tmp.name, name), "#!/bin/bash\n#SBATCH -t 01:00:00\n")
+                        for name in sbatch_names]
+        with mock.patch.dict(os.environ, self.env), contextlib.redirect_stdout(io.StringIO()):
+            return deploy.submit_chain(sbatch_files, archive_dir, {}, None, **options)
+
     def test_project_and_environment_are_archived(self):
         self.deploy(self.archive_dir)
 
@@ -363,6 +369,16 @@ class DeploySubmissionTest(unittest.TestCase):
 
         with self.assertRaises(ValueError):
             self.deploy(self.archive_dir)
+
+    def test_wrong_number_of_step_entries_submits_nothing(self):
+        sbatch_names = [SBATCH_NAME, f"{DATE}_sbatch_y.sbatch"]
+        for options in ({"step_metadata": [{}]}, {"step_metadata": [{}, {}, {}]},
+                        {"pipeline": {"name": "chain"}, "step_names": ["x"]}):
+            with self.subTest(str(options)):
+                with self.assertRaisesRegex(ValueError, "entries for 2 sbatch scripts"):
+                    self.submit_chain(sbatch_names, self.archive_dir, **options)
+
+        self.assertEqual(sbatch_calls(self.env), [])
 
 
 if __name__ == "__main__":

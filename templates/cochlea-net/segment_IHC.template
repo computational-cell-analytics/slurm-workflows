@@ -38,7 +38,8 @@ for path in "$OUTPUT_FOLDER"/predictions.zarr ; do
 	fi
 done
 
-flamingo_tools.run_unet_segmentation_slurm --output_folder "$OUTPUT_FOLDER" --min_size "$MIN_SIZE" \
+flamingo_tools.run_segmentation --stage segment --model_type IHC --output_folder "$OUTPUT_FOLDER" \
+	--min_size "$MIN_SIZE" \
 	--center_distance_threshold "$CENTER_DISTANCE_THRESHOLD" \
 	--boundary_distance_threshold "$BOUNDARY_DISTANCE_THRESHOLD" \
 	--distance_smoothing "$DISTANCE_SMOOTHING"

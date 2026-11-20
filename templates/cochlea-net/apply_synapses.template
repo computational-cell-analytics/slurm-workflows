@@ -40,5 +40,5 @@ for path in "$INPUT" "$OUTPUT_FOLDER"/mask.zarr ; do
 	fi
 done
 
-flamingo_tools.run_synapse_prediction_slurm --input_path "$INPUT" --input_key "$INPUT_KEY" \
-	--output_folder "$OUTPUT_FOLDER" --model_path "$MODEL" --prediction_instances "$PREDICTION_INSTANCES"
+flamingo_tools.run_detection --stage predict --input_path "$INPUT" --input_key "$INPUT_KEY" \
+	--output_folder "$OUTPUT_FOLDER" --checkpoint_path "$MODEL" --prediction_instances "$PREDICTION_INSTANCES"

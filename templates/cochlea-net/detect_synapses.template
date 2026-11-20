@@ -51,6 +51,6 @@ done
 # is a deliberate recomputation. Reusing the table would risk serving the peaks of a truncated
 # volume.
 # VOXEL_SIZE is not quoted, so that it gives three values.
-flamingo_tools.run_synapse_detection_slurm --output_folder "$OUTPUT_FOLDER" --voxel_size $VOXEL_SIZE \
+flamingo_tools.run_detection --stage detect --output_folder "$OUTPUT_FOLDER" --voxel_size $VOXEL_SIZE \
 	--threshold "$THRESHOLD" --mask_path "$MASK_PATH" --s3_mask --mask_key "$MASK_KEY" \
 	--max_distance "$MAX_DISTANCE" --force_overwrite

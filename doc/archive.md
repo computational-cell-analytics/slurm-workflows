@@ -139,7 +139,7 @@ The options add more updates:
 |---|---|
 | `-p`, `--pattern` | Update only the archive folders whose path relative to `<archive_dir>` contains this text. The text can hold wildcards |
 | `-s`, `--slurm-dir` | Add `slurm_output` from the files `slurm-<jobid>.out` and `slurm-<jobid>_<array_index>.out` of this folder. Without this option, the archive folder of each job is searched |
-| `--general` | Correct `date` and `task` from the name of the archive folder. Replace an efficiency report of another JobID |
+| `--general` | Correct `date` and `task` from the name of the archive folder. Replace an efficiency report of another JobID. Add `run` and `step_name` to the `pipeline` entry of a step from before 2026-11: `run` from the chain of `depends_on`, `step_name` from the folder name and the templates of `project` |
 | `--sbatch` | Copy the `#SBATCH` values of `sbatch.sbatch` into the metadata again. A folder without `sbatch.sbatch` is skipped |
 | `--backfill` | Create `previous/<jobid>/metadata.json` for each earlier JobID of `log.txt` without metadata, e.g. in an archive folder from before `previous/<jobid>/`. The refresh adds the efficiency report, and `--slurm-dir` the core hours |
 

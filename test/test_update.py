@@ -50,10 +50,12 @@ class ArchiveTestCase(unittest.TestCase):
         self.tmp.cleanup()
 
     def job(self, task, jobid, reports, step=None, depends_on=None, job_date=TODAY, previous=False, log=None,
-            slurm_output=None):
+            slurm_output=None, project=None):
         """Write the archive folder of a job, or the folder of a replaced JobID with `previous=True`."""
         folder = os.path.join(self.archive_dir, f"{job_date}_{task}")
         metadict = {"date": job_date, "task": task, "jobid": jobid, "reportseff": reports}
+        if project is not None:
+            metadict["project"] = project
         if step is not None:
             metadict["pipeline"] = {"name": "chain", "step": step, "of": 3}
             if depends_on is not None:
@@ -400,6 +402,39 @@ class OptionTest(ArchiveTestCase):
         self.assertEqual((corrected["date"], corrected["task"]), (TODAY, "first"))
         self.assertEqual([entry["jobid"] for entry in corrected["reportseff"]], ["1001"])
         self.assertIn(f"Updated essential metadata for {previous}.", output)
+
+    def test_general_completes_an_old_pipeline_entry(self):
+        steps = (("download_image", "1001", None), ("mask_IHC", "1002", "1001"), ("cleanup_input", "1003", "1002"))
+        folders = [self.job(f"{step}_IHC_v11b_GEK233L", jobid, [report(jobid, "COMPLETED")], step=index,
+                            depends_on=depends_on, project="cochlea-net")
+                   for index, (step, jobid, depends_on) in enumerate(steps, start=1)]
+        broken = self.job("segment_IHC_v11b_GLR234L", "2002", [report("2002", "COMPLETED")], step=2,
+                          depends_on="2001", project="cochlea-net")
+        without_project = self.job("mask_IHC_v11b_GLR234R", "3001", [report("3001", "COMPLETED")], step=1)
+
+        output = self.update([], general=True)
+
+        for folder, (step, _, _) in zip(folders, steps):
+            with self.subTest(step):
+                pipeline = self.metadata(folder)["pipeline"]
+                self.assertEqual((pipeline["run"], pipeline["step_name"]), ("1001", step))
+        self.assertEqual(list(self.metadata(folders[1])["pipeline"]),
+                         ["name", "run", "step", "of", "step_name", "depends_on"])
+        self.assertEqual(self.metadata(broken)["pipeline"],
+                         {"name": "chain", "step": 2, "of": 3, "step_name": "segment_IHC", "depends_on": "2001"})
+        self.assertEqual(self.metadata(without_project)["pipeline"],
+                         {"name": "chain", "run": "3001", "step": 1, "of": 3})
+        self.assertIn(f"Updated essential metadata for {folders[0]}.", output)
+
+        self.assertNotIn("Updated essential metadata", self.update([], general=True))
+
+    def test_general_follows_a_chain_outside_of_the_pattern(self):
+        self.job("download_image_IHC_v11b_GEK233L", "1001", [report("1001", "COMPLETED")], step=1)
+        mask = self.job("mask_IHC_v11b_GEK233L", "1002", [report("1002", "COMPLETED")], step=2, depends_on="1001")
+
+        self.update([], pattern="mask_IHC", general=True)
+
+        self.assertEqual(self.metadata(mask)["pipeline"]["run"], "1001")
 
 
 if __name__ == "__main__":

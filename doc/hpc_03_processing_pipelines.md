@@ -153,6 +153,11 @@ Every step of a group gets it, also `download_image` and `cleanup_input`, e.g.
 So two model versions of one cochlea can run on the same day, and each run has its own archive folders.
 The Slurm job name is the name of the sbatch script with `-` instead of `_`, e.g.
 `download-image-IHC-v11b_G-EK-000233-L`.
+The `metadata.json` of each job records the full values: `cochlea`, e.g. `G_EK_000233_L`, and for a
+job with a group `stains` and `models`, e.g. `{"Synapses": "CTBP2", "IHC": "Vglut3"}` and
+`{"Synapses": "synapse_v3", "IHC": "IHC_v11b"}`.
+`stains` also names a default stain, which the names leave out.
+See [The archive](archive.md#the-keys-of-metadatajson).
 
 > [!IMPORTANT]
 > The `synapses` pipeline needs the IHC segmentation of the same cochlea. Run `ihc` first, and set `ihc_version` in the parameter file.

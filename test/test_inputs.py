@@ -110,9 +110,9 @@ class ResolveInputTest(unittest.TestCase):
 
     def mobie_values(self):
         values = {"data_dir": self.tmp.name, "cochlea": self.COCHLEA, "stains": self.STAINS}
-        values, _, _ = self.module.prepare_step({"data_dir": self.tmp.name, "models": {}}, values,
-                                                step_template(TEMPLATE_DIR, "mobie_add_image"),
-                                                deploy_args())
+        values, _, _, _ = self.module.prepare_step({"data_dir": self.tmp.name, "models": {}}, values,
+                                                   step_template(TEMPLATE_DIR, "mobie_add_image"),
+                                                   deploy_args())
         return values
 
     def test_multi_n5_wins(self):
@@ -169,8 +169,8 @@ class ResolveInputTest(unittest.TestCase):
         values = {"data_dir": self.tmp.name, "cochlea": self.COCHLEA, "stains": self.STAINS,
                   "ihc_version": "IHC_v11", "s3_remote": "remote:bucket", **parameters}
         settings = {"data_dir": self.tmp.name, "models": models or {"IHC": {"IHC_v11": "/path/to/model"}}}
-        values, _, notes = self.module.prepare_step(settings, values, step_template(TEMPLATE_DIR, step),
-                                                    deploy_args(download=download), definition)
+        values, _, notes, _ = self.module.prepare_step(settings, values, step_template(TEMPLATE_DIR, step),
+                                                       deploy_args(download=download), definition)
         return values, " ".join(notes)
 
     def test_resources_of_the_species_and_of_a_parameter(self):
@@ -197,10 +197,10 @@ class ResolveInputTest(unittest.TestCase):
                     "models": {"SGN": {"SGN_v3": "/path/to/model"}, "IHC": {"IHC_v11": "/path/to/model"}}}
         parameters = {"data_dir": self.tmp.name, "cochlea": self.COCHLEA, "sgn_version": "SGN_v3",
                       "ihc_version": "IHC_v11", "sgn_center_distance_threshold": "0.3"}
-        sgn, _, _ = self.module.prepare_step(settings, dict(parameters), step_template(TEMPLATE_DIR, "segment_SGN"),
-                                             deploy_args())
-        ihc, _, _ = self.module.prepare_step(settings, dict(parameters), step_template(TEMPLATE_DIR, "segment_IHC"),
-                                             deploy_args())
+        sgn, _, _, _ = self.module.prepare_step(settings, dict(parameters), step_template(TEMPLATE_DIR, "segment_SGN"),
+                                                deploy_args())
+        ihc, _, _, _ = self.module.prepare_step(settings, dict(parameters), step_template(TEMPLATE_DIR, "segment_IHC"),
+                                                deploy_args())
 
         defaults = self.module.WATERSHED_DEFAULTS
         self.assertEqual(sgn["sgn_center_distance_threshold"], "0.3")
@@ -280,8 +280,8 @@ class ConversionTest(unittest.TestCase):
 
     def prepare(self, args=None, **parameters):
         values = {"data_dir": self.tmp.name, "cochlea": self.COCHLEA, **parameters}
-        values, script_name, _ = deployment.prepare_step({"data_dir": self.tmp.name, "models": {}}, values,
-                                                         self.template, args or deploy_args())
+        values, script_name, _, _ = deployment.prepare_step({"data_dir": self.tmp.name, "models": {}}, values,
+                                                            self.template, args or deploy_args())
         return values, script_name
 
     def test_defaults(self):
@@ -354,7 +354,7 @@ class SynapseNameTest(unittest.TestCase):
 
 class JobNameTest(unittest.TestCase):
     """A stain which is not the default of the group and the model version enter the names, so two stains or two
-    model versions never share an archive folder."""
+    model versions never share an archive folder. metadata.json records the full model keys."""
 
     COCHLEA = "G_LR_000301_L"
     MODELS = {"IHC": {"IHC_v11": "/path/to/model", "IHC_v11b": "/path/to/model"},
@@ -366,14 +366,18 @@ class JobNameTest(unittest.TestCase):
     def tearDown(self):
         self.tmp.cleanup()
 
-    def names(self, step, definition=None, **parameters):
-        """Return the name of the sbatch script and the rendered Slurm job name."""
+    def prepare(self, step, definition=None, **parameters):
+        """Return the name of the sbatch script, the rendered Slurm job name and the metadata of the job."""
         values = {"data_dir": self.tmp.name, "cochlea": self.COCHLEA, "ihc_version": "IHC_v11", **parameters}
         template = step_template(TEMPLATE_DIR, step)
-        values, script_name, _ = deployment.prepare_step(
+        values, script_name, _, metadata = deployment.prepare_step(
             {"data_dir": self.tmp.name, "models": self.MODELS}, values, template, deploy_args(), definition)
         job_name_line = read_file(template).splitlines()[1]
-        return script_name, fill_placeholders([job_name_line], values)[0][0].split("=")[1]
+        return script_name, fill_placeholders([job_name_line], values)[0][0].split("=")[1], metadata
+
+    def names(self, step, definition=None, **parameters):
+        """Return the name of the sbatch script and the rendered Slurm job name."""
+        return self.prepare(step, definition, **parameters)[:2]
 
     def test_default_stain_keeps_the_stain_out_of_the_names(self):
         for parameters in ({}, {"stain_synapses": "CTBP2"}):
@@ -422,6 +426,27 @@ class JobNameTest(unittest.TestCase):
 
         self.assertEqual(self.names("apply_IHC")[1], "apply-IHC-v11_G-LR-000301-L")
         self.assertEqual(self.names("mobie_add_image", stains=["PV"])[1], "mobie-add-image_G-LR-000301-L")
+
+    def test_metadata_holds_the_full_names(self):
+        definition = {"name": "ihc", "group": "IHC", "steps": ["mask_IHC"]}
+        cochlea = {"cochlea": self.COCHLEA}
+        cases = [(("mask_IHC", None, {"stain_IHC": "Myo7a"}),
+                  dict(cochlea, stains={"IHC": "Myo7a"}, models={"IHC": "IHC_v11"})),
+                 (("download_image", definition, {"ihc_version": "IHC_v11b"}),
+                  dict(cochlea, stains={"IHC": "Vglut3"}, models={"IHC": "IHC_v11b"})),
+                 (("apply_synapses", None, {"synapse_version": "synapses_v3", "stain_IHC": "Myo7a"}),
+                  dict(cochlea, stains={"Synapses": "CTBP2", "IHC": "Myo7a"},
+                       models={"Synapses": "synapses_v3", "IHC": "IHC_v11"})),
+                 (("mobie_add_image", None, {"stains": ["PV", "Vglut3"]}), cochlea),
+                 (("convert_data", None, {}), cochlea)]
+        for (step, step_definition, parameters), metadata in cases:
+            with self.subTest(step):
+                self.assertEqual(self.prepare(step, step_definition, **parameters)[2], metadata)
+
+        script_name, _, metadata = self.prepare("apply_synapses")
+        self.assertEqual(list(metadata), ["cochlea", "stains", "models"])
+        self.assertEqual(list(metadata["models"]), ["Synapses", "IHC"])
+        self.assertEqual(script_name, "apply_synapses_v3_ihc_v11_GLR301L")
 
     def test_cochlea_version_suffix_enters_the_names(self):
         self.assertEqual(self.names("mask_IHC", cochlea="M_AMD_000137_L_v2"),

@@ -504,6 +504,62 @@ def job_version(
     return version_part(placeholder_values[GROUPS[group]["version"]])
 
 
+def job_models(
+    group: str,
+    placeholder_values: dict,
+) -> dict:
+    """Return the model keys of a job, for the key 'models' of its metadata.json.
+
+    The values are the full keys of the settings file, because a later model can have a key without a
+    version part. The synapse jobs also depend on the IHC segmentation.
+
+    Args:
+        group: Key of `GROUPS`, or None for a job without a group.
+        placeholder_values: Placeholder values of the job, with the version parameter of the group.
+
+    Returns:
+        dict: The model key of each model group of the settings file, e.g. {"IHC": "IHC_v11b"}, or an
+            empty dictionary for a job without a group.
+    """
+    return {GROUPS[name]["models"]: placeholder_values[GROUPS[name]["version"]] for name in job_groups(group)}
+
+
+def job_stains(
+    group: str,
+    placeholder_values: dict,
+) -> dict:
+    """Return the stains of a job, for the key 'stains' of its metadata.json.
+
+    The names of a job hold only a stain which is not the default, so the metadata names every stain.
+    The keys are the same as of `job_models()`.
+
+    Args:
+        group: Key of `GROUPS`, or None for a job without a group.
+        placeholder_values: Placeholder values of the job, with the stain parameters of the groups.
+
+    Returns:
+        dict: The stain of each model group of the settings file, e.g. {"IHC": "Vglut3"}, or an empty
+            dictionary for a job without a group.
+    """
+    return {GROUPS[name]["models"]: placeholder_values[f"stain_{name}"] for name in job_groups(group)}
+
+
+def job_groups(
+    group: str,
+) -> list:
+    """Return the groups whose model a job uses: its own group, and the IHC group for a synapse job.
+
+    Args:
+        group: Key of `GROUPS`, or None for a job without a group.
+
+    Returns:
+        list: Keys of `GROUPS`.
+    """
+    if group is None:
+        return []
+    return [group, "IHC"] if group == "synapses" else [group]
+
+
 def n5_candidates(
     prefix: str,
     number: str,
@@ -652,6 +708,8 @@ def prepare_step(
             dict - the placeholder values
             str  - the name of the sbatch script, without the date and the extension
             list - notes, which deploy prints after the warnings
+            dict - entries of metadata.json: 'cochlea', and for a job with a group 'stains' with
+                   `job_stains()` and 'models' with `job_models()`
     """
     notes = []
 
@@ -805,7 +863,11 @@ def prepare_step(
     script_str = "_".join([script_str] + name_parts)
     placeholder_values["job_name"] = script_str.replace("_", "-") + "_" + "-".join(cochlea.split("_"))
 
-    return placeholder_values, f"{script_str}_{short_cochlea_name(cochlea)}", notes
+    metadata = {"cochlea": cochlea}
+    if group is not None:
+        metadata.update(stains=job_stains(group, placeholder_values), models=job_models(group, placeholder_values))
+
+    return placeholder_values, f"{script_str}_{short_cochlea_name(cochlea)}", notes, metadata
 
 
 def check_prediction_absent(

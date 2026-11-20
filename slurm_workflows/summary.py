@@ -21,8 +21,11 @@ METADATA_COLUMNS = ["date", "task", "jobid", "job_name", "partition", "gpu", "cp
                     "runtime"]
 EFFICIENCIES = ["cpu_eff", "mem_eff", "time_eff"]
 COLUMNS = (["date", "task", "jobid", "replaced", "job_name", "partition", "gpu", "cpus_per_task", "memory_per_node",
-            "runtime", "project", "pipeline", "run", "tasks", "state", "slurm_state"] + EFFICIENCIES
-           + ["core_hours"])
+            "runtime", "project", "cochlea", "stains", "models", "pipeline", "run", "tasks", "state", "slurm_state"]
+           + EFFICIENCIES + ["core_hours"])
+# Entries of a project which hold one value per group, e.g. {"Synapses": "synapse_v3", "IHC": "IHC_v11b"}. A
+# cell joins the values.
+GROUP_COLUMNS = ["stains", "models"]
 
 
 def parse_percent(value: str) -> Optional[float]:
@@ -155,12 +158,15 @@ def job_row(metadict: dict) -> list:
     values.update({
         "replaced": metadict.get("replaced", False),
         "project": metadict.get("project"),
+        "cochlea": metadict.get("cochlea"),
         "pipeline": pipeline.get("name"),
         "run": pipeline.get("run"),
         "tasks": len(reports),
         "state": ",".join(sorted({report["state"] for report in reports if report.get("state")})),
         "slurm_state": ",".join(slurm_states(metadict)),
     })
+    for key in GROUP_COLUMNS:
+        values[key] = ", ".join(metadict[key].values()) if metadict.get(key) else None
     for key in EFFICIENCIES:
         means = efficiencies(metadict, key)
         values[key] = round(statistics.mean(means), 1) if means else None

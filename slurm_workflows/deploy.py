@@ -23,6 +23,9 @@ from slurm_workflows.templates import render_template, step_template
 # The functions which `deploy_jobs()` calls on the deployment module of a project.
 DEPLOYMENT_FUNCTIONS = ("add_arguments", "select_steps", "prepare_step", "check_steps")
 
+# Entries of metadata.json which `deploy_jobs()` writes. An entry of `prepare_step()` cannot replace them.
+GENERIC_METADATA = ("project", "pipeline")
+
 
 def project_module(
     project: str,
@@ -124,19 +127,21 @@ def deploy_jobs(
     # step cannot leave the earlier steps of the chain queued.
     sbatch_files = []
     step_values = []
+    step_metadata = []
     notes = []
     try:
         for template_file in template_files:
             # A parameter of the job overrides the corresponding setting.
             placeholder_values = settings_to_placeholders(settings)
             placeholder_values.update(parameters)
-            placeholder_values, script_name, step_notes = module.prepare_step(
+            placeholder_values, script_name, step_notes, metadata = module.prepare_step(
                 settings, placeholder_values, template_file, args, definition)
 
             sbatch_file = f"{str(date.today())}_sbatch_{script_name}.sbatch"
             render_template(template_file, sbatch_file, placeholder_values, strict=not args.allow_missing)
             sbatch_files.append(sbatch_file)
             step_values.append(placeholder_values)
+            step_metadata.append(metadata)
             notes += step_notes
 
         if module is default:
@@ -213,6 +218,8 @@ def deploy_jobs(
 
         if archive_dir:
             metadata = {"project": project}
+            metadata.update((key, value) for key, value in step_metadata[step_index - 1].items()
+                            if key not in GENERIC_METADATA)
             if definition is not None:
                 metadata["pipeline"] = {"name": definition["name"], "run": run, "step": step_index,
                                         "of": len(sbatch_files), "step_name": step_names[step_index - 1]}

@@ -63,6 +63,9 @@ The keys are lower case with underscores.
 | `repositories` | `git` | One entry per repository: `repo_name`, `repo_version` (the git hash), `status` (`clean`, `untracked` or `dirty`) |
 | `environment_hash` | `environment.yml`, `pip_freeze.txt` | The sha256 hash of the package list: the dependencies of `environment.yml` and `pip_freeze.txt`. Jobs with the same packages have the same hash, also in a renamed or cloned environment |
 | `project` | Deploy step | The project, e.g. `cochlea-net` |
+| `cochlea` | Deploy step | cochlea-net only: the full name of the cochlea, e.g. `M_AMD_000137_L`. The name of the archive folder holds only a short form, e.g. `MAMD137L` |
+| `stains` | Deploy step | cochlea-net only, for a job with a group: the stain of each group of `models`, e.g. `{"IHC": "Vglut3"}`. It also names a default stain, which the name of the archive folder leaves out |
+| `models` | Deploy step | cochlea-net only, for a job with a group: the key of `models` in the settings file of each model which the job uses, e.g. `{"IHC": "IHC_v11b"}`. A synapse job also names its IHC model, e.g. `{"Synapses": "synapse_v3", "IHC": "IHC_v11b"}` |
 | `pipeline` | Deploy step | Only for a step of a pipeline: `name` of the pipeline, `run` (the JobID of the first step of the deploy call), `step` and `of` (the number of the step and of all steps of the deploy call), `step_name` (the template, e.g. `segment_IHC`), `start_at` (after `--start-at`), `depends_on` (the JobID of the previous step), and `failed_at`, see update_metadata.py |
 | `slurm_output` | Slurm output file | One entry per output file: `file`, `array_index` of an array task, `submitted`, `started`, `ended`, `elapsed_min`, `limit_min`, `cpus`, `nodes`, `core_hours`, `elapsed_sec` (from `started` to `ended`), `exit_code` (if the job printed it), `state` and `error` (if the output shows them), see [the format of a slurm output file](#the-format-of-a-slurm-output-file) |
 | `backfilled` | `update_metadata.py --backfill` | `true` if `--backfill` created the metadata. Such metadata holds only `date`, `task`, `jobid`, `reportseff` and `slurm_output` |
@@ -212,7 +215,8 @@ A folder without `metadata.json` does not count.
 
 The table has these columns: `date`, `task`, `jobid`, `replaced` (`True` for a JobID of
 `previous/<jobid>/`), `job_name`, `partition`, `gpu`, `cpus_per_task`, `memory_per_node`, `runtime`,
-`project`, `pipeline` and `run` (the name and the run of the pipeline), `tasks` (the number of report
+`project`, `cochlea`, `stains` and `models` (the values of each entry, e.g. `synapse_v3, IHC_v11b`),
+`pipeline` and `run` (the name and the run of the pipeline), `tasks` (the number of report
 entries), `state` (the different states of the report), `slurm_state` (the different states of
 `slurm_output`), the mean `cpu_eff`, `mem_eff` and `time_eff` of the finished tasks as numbers
 without `%`, and the sum of `core_hours`.

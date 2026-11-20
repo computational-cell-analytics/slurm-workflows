@@ -205,6 +205,12 @@ class DeploySubmissionTest(unittest.TestCase):
         with open(os.path.join(self.archive_dir, folder, "metadata.json")) as myfile:
             return json.load(myfile)
 
+    def submit_chain(self, sbatch_names, archive_dir, **options):
+        sbatch_files = [write_file(os.path.join(self.tmp.name, name), "#!/bin/bash\n#SBATCH -t 01:00:00\n")
+                        for name in sbatch_names]
+        with mock.patch.dict(os.environ, self.env), contextlib.redirect_stdout(io.StringIO()):
+            return deploy.submit_chain(sbatch_files, archive_dir, {}, None, **options)
+
     def test_project_and_environment_are_archived(self):
         self.deploy(self.archive_dir)
 
@@ -251,6 +257,19 @@ class DeploySubmissionTest(unittest.TestCase):
                 keys = list(metadata)
                 self.assertEqual(keys[keys.index("project") + 1:keys.index("project") + 3], ["models", "pipeline"])
 
+    def test_metadata_of_a_step_is_not_archived_with_the_next_step(self):
+        def prepare_step(settings, values, template_file, *args):
+            values, script_name, notes, _ = default.prepare_step(settings, values, template_file, *args)
+            metadata = {"models": {"IHC": "IHC_v11b"}} if script_name == "train" else {}
+            return values, script_name, notes, metadata
+
+        module = types.SimpleNamespace(**{name: getattr(default, name) for name in deploy.DEPLOYMENT_FUNCTIONS})
+        module.prepare_step = prepare_step
+        self.deploy(self.archive_dir, MOCKUP_PIPELINE, module=module)
+
+        self.assertEqual(self.archived_metadata("train")["models"], {"IHC": "IHC_v11b"})
+        self.assertNotIn("models", self.archived_metadata("evaluate"))
+
     def test_single_job_gets_no_pipeline_of_the_project(self):
         def prepare_step(*args):
             values, script_name, notes, _ = default.prepare_step(*args)
@@ -267,9 +286,10 @@ class DeploySubmissionTest(unittest.TestCase):
     def test_resumed_pipeline_names_its_start(self):
         self.deploy(self.archive_dir, MOCKUP_PIPELINE, start_at="evaluate")
 
-        self.assertEqual(self.archived_metadata("evaluate")["pipeline"],
-                         {"name": "train_evaluate", "run": str(FIRST_JOBID), "step": 1, "of": 1,
-                          "step_name": "evaluate", "start_at": "evaluate"})
+        # The order of the keys counts, so the items are compared as a list.
+        self.assertEqual(list(self.archived_metadata("evaluate")["pipeline"].items()),
+                         [("name", "train_evaluate"), ("run", str(FIRST_JOBID)), ("step", 1), ("of", 1),
+                          ("step_name", "evaluate"), ("start_at", "evaluate")])
 
     def test_failed_submission_of_step_2_releases_step_1(self):
         submit = deploy.submit
@@ -286,6 +306,23 @@ class DeploySubmissionTest(unittest.TestCase):
         self.assertEqual(len(sbatch_calls(self.env)), 1)
         self.assertEqual(scontrol_calls(self.env), [f"release {FIRST_JOBID}"])
         self.assertEqual(scancel_calls(self.env), [])
+
+    def test_failed_submission_and_release_cancels_step_1(self):
+        self.env["SCONTROL_EXIT"] = "1"
+        submit = deploy.submit
+
+        def submit_step_1_only(sbatch_file, dependency, hold):
+            if dependency is not None:
+                raise ValueError("stub failure")
+            return submit(sbatch_file, dependency, hold)
+
+        with mock.patch.object(deploy, "submit", side_effect=submit_step_1_only):
+            with self.assertRaisesRegex(ValueError, "stub failure\nRelease failed"):
+                self.deploy(self.archive_dir, MOCKUP_PIPELINE)
+
+        self.assertEqual(len(sbatch_calls(self.env)), 1)
+        self.assertEqual(scontrol_calls(self.env), [f"release {FIRST_JOBID}"])
+        self.assertEqual(scancel_calls(self.env), [str(FIRST_JOBID)])
 
     def test_failed_archiving_of_step_2_cancels_both_steps(self):
         with mock.patch.object(deploy, "archive_submitted_job", side_effect=[None, ValueError("stub failure")]):
@@ -332,6 +369,39 @@ class DeploySubmissionTest(unittest.TestCase):
 
         with self.assertRaises(ValueError):
             self.deploy(self.archive_dir)
+
+    def test_chain_with_defaults_has_no_generic_metadata(self):
+        jobids = self.submit_chain([SBATCH_NAME], self.archive_dir)
+
+        self.assertEqual(jobids, [str(FIRST_JOBID)])
+        self.assertIn("--hold", sbatch_calls(self.env)[0])
+        self.assertEqual(scontrol_calls(self.env), [f"release {FIRST_JOBID}"])
+        metadata = self.archived_metadata("x")
+        self.assertNotIn("project", metadata)
+        self.assertNotIn("pipeline", metadata)
+
+    def test_chain_without_archive_is_not_held(self):
+        self.submit_chain([SBATCH_NAME], None)
+
+        self.assertNotIn("--hold", sbatch_calls(self.env)[0])
+        self.assertEqual(scontrol_calls(self.env), [])
+        self.assertEqual(os.listdir(self.archive_dir), [])
+
+    def test_wrong_number_of_step_entries_submits_nothing(self):
+        sbatch_names = [SBATCH_NAME, f"{DATE}_sbatch_y.sbatch"]
+        for options in ({"step_metadata": [{}]}, {"step_metadata": [{}, {}, {}]},
+                        {"pipeline": {"name": "chain"}, "step_names": ["x"]}):
+            with self.subTest(str(options)):
+                with self.assertRaisesRegex(ValueError, "entries for 2 sbatch scripts"):
+                    self.submit_chain(sbatch_names, self.archive_dir, **options)
+
+        self.assertEqual(sbatch_calls(self.env), [])
+
+    def test_pipeline_without_step_names_submits_nothing(self):
+        with self.assertRaisesRegex(ValueError, "needs the step names"):
+            self.submit_chain([SBATCH_NAME], self.archive_dir, pipeline={"name": "chain"})
+
+        self.assertEqual(sbatch_calls(self.env), [])
 
 
 if __name__ == "__main__":

@@ -78,6 +78,108 @@ def load_project_settings(
     return load_settings(settings_path), settings_path
 
 
+def get_step_metadata(
+    project: str,
+    pipeline_name: str,
+    step_names: list,
+    start_at: str,
+    n_steps: int,
+) -> list:
+    """Return the metadata of each step, without the JobIDs.
+
+    `submit_chain()` adds `run` and `depends_on` to the `pipeline` entry after the submission.
+
+    Args:
+        project: Name of the project.
+        pipeline_name: Name of the pipeline, or None for a single job.
+        step_names: Names of the steps, in the order of submission.
+        start_at: Step of `--start-at`, or None.
+        n_steps: Number of the steps.
+
+    Returns:
+        list: One metadata dictionary per step.
+    """
+    step_metadata = []
+    for step_index in range(1, n_steps + 1):
+        metadata = {"project": project}
+        if pipeline_name is not None:
+            metadata["pipeline"] = {"name": pipeline_name, "step": step_index, "of": n_steps,
+                                    "step_name": step_names[step_index - 1]}
+            if start_at is not None:
+                metadata["pipeline"]["start_at"] = start_at
+        step_metadata.append(metadata)
+    return step_metadata
+
+
+def submit_chain(
+    sbatch_files: list,
+    archive_dir: str,
+    repositories: dict,
+    settings_file: str,
+    step_metadata: list,
+) -> list:
+    """Submit sbatch scripts as a chain of jobs and archive each job.
+
+    Each job starts only after its predecessor completed successfully. If `archive_dir` is set, the first job
+    is held until all jobs are archived. A failed archiving or release cancels all submitted jobs.
+
+    Args:
+        sbatch_files: The sbatch scripts, in the order of submission.
+        archive_dir: Directory of the archive folders, or None to not archive the jobs.
+        repositories: Names and paths of the git repositories to track.
+        settings_file: Settings file of the project, or None.
+        step_metadata: One metadata dictionary per step. If a dictionary has a `pipeline` entry, the function
+            adds `run` (the JobID of the first step) and `depends_on` (the JobID of the previous step) to it.
+
+    Returns:
+        list: JobIDs of the submitted jobs.
+    """
+    dependency = None
+
+    # The JobID of the first step identifies the run of a pipeline in the archive.
+    run = None
+    jobids = []
+
+    # Only step 1 is held, subsequent steps are submitted with dependency on the previous step.
+    for step_index, sbatch_file in enumerate(sbatch_files, start=1):
+        try:
+            jobid = submit(sbatch_file, dependency, hold=bool(archive_dir) and run is None)
+        except ValueError:
+            if archive_dir and run is not None:
+                release_job(run)
+            raise
+        jobids.append(jobid)
+        print(f"Step {step_index} of {len(sbatch_files)} submitted as JobID {jobid}.")
+        if run is None:
+            run = jobid
+
+        if archive_dir:
+            metadata = step_metadata[step_index - 1]
+            if "pipeline" in metadata:
+                pipeline = {**metadata["pipeline"], "run": run}
+                if dependency is not None:
+                    pipeline["depends_on"] = dependency
+                metadata = {**metadata, "pipeline": pipeline}
+            try:
+                archive_submitted_job(sbatch_file, jobid, archive_dir, move=True, repositories=repositories,
+                                      settings_file=settings_file, metadata=metadata)
+            except (OSError, ValueError) as exc:
+                cancel_jobs(jobids)
+                raise ValueError(f"Archiving failed, so the jobs {', '.join(jobids)} were cancelled: {exc}") from exc
+
+        dependency = jobid
+
+    # A failed scontrol release leaves all steps waiting, so they are cancelled.
+    if archive_dir:
+        try:
+            release_job(run)
+        except ValueError as exc:
+            cancel_jobs(jobids)
+            raise ValueError(f"Release failed, so the jobs {', '.join(jobids)} were cancelled: {exc}") from exc
+
+    return jobids
+
+
 def deploy_jobs(
     args,
     project: str,
@@ -109,6 +211,7 @@ def deploy_jobs(
     if args.pipeline is None:
         template_files = [args.input]
         definition = None
+        step_names = None
     else:
         _, pipeline_file = resolve_pipeline(args.pipeline)
         definition = load_pipeline(pipeline_file)
@@ -192,47 +295,6 @@ def deploy_jobs(
     if not archive_dir:
         print("Warning: no archive directory is set. The jobs are not archived.")
 
-    dependency = None
-
-    # The JobID of the first step identifies the run of a pipeline in the archive.
-    run = None
-    jobids = []
-
-    # Only step 1 is held, subsequent steps are submitted with dependency on the previous step.
-    for step_index, sbatch_file in enumerate(sbatch_files, start=1):
-        try:
-            jobid = submit(sbatch_file, dependency, hold=bool(archive_dir) and run is None)
-        except ValueError:
-            if archive_dir and run is not None:
-                release_job(run)
-            raise
-        jobids.append(jobid)
-        print(f"Step {step_index} of {len(sbatch_files)} submitted as JobID {jobid}.")
-        if run is None:
-            run = jobid
-
-        if archive_dir:
-            metadata = {"project": project}
-            if definition is not None:
-                metadata["pipeline"] = {"name": definition["name"], "run": run, "step": step_index,
-                                        "of": len(sbatch_files), "step_name": step_names[step_index - 1]}
-                if args.start_at is not None:
-                    metadata["pipeline"]["start_at"] = args.start_at
-                if dependency is not None:
-                    metadata["pipeline"]["depends_on"] = dependency
-            try:
-                archive_submitted_job(sbatch_file, jobid, archive_dir, move=True, repositories=repositories,
-                                      settings_file=settings_path, metadata=metadata)
-            except (OSError, ValueError) as exc:
-                cancel_jobs(jobids)
-                raise ValueError(f"Archiving failed, so the jobs {', '.join(jobids)} were cancelled: {exc}") from exc
-
-        dependency = jobid
-
-    # A failed scontrol release leaves all steps waiting, so they are cancelled.
-    if archive_dir:
-        try:
-            release_job(run)
-        except ValueError as exc:
-            cancel_jobs(jobids)
-            raise ValueError(f"Release failed, so the jobs {', '.join(jobids)} were cancelled: {exc}") from exc
+    pipeline_name = definition["name"] if definition is not None else None
+    step_metadata = get_step_metadata(project, pipeline_name, step_names, args.start_at, len(sbatch_files))
+    submit_chain(sbatch_files, archive_dir, repositories, settings_path, step_metadata)

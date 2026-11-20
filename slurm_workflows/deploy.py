@@ -105,6 +105,7 @@ def submit_chain(
         pipeline: Pipeline entry of the metadata, e.g. `{"name": ...}`, or None.
         step_names: Name of each step, in the order of `sbatch_files`. Required for a `pipeline` metadata entry.
         step_metadata: Entries to add to the metadata of each step, in the order of `sbatch_files`, or None.
+            An entry of `GENERIC_METADATA` is ignored.
 
     Returns:
         list: JobIDs of the submitted jobs.

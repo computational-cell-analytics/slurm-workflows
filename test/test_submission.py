@@ -251,6 +251,19 @@ class DeploySubmissionTest(unittest.TestCase):
                 keys = list(metadata)
                 self.assertEqual(keys[keys.index("project") + 1:keys.index("project") + 3], ["models", "pipeline"])
 
+    def test_metadata_of_a_step_is_not_archived_with_the_next_step(self):
+        def prepare_step(settings, values, template_file, *args):
+            values, script_name, notes, _ = default.prepare_step(settings, values, template_file, *args)
+            metadata = {"models": {"IHC": "IHC_v11b"}} if script_name == "train" else {}
+            return values, script_name, notes, metadata
+
+        module = types.SimpleNamespace(**{name: getattr(default, name) for name in deploy.DEPLOYMENT_FUNCTIONS})
+        module.prepare_step = prepare_step
+        self.deploy(self.archive_dir, MOCKUP_PIPELINE, module=module)
+
+        self.assertEqual(self.archived_metadata("train")["models"], {"IHC": "IHC_v11b"})
+        self.assertNotIn("models", self.archived_metadata("evaluate"))
+
     def test_single_job_gets_no_pipeline_of_the_project(self):
         def prepare_step(*args):
             values, script_name, notes, _ = default.prepare_step(*args)

@@ -11,7 +11,7 @@
     "download_image": {"group": null, "time": "03:00:00", "mem": "4G", "G": {"time": "04:00:00"}},
     "mask_IHC": {"group": "IHC", "time": "00:25:00", "mem": "32G", "G": {"time": "01:10:00"}},
     "mask_SGN": {"group": "SGN", "time": "00:40:00", "mem": "48G", "G": {"mem": "128G"}},
-    "mask_synapses": {"group": "synapses", "time": "00:10:00", "mem": "10G", "G": {"time": "01:00:00", "mem": "32G"}},
+    "mask_synapses": {"group": "synapses", "time": "00:16:00", "mem": "10G", "G": {"time": "01:00:00", "mem": "32G"}},
     "mobie_add_detection": {"group": null, "time": "00:10:00", "mem": "2G"},
     "mobie_add_image": {"group": null, "time": "03:15:00", "mem": "400G", "G": {"time": "08:00:00"}},
     "mobie_add_segmentation": {"group": null, "time": "01:30:00", "mem": "3G", "G": {"time": "02:00:00", "mem": "8G"}},

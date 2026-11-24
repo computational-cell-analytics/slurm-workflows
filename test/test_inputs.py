@@ -288,7 +288,7 @@ class ConversionTest(unittest.TestCase):
         values, script_name = self.prepare()
 
         self.assertEqual((values["raw_folder"], values["converted_name"]), ("1_raw", self.COCHLEA))
-        self.assertEqual((values["time"], values["mem"]), ("20:00:00", "96G"))
+        self.assertEqual((values["time"], values["mem"]), ("20:00:00", "16G"))
         self.assertNotIn("stain", values)
         self.assertEqual(script_name, "convert_data_ReAMDWT2MWfLS")
 
@@ -327,7 +327,7 @@ class ConversionTest(unittest.TestCase):
         self.assertEqual(run(["bash", sbatch_file], env=env).returncode, 0)
         output = os.path.join(self.tmp.name, self.COCHLEA, "2_converted_stitching", f"{self.COCHLEA}.n5")
         self.assertEqual(read_file(args_file).splitlines(),
-                         ["-i", raw_dir, "--out_path", output, "--file_ext", ".raw", "--n_threads", "4"])
+                         ["-i", raw_dir, "--out_path", output, "--file_ext", ".raw"])
         self.assertTrue(os.path.isdir(os.path.dirname(output)))
 
 

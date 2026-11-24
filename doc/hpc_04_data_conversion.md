@@ -93,7 +93,7 @@ Write a parameter file `<cochlea>.json`:
 | `cochlea` | The name of the cochlea folder |
 | `raw_folder` | Optional: the folder of the raw files in the cochlea folder. Default: `1_raw` |
 | `converted_name` | Optional: the name of the n5 and the XML, without the extension. Default: the value of `cochlea` |
-| `time`, `mem` | Optional: the resources of the job. Default: `20:00:00` and `96G` |
+| `time`, `mem` | Optional: the resources of the job. Default: `20:00:00` and `16G` |
 
 Run the deploy step with the template `convert_data`, first as a dry run, then with `--submit`:
 
@@ -106,7 +106,8 @@ python /path/to/slurm-workflows/scripts/deploy.py --input /path/to/slurm-workflo
 ```
 
 The dry run gives a warning if `<data_dir>/<cochlea>/<raw_folder>` does not exist.
-The job uses 4 cores. The default resources come from one mouse cochlea, which needed 12 h and 96G.
+The job uses 4 cores and 16G. The conversion holds ~3 GB in memory, independent of the tile size.
+The default time comes from the mouse cochleae of 2026-11, which needed up to 14 h with a slower version of the conversion.
 There is no run of a gerbil cochlea yet.
 
 If the job stops before it is complete, e.g. at the time limit, submit it again.
@@ -143,13 +144,13 @@ space. The command asks for the password, so it runs in an interactive job and n
    with access to the network:
    ```bash
    tmux new -s convert
-   srun -p standard96s:shared -c 4 --mem 96G -t 20:00:00 --constraint=inet --pty bash
+   srun -p standard96s:shared -c 4 --mem 16G -t 20:00:00 --constraint=inet --pty bash
    ```
 3. In the job, activate the environment and set the variables of [Convert with a Slurm job](#convert-with-a-slurm-job), then run:
    ```bash
    flamingo_tools.convert_data -u <GWDG-username> -i "$UKON_DIR\1_raw" \
        --out_path "$COCHLEA_DIR/2_converted_stitching/<converted_name>.n5" --file_ext .raw \
-       --stage_dir "$COCHLEA_DIR/stage" --n_threads "$SLURM_CPUS_PER_TASK"
+       --stage_dir "$COCHLEA_DIR/stage"
    ```
 4. Copy the result to UKON as in [step 3](#3-copy-the-result-to-ukon), in the same job or on the login node.
 
@@ -157,7 +158,6 @@ space. The command asks for the password, so it runs in an interactive job and n
   disconnect needs no new prompt.
 - A failed login stops the command at once. Run it again with the correct password.
 - `--stage_dir` needs free space for one raw file.
-- `--n_threads` limits the threads to the cores of the job. The default is every core of the node.
 - With `--dry_run`, the command checks the UKON path and the pairs of files first. It copies only the
   metadata files.
 - If the job stops, start a new interactive job and run the same command. The conversion continues

@@ -288,7 +288,7 @@ class ConversionTest(unittest.TestCase):
         values, script_name = self.prepare()
 
         self.assertEqual((values["raw_folder"], values["converted_name"]), ("1_raw", self.COCHLEA))
-        self.assertEqual((values["time"], values["mem"]), ("20:00:00", "16G"))
+        self.assertEqual((values["time"], values["mem"]), ("08:00:00", "16G"))
         self.assertNotIn("stain", values)
         self.assertEqual(script_name, "convert_data_ReAMDWT2MWfLS")
 
@@ -309,8 +309,7 @@ class ConversionTest(unittest.TestCase):
         args_file = os.path.join(self.tmp.name, "convert_args")
         write_executable(os.path.join(bin_dir, "flamingo_tools.convert_data"),
                          f'#!/bin/bash\nprintf "%s\\n" "$@" > {args_file}\n')
-        env = {"PATH": os.pathsep.join([bin_dir, "/usr/bin", "/bin"]), "HOME": self.tmp.name,
-               "SLURM_CPUS_PER_TASK": "4"}
+        env = {"PATH": os.pathsep.join([bin_dir, "/usr/bin", "/bin"]), "HOME": self.tmp.name}
 
         values, _ = self.prepare(user_address="a", account_name="b", **{"cochlea-net_environment": "env"})
         sbatch_file = os.path.join(self.tmp.name, "job.sbatch")

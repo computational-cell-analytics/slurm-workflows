@@ -93,7 +93,7 @@ Write a parameter file `<cochlea>.json`:
 | `cochlea` | The name of the cochlea folder |
 | `raw_folder` | Optional: the folder of the raw files in the cochlea folder. Default: `1_raw` |
 | `converted_name` | Optional: the name of the n5 and the XML, without the extension. Default: the value of `cochlea` |
-| `time`, `mem` | Optional: the resources of the job. Default: `20:00:00` and `16G` |
+| `time`, `mem` | Optional: the resources of the job. Default: `08:00:00` and `16G`. A gerbil (`G`) gets `12:00:00` |
 
 Run the deploy step with the template `convert_data`, first as a dry run, then with `--submit`:
 
@@ -107,8 +107,9 @@ python /path/to/slurm-workflows/scripts/deploy.py --input /path/to/slurm-workflo
 
 The dry run gives a warning if `<data_dir>/<cochlea>/<raw_folder>` does not exist.
 The job uses 4 cores and 16G. The conversion holds ~3 GB in memory, independent of the tile size.
-The default time comes from the mouse cochleae of 2026-11, which needed up to 14 h with a slower version of the conversion.
-There is no run of a gerbil cochlea yet.
+A gerbil cochlea of 1306 GB needed 5.6 h at 65 MB/s on 2026-11-23.
+The current version of the conversion is expected to reach ~105 MB/s.
+The largest mouse cochlea of 2026-11 (1955 GB) then needs ~5.4 h.
 
 If the job stops before it is complete, e.g. at the time limit, submit it again.
 The conversion continues with the first tile that is not complete.
@@ -140,8 +141,9 @@ space. The command asks for the password, so it runs in an interactive job and n
 
 1. Start a tmux session on the login node, so that the job continues when the connection to the
    cluster ends.
-2. Start an interactive job with the resources of the template. `--constraint=inet` selects a node
-   with access to the network:
+2. Start an interactive job with the cores and memory of the template. The time limit is longer than
+   in the template, because the cores wait while each raw file is copied from UKON.
+   `--constraint=inet` selects a node with access to the network:
    ```bash
    tmux new -s convert
    srun -p standard96s:shared -c 4 --mem 16G -t 20:00:00 --constraint=inet --pty bash

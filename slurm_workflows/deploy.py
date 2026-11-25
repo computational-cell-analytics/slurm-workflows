@@ -201,6 +201,9 @@ def deploy_jobs(
         args: Parsed command line options of `slurm_wf.deploy`, including the options of the project.
         project: Name of the project.
         module: Output of `project_module()`.
+
+    Returns:
+        list: JobIDs of the submitted jobs. A dry run returns an empty list.
     """
     settings, settings_path = load_project_settings(project, args.settings)
     archive_dir = args.archive_dir if args.archive_dir is not None else settings.get("archive_dir")
@@ -280,7 +283,7 @@ def deploy_jobs(
 
         if not args.submit:
             print("Nothing is submitted. Use --submit to submit the jobs.")
-            return
+            return []
 
         if dirty_message is not None:
             raise ValueError(dirty_message)
@@ -303,5 +306,5 @@ def deploy_jobs(
         pipeline = {"name": definition["name"]}
         if args.start_at is not None:
             pipeline["start_at"] = args.start_at
-    submit_chain(sbatch_files, archive_dir, repositories, settings_path, project=project, pipeline=pipeline,
-                 step_names=step_names, step_metadata=step_metadata)
+    return submit_chain(sbatch_files, archive_dir, repositories, settings_path, project=project, pipeline=pipeline,
+                        step_names=step_names, step_metadata=step_metadata)

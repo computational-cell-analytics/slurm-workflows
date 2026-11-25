@@ -15,7 +15,7 @@ import types
 import unittest
 from unittest import mock
 
-from slurm_workflows import deploy
+from slurm_workflows import cli, deploy
 from slurm_workflows.projects import default
 from slurm_workflows.submission import environment_export, freeze_pip_packages
 from stubs import (FIRST_JOBID, MOCKUP_PARAMS, MOCKUP_PIPELINE, MOCKUP_SETTINGS, MOCKUP_TEMPLATE, SUBMIT_SCRIPT,
@@ -210,6 +210,14 @@ class DeploySubmissionTest(unittest.TestCase):
                         for name in sbatch_names]
         with mock.patch.dict(os.environ, self.env), contextlib.redirect_stdout(io.StringIO()):
             return deploy.submit_chain(sbatch_files, archive_dir, {}, None, **options)
+
+    def test_deploy_from_argv_returns_the_jobids(self):
+        argv = ["-p", MOCKUP_PIPELINE, "-j", MOCKUP_PARAMS, "-s", MOCKUP_SETTINGS, "-a", self.archive_dir, "--force"]
+        with mock.patch.dict(os.environ, self.env), contextlib.redirect_stdout(io.StringIO()):
+            self.assertEqual(cli.deploy_from_argv(argv), [])
+            self.assertEqual(sbatch_calls(self.env), [])
+
+            self.assertEqual(cli.deploy_from_argv(argv + ["--submit"]), [str(FIRST_JOBID), str(FIRST_JOBID + 1)])
 
     def test_project_and_environment_are_archived(self):
         self.deploy(self.archive_dir)

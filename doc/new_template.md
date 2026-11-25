@@ -203,6 +203,22 @@ A cochlea-net template needs a row in `templates/cochlea-net/steps.json`:
   `<last_instance>` for `#SBATCH -a 0-<last_instance>`. The apply templates use both, so the array
   and `PREDICTION_INSTANCES` always match.
 - A species code, e.g. `G` for gerbil: the values which differ for this species.
+- `time_from_size`: optional, a rule which sets `time` from the size of the input. The row of `convert_data`
+  has one:
+  ```json
+  "time_from_size": {"input": "<data_dir>/<cochlea>/<raw_folder>", "mb_per_s": 100, "margin": 1.5,
+                     "round": "00:30:00", "min": "01:00:00", "max": "48:00:00"}
+  ```
+  - `input` is a path with placeholders. Its size is the size of the file, or of all files below the folder.
+  - The limit is the time at `mb_per_s` (1 MB = 10^6 bytes), times `margin`, rounded up to `round`, between
+    `min` and `max`.
+  - The rule needs all six keys. A species entry can change single keys, e.g.
+    `"G": {"time_from_size": {"mb_per_s": 80}}`.
+  - Order: a `time` parameter wins over the rule, and the rule wins over the `time` of the row and of the
+    species. The `time` of the row applies only if `input` does not exist at the deploy step, e.g. because
+    an earlier step of the chain writes it.
+  - The deploy step walks the folder of `input`. This is fast for a few large files, such as the raw tiles,
+    but slow for an n5 or an OME-Zarr with many chunks.
 
 The deploy step stops for a template without a row, and `test/test_pipelines.py` fails.
 [Processing pipelines](hpc_03_processing_pipelines.md#placeholders-of-the-deployment) lists the

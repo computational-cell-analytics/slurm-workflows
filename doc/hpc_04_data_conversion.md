@@ -93,7 +93,7 @@ Write a parameter file `<cochlea>.json`:
 | `cochlea` | The name of the cochlea folder |
 | `raw_folder` | Optional: the folder of the raw files in the cochlea folder. Default: `1_raw` |
 | `converted_name` | Optional: the name of the n5 and the XML, without the extension. Default: the value of `cochlea` |
-| `time`, `mem` | Optional: the resources of the job. Default: `08:00:00` and `16G`. A gerbil (`G`) gets `12:00:00` |
+| `time`, `mem` | Optional: the resources of the job. Default `mem`: `16G`. Default `time`: see below |
 
 Run the deploy step with the template `convert_data`, first as a dry run, then with `--submit`:
 
@@ -107,9 +107,23 @@ python /path/to/slurm-workflows/scripts/deploy.py --input /path/to/slurm-workflo
 
 The dry run gives a warning if `<data_dir>/<cochlea>/<raw_folder>` does not exist.
 The job uses 4 cores and 16G. The conversion holds ~3 GB in memory, independent of the tile size.
-A gerbil cochlea of 1306 GB needed 5.6 h at 65 MB/s on 2026-11-23.
-The current version of the conversion is expected to reach ~105 MB/s.
-The largest mouse cochlea of 2026-11 (1955 GB) then needs ~5.4 h.
+
+The deploy step sets the time limit from the size of the raw folder:
+- the time at 100 MB/s, times 1.5;
+- rounded up to 30 min;
+- at least 1 h, at most 48 h, the limit of the shared partitions.
+
+For example, 720 GB of raw data get 3:30 h. The rule is `time_from_size` in the row of `convert_data` in
+`templates/cochlea-net/steps.json`, see [the steps file](new_template.md#cochlea-net-a-row-in-the-steps-file).
+To tune it, edit that row. The deploy step prints the limit and the size in a note.
+
+- A `time` in the parameter file overrides the rule.
+- Without the raw folder, e.g. in a dry run before the download, the limit is the `time` of the row, `08:00:00`.
+  A note then names the missing folder.
+
+The conversion reached 96 to 105 MB/s on 2026-11-24 and 2026-11-25: 720 GB in 1.9 h, 1.0 TB in 2.9 h. At a high
+load of the file system, it slows down to ~65 MB/s. A short time limit lets the job start sooner: a job with an
+8 h limit waited 13.8 h in the queue, a job with a 4 h limit 28 min.
 
 If the job stops before it is complete, e.g. at the time limit, submit it again.
 The conversion continues with the first tile that is not complete.

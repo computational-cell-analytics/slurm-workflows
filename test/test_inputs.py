@@ -280,17 +280,34 @@ class ConversionTest(unittest.TestCase):
 
     def prepare(self, args=None, **parameters):
         values = {"data_dir": self.tmp.name, "cochlea": self.COCHLEA, **parameters}
-        values, script_name, _, _ = deployment.prepare_step({"data_dir": self.tmp.name, "models": {}}, values,
-                                                            self.template, args or deploy_args())
+        values, script_name, self.notes, _ = deployment.prepare_step({"data_dir": self.tmp.name, "models": {}},
+                                                                     values, self.template, args or deploy_args())
         return values, script_name
+
+    def raw_files(self, *sizes, raw_folder="1_raw"):
+        """Write sparse raw files of these sizes in bytes, so that a size of terabytes costs no disk space."""
+        for index, size in enumerate(sizes):
+            path = os.path.join(self.tmp.name, self.COCHLEA, raw_folder, f"stain_{index % 2}", f"tile_{index}.raw")
+            os.makedirs(os.path.dirname(path), exist_ok=True)
+            with open(path, "wb") as myfile:
+                myfile.truncate(size)
 
     def test_defaults(self):
         values, script_name = self.prepare()
 
         self.assertEqual((values["raw_folder"], values["converted_name"]), ("1_raw", self.COCHLEA))
-        self.assertEqual((values["time"], values["mem"]), ("20:00:00", "16G"))
+        self.assertEqual((values["time"], values["mem"]), ("08:00:00", "16G"))
         self.assertNotIn("stain", values)
         self.assertEqual(script_name, "convert_data_ReAMDWT2MWfLS")
+
+    def test_time_of_the_steps_file_without_the_raw_folder(self):
+        raw_dir = os.path.join(self.tmp.name, self.COCHLEA, "1_raw")
+
+        values, _ = self.prepare()
+
+        self.assertEqual(values["time"], "08:00:00")
+        self.assertEqual(self.notes, [f"convert_data: time limit 08:00:00 of steps.json, because {raw_dir} does "
+                                      "not exist."])
 
     def test_parameters_override_the_defaults(self):
         values, _ = self.prepare(raw_folder="1_raw_reimage", converted_name="MAMD_N235L_CTBP2", time="30:00:00")
@@ -302,6 +319,44 @@ class ConversionTest(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "no group"):
             self.prepare(deploy_args(group="SGN"))
 
+    def test_time_rule_of_the_steps_file(self):
+        _, _, rule = deployment.step_row(self.template, "M")
+        gb = 10 ** 9
+        cases = [(0, "01:00:00"), (240 * gb, "01:00:00"), (241 * gb, "01:30:00"), (720 * gb, "03:00:00"),
+                 (1010 * gb, "04:30:00"), (1955 * gb, "08:30:00"), (20000 * gb, "48:00:00")]
+        for raw_bytes, expected in cases:
+            self.assertEqual(deployment.time_from_size(raw_bytes, rule), expected, raw_bytes)
+
+    def test_time_from_the_size_of_the_raw_folder(self):
+        # The 27 tiles of R_AMD_WT1_L, 720.6 GB, which converted in 1.9 h on 2026-11-25.
+        self.raw_files(*[4242 * 2048 * 1536 * 2] * 27)
+        raw_dir = os.path.join(self.tmp.name, self.COCHLEA, "1_raw")
+
+        values, _ = self.prepare()
+
+        self.assertEqual(values["time"], "03:30:00")
+        self.assertEqual(self.notes, [f"convert_data: time limit 03:30:00 for 721 GB in {raw_dir}, at 100 MB/s with a "
+                                      "margin of 1.5. Set 'time' in the parameter file to override it."])
+
+    def test_gerbil_gets_the_time_from_the_size(self):
+        self.COCHLEA = "G_EK_000233_L"
+        self.raw_files(1306 * 10 ** 9)
+
+        self.assertEqual(self.prepare()[0]["time"], "05:30:00")
+
+    def test_time_of_another_raw_folder(self):
+        self.raw_files(500 * 10 ** 9, raw_folder="1_raw_reimage")
+
+        self.assertEqual(self.prepare(raw_folder="1_raw_reimage")[0]["time"], "02:30:00")
+
+    def test_time_parameter_wins_over_the_size(self):
+        self.raw_files(2000 * 10 ** 9)
+
+        values, _ = self.prepare(time="05:00:00")
+
+        self.assertEqual(values["time"], "05:00:00")
+        self.assertEqual(self.notes, [])
+
     def test_job(self):
         bin_dir = os.path.join(self.tmp.name, "stub_bin")
         os.makedirs(bin_dir)
@@ -309,8 +364,7 @@ class ConversionTest(unittest.TestCase):
         args_file = os.path.join(self.tmp.name, "convert_args")
         write_executable(os.path.join(bin_dir, "flamingo_tools.convert_data"),
                          f'#!/bin/bash\nprintf "%s\\n" "$@" > {args_file}\n')
-        env = {"PATH": os.pathsep.join([bin_dir, "/usr/bin", "/bin"]), "HOME": self.tmp.name,
-               "SLURM_CPUS_PER_TASK": "4"}
+        env = {"PATH": os.pathsep.join([bin_dir, "/usr/bin", "/bin"]), "HOME": self.tmp.name}
 
         values, _ = self.prepare(user_address="a", account_name="b", **{"cochlea-net_environment": "env"})
         sbatch_file = os.path.join(self.tmp.name, "job.sbatch")

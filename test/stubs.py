@@ -3,6 +3,7 @@
 """Shared helpers of the tests: stub commands for the cluster tools, and access to the scripts.
 
 The stubs replace `sbatch`, `scontrol`, `scancel`, `reportseff` and `micromamba`, so the tests run on any machine.
+`add_conversion_stubs()` adds `sacct` and the commands of cochlea-net which `slurm_wf.convert` calls.
 """
 import os
 import subprocess
@@ -86,6 +87,69 @@ fi
 """
 
 
+# Prints the first line of 'sacct_states' of the state directory, and removes it unless it is the last line.
+# 'sacct_calls' gets one line with the arguments of each call.
+SACCT_STUB = """#!/bin/bash
+echo "$@" >> "$STUB_STATE"/sacct_calls
+states="$STUB_STATE"/sacct_states
+head -n 1 "$states"
+if [ "$(wc -l < "$states")" -gt 1 ] ; then
+    tail -n +2 "$states" > "$states.tmp" && mv "$states.tmp" "$states"
+fi
+"""
+
+# '--help' prints the options --password-stdin and --check. Any other call reads the password from the first line
+# of stdin and records its environment in 'transfer_env'. A call with --check records its arguments in
+# 'check_calls' and the password in 'check_passwords'; the first line of 'check_exits' is its exit code. Any other
+# call uses 'transfer_calls', 'transfer_passwords' and 'transfer_exits' in the same way. Without the exit file,
+# the exit code is 0. A successful download writes a file into the folder of -d in -o.
+TRANSFER_STUB = """#!/bin/bash
+if [ "$1" = --help ] ; then
+    echo "  --password-stdin  Read the password from the first line of stdin."
+    echo "  --check           Log in and check that the remote data exists."
+    exit 0
+fi
+IFS= read -r password
+env >> "$STUB_STATE"/transfer_env
+kind=transfer
+for arg in "$@" ; do
+    if [ "$arg" = --check ] ; then
+        kind=check
+    fi
+done
+echo "$@" >> "$STUB_STATE"/${kind}_calls
+printf '%s\\n' "$password" >> "$STUB_STATE"/${kind}_passwords
+code=0
+exits="$STUB_STATE"/${kind}_exits
+if [ -s "$exits" ] ; then
+    code=$(head -n 1 "$exits")
+    tail -n +2 "$exits" > "$exits.tmp" && mv "$exits.tmp" "$exits"
+fi
+if [ "$kind" = check ] ; then
+    exit "$code"
+fi
+ingest=0
+while [ $# -gt 0 ] ; do
+    case "$1" in
+        --ingest) ingest=1 ;;
+        -d) name=$2 ; shift ;;
+        -o) out=$2 ; shift ;;
+    esac
+    shift
+done
+if [ "$ingest" = 0 ] && [ "$code" = 0 ] ; then
+    mkdir -p "$out/$name" && echo raw > "$out/$name/tile.raw"
+fi
+exit "$code"
+"""
+
+# Records the arguments of each call in 'convert_calls'. A non-zero CONVERT_EXIT makes the call fail.
+CONVERT_STUB = """#!/bin/bash
+echo "$@" >> "$STUB_STATE"/convert_calls
+exit "${CONVERT_EXIT:-0}"
+"""
+
+
 def write_executable(
     path: str,
     content: str,
@@ -138,6 +202,42 @@ def stub_env(
     env.pop("JOB_ARCHIVE", None)
 
     return env
+
+
+def add_conversion_stubs(
+    env: dict,
+    sacct_states: list = (),
+    transfer_exits: list = (),
+    check_exits: list = (),
+) -> None:
+    """Add the stubs of `sacct`, `flamingo_tools.transfer_data` and `flamingo_tools.convert_data` to `stub_env()`.
+
+    Args:
+        env: Output of `stub_env()`.
+        sacct_states: The states which `sacct` prints, one per call. The last state repeats.
+        transfer_exits: The exit codes of the transfers, one per call. Further calls exit with 0.
+        check_exits: The exit codes of the calls with --check, one per call. Further calls exit with 0.
+    """
+    bin_dir = env["PATH"].split(os.pathsep)[0]
+    write_executable(os.path.join(bin_dir, "sacct"), SACCT_STUB)
+    write_executable(os.path.join(bin_dir, "flamingo_tools.transfer_data"), TRANSFER_STUB)
+    write_executable(os.path.join(bin_dir, "flamingo_tools.convert_data"), CONVERT_STUB)
+    for name, lines in (("sacct_states", sacct_states), ("transfer_exits", transfer_exits),
+                        ("check_exits", check_exits)):
+        with open(os.path.join(env["STUB_STATE"], name), "w") as myfile:
+            myfile.write("".join(f"{line}\n" for line in lines))
+
+
+def stub_calls(
+    env: dict,
+    name: str,
+) -> list:
+    """Return the lines of a record file of the stubs, e.g. 'transfer_calls', or an empty list without the file."""
+    path = os.path.join(env["STUB_STATE"], name)
+    if not os.path.isfile(path):
+        return []
+    with open(path, "r") as myfile:
+        return myfile.read().splitlines()
 
 
 def sbatch_calls(

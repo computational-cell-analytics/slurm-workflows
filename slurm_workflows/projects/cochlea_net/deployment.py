@@ -6,15 +6,17 @@ Deployment of the jobs of the cochlea-net project: segmentation of SGNs and IHCs
 ribbon synapses, and the export of the results to MoBIE and the S3 bucket.
 """
 import json
+import math
 import os
 import re
 import shlex
 import sys
+from typing import Optional
 
 from slurm_workflows.inputs import job_variables, path_exists
 from slurm_workflows.pipelines import missing_templates
 from slurm_workflows.projects.cochlea_net.mobie import DATASET_FILE, IMAGE_DIR, OME_ZARR, rclone, s3_datasets
-from slurm_workflows.templates import TEMPLATE_SUFFIX, placeholders_in
+from slurm_workflows.templates import TEMPLATE_SUFFIX, fill_placeholders, placeholders_in
 
 # Written by the apply step. It is the input of the segmentation step.
 SEGMENTATION_INPUT = "predictions.zarr"
@@ -53,6 +55,14 @@ STEPS_FILE = "steps.json"
 # of the job array, which gives the placeholder 'last_instance' for '#SBATCH -a 0-<last_instance>'.
 RESOURCE_KEYS = ("time", "mem", "instances")
 INSTANCES_KEY = "instances"
+
+# Optional key of a row of the steps file: a rule which sets 'time' from the size of the input, e.g.
+# {"input": "<data_dir>/<cochlea>/<raw_folder>", "mb_per_s": 100, "margin": 1.5, "round": "00:30:00",
+# "min": "01:00:00", "max": "48:00:00"}. 'input' is a path with placeholders. A species entry can change
+# single keys of the rule. A 'time' parameter wins over the rule, and the rule wins over the 'time' of
+# the row. The 'time' of the row stays for an input which does not exist yet.
+TIME_RULE_KEY = "time_from_size"
+TIME_RULE_KEYS = ("input", "mb_per_s", "margin", "round", "min", "max")
 
 # The segment step of a group needs the watershed parameters of its model, as the placeholders
 # '<group>_<key>', e.g. 'sgn_center_distance_threshold'. A parameter of the same name overrides one.
@@ -279,7 +289,7 @@ def step_row(
     template_file: str,
     species: str,
 ) -> tuple:
-    """Return the group and the resources of a template from the steps file in its folder.
+    """Return the group, the resources and the time rule of a template from the steps file in its folder.
 
     The file has one row per template, so a renamed or a new template without a row fails here
     instead of being treated as another step.
@@ -292,6 +302,7 @@ def step_row(
         tuple of:
             str  - the key of `GROUPS`, or None for a template which serves every group, such as a MoBIE step
             dict - the values of `RESOURCE_KEYS`, with the deviations of the species applied
+            dict - the `TIME_RULE_KEY` rule with the deviations of the species applied, or None
     """
     steps_file = os.path.join(os.path.dirname(template_file), STEPS_FILE)
     step = os.path.basename(template_file)[:-len(TEMPLATE_SUFFIX)]
@@ -309,10 +320,23 @@ def step_row(
     if group is not None and group not in GROUPS:
         raise ValueError(f"Unknown group '{group}' of {step} in {steps_file}. Available groups: {sorted(GROUPS)}.")
 
+    species_row = row.get(species, {})
     resources = {key: row[key] for key in RESOURCE_KEYS if key in row}
-    resources.update(row.get(species, {}))
+    resources.update({key: species_row[key] for key in RESOURCE_KEYS if key in species_row})
 
-    return group, resources
+    time_rule = None
+    if TIME_RULE_KEY in row:
+        time_rule = {**row[TIME_RULE_KEY], **species_row.get(TIME_RULE_KEY, {})}
+        missing = [key for key in TIME_RULE_KEYS if key not in time_rule]
+        unknown = sorted(set(time_rule) - set(TIME_RULE_KEYS))
+        if missing or unknown:
+            raise ValueError(f"The '{TIME_RULE_KEY}' of {step} in {steps_file} needs exactly the keys "
+                             f"{list(TIME_RULE_KEYS)}. Missing: {missing}. Unknown: {unknown}.")
+    elif TIME_RULE_KEY in species_row:
+        raise ValueError(f"The species '{species}' of {step} in {steps_file} changes '{TIME_RULE_KEY}', but the row "
+                         "has no such rule.")
+
+    return group, resources, time_rule
 
 
 def cochlea_parts(
@@ -723,6 +747,106 @@ def model_path(
     return models[version]
 
 
+def path_size(
+    path: str,
+) -> Optional[int]:
+    """Return the size of a file, or of all files below a folder, in bytes.
+
+    Args:
+        path: Path of a file or a folder.
+
+    Returns:
+        int: The size in bytes, or None if the path does not exist.
+    """
+    if os.path.isfile(path):
+        return os.path.getsize(path)
+    if not os.path.isdir(path):
+        return None
+    return sum(os.path.getsize(os.path.join(root, name)) for root, _, names in os.walk(path) for name in names)
+
+
+def slurm_seconds(
+    value: str,
+) -> int:
+    """Return the seconds of a Slurm time in the format HH:MM:SS, e.g. '48:00:00'.
+
+    Args:
+        value: Time with hours, minutes and seconds. The hours can exceed 23.
+
+    Returns:
+        int: The time in seconds.
+    """
+    match = re.fullmatch(r"(\d+):([0-5]\d):([0-5]\d)", str(value))
+    if match is None:
+        raise ValueError(f"The time '{value}' does not have the format HH:MM:SS.")
+    hours, minutes, seconds = (int(part) for part in match.groups())
+    return hours * 3600 + minutes * 60 + seconds
+
+
+def slurm_time(
+    seconds: int,
+) -> str:
+    """Return a number of seconds as a Slurm time in the format HH:MM:SS. The hours can exceed 23."""
+    return f"{seconds // 3600:02d}:{seconds % 3600 // 60:02d}:{seconds % 60:02d}"
+
+
+def time_from_size(
+    n_bytes: int,
+    rule: dict,
+) -> str:
+    """Return the time limit of a job for an input of this size, from a `TIME_RULE_KEY` rule.
+
+    The limit is the time at 'mb_per_s' times 'margin', rounded up to a multiple of 'round', and
+    between 'min' and 'max'.
+
+    Args:
+        n_bytes: Size of the input in bytes.
+        rule: The rule of the steps file, with the keys `TIME_RULE_KEYS`.
+
+    Returns:
+        str: The time limit in the format HH:MM:SS.
+    """
+    rate = float(rule["mb_per_s"]) * 1e6
+    margin = float(rule["margin"])
+    step = slurm_seconds(rule["round"])
+    if rate <= 0 or margin <= 0 or step <= 0:
+        raise ValueError(f"'mb_per_s', 'margin' and 'round' of '{TIME_RULE_KEY}' must be positive: {rule}.")
+    seconds = math.ceil(n_bytes / rate * margin / step) * step
+    seconds = min(max(seconds, slurm_seconds(rule["min"])), slurm_seconds(rule["max"]))
+    return slurm_time(seconds)
+
+
+def apply_time_rule(
+    placeholder_values: dict,
+    rule: dict,
+    step_name: str,
+) -> str:
+    """Set 'time' from the size of the input of a `TIME_RULE_KEY` rule, if the input exists.
+
+    Args:
+        placeholder_values: The placeholder values of the job, with 'time' of the steps file. The dictionary is
+            changed in place.
+        rule: The rule of the steps file, with the keys `TIME_RULE_KEYS`.
+        step_name: Name of the step, for the note.
+
+    Returns:
+        str: A note which gives the time limit and its source.
+    """
+    lines, missing = fill_placeholders([rule["input"]], placeholder_values)
+    if missing:
+        raise ValueError(f"The 'input' of '{TIME_RULE_KEY}' of {step_name} has placeholders without a value: "
+                         f"{sorted(missing)}.")
+    input_path = lines[0]
+    n_bytes = path_size(input_path)
+    if n_bytes is None:
+        return (f"{step_name}: time limit {placeholder_values['time']} of {STEPS_FILE}, because {input_path} "
+                "does not exist.")
+    placeholder_values["time"] = time_from_size(n_bytes, rule)
+    return (f"{step_name}: time limit {placeholder_values['time']} for {n_bytes / 1e9:.0f} GB in {input_path}, at "
+            f"{rule['mb_per_s']} MB/s with a margin of {rule['margin']}. Set 'time' in the parameter file to "
+            "override it.")
+
+
 def prepare_step(
     settings: dict,
     placeholder_values: dict,
@@ -788,7 +912,8 @@ def prepare_step(
     template_name = os.path.basename(template_file)
     step_name = template_name.split(".template")[0]
 
-    step_group, resources = step_row(template_file, species)
+    step_group, resources, time_rule = step_row(template_file, species)
+    time_given = "time" in placeholder_values
     for key, value in resources.items():
         placeholder_values.setdefault(key, value)
     if INSTANCES_KEY in placeholder_values:
@@ -888,6 +1013,9 @@ def prepare_step(
             placeholder_values.setdefault(f"{group.lower()}_{key}", value)
     if group is not None and f"{group.lower()}_{MASK_PLACEHOLDER}" in template_placeholders:
         placeholder_values.update(mask_parameters(placeholder_values, group.lower()))
+
+    if time_rule is not None and not time_given:
+        notes.append(apply_time_rule(placeholder_values, time_rule, step_name))
 
     # The group enters the name of a template which serves more than one group. A stain which is not
     # the default of the group and the model version enter the names of every job with a group. So

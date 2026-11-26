@@ -166,21 +166,86 @@ class StepRowTest(unittest.TestCase):
         self.assertEqual(sorted(steps), sorted(os.path.basename(path)[:-len(TEMPLATE_SUFFIX)] for path in templates))
         for template in templates:
             with self.subTest(template):
-                group, resources = deployment.step_row(template, "M")
+                group, resources, time_rule = deployment.step_row(template, "M")
                 self.assertIn(group, list(deployment.GROUPS) + [None])
                 expected = ["mem", "time"]
                 if f"<{deployment.INSTANCES_KEY}>" in read_file(template):
                     expected.append(deployment.INSTANCES_KEY)
                 self.assertEqual(sorted(resources), sorted(expected))
+                if time_rule is not None:
+                    deployment.time_from_size(10 ** 12, time_rule)
+
+    def test_every_species_of_the_steps_file_is_valid(self):
+        steps = json.loads(read_file(os.path.join(TEMPLATE_DIR, deployment.STEPS_FILE)))
+        for step, row in steps.items():
+            for species in set(row) - {deployment.GROUP_KEY, deployment.TIME_RULE_KEY, *deployment.RESOURCE_KEYS}:
+                with self.subTest(step=step, species=species):
+                    _, _, time_rule = deployment.step_row(step_template(TEMPLATE_DIR, step), species)
+                    if time_rule is not None:
+                        deployment.time_from_size(10 ** 12, time_rule)
 
     def test_species_deviation(self):
         sgn = step_template(TEMPLATE_DIR, "apply_SGN")
         ihc = step_template(TEMPLATE_DIR, "apply_IHC")
 
-        self.assertEqual(deployment.step_row(sgn, "M"), ("SGN", {"time": "00:25:00", "mem": "96G", "instances": 10}))
-        self.assertEqual(deployment.step_row(sgn, "G"), ("SGN", {"time": "01:30:00", "mem": "128G", "instances": 10}))
+        self.assertEqual(deployment.step_row(sgn, "M"),
+                         ("SGN", {"time": "00:25:00", "mem": "96G", "instances": 10}, None))
+        self.assertEqual(deployment.step_row(sgn, "G"),
+                         ("SGN", {"time": "01:30:00", "mem": "128G", "instances": 10}, None))
         self.assertEqual(deployment.step_row(ihc, "M")[1]["instances"], 6)
         self.assertEqual(deployment.step_row(ihc, "G")[1]["instances"], 10)
+
+    def time_rule_row(self, tmp, without=(), **row):
+        rule = {"input": "<data_dir>/<cochlea>/1_raw", "mb_per_s": 100, "margin": 1.5, "round": "00:30:00",
+                "min": "01:00:00", "max": "48:00:00"}
+        rule = {key: value for key, value in rule.items() if key not in without}
+        write_file(os.path.join(tmp, deployment.STEPS_FILE), json.dumps({"convert_data": {
+            "group": None, "time": "08:00:00", "mem": "16G", deployment.TIME_RULE_KEY: rule, **row}}))
+        return write_file(os.path.join(tmp, "convert_data.template"))
+
+    def test_species_changes_one_value_of_the_time_rule(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            template = self.time_rule_row(tmp, G={deployment.TIME_RULE_KEY: {"mb_per_s": 80}, "time": "12:00:00"})
+
+            _, mouse, mouse_rule = deployment.step_row(template, "M")
+            _, gerbil, gerbil_rule = deployment.step_row(template, "G")
+
+        self.assertEqual((mouse["time"], gerbil["time"]), ("08:00:00", "12:00:00"))
+        self.assertEqual((mouse_rule["mb_per_s"], gerbil_rule["mb_per_s"]), (100, 80))
+        self.assertEqual({**gerbil_rule, "mb_per_s": 100}, mouse_rule)
+
+    def test_time_rule_with_a_missing_or_unknown_key_raises(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            template = self.time_rule_row(tmp, without=("min",))
+            with self.assertRaisesRegex(ValueError, r"Missing: \['min'\]"):
+                deployment.step_row(template, "M")
+
+            template = self.time_rule_row(tmp, G={deployment.TIME_RULE_KEY: {"rate": 100}})
+            deployment.step_row(template, "M")
+            with self.assertRaisesRegex(ValueError, r"Unknown: \['rate'\]"):
+                deployment.step_row(template, "G")
+
+    def test_species_rule_without_a_row_rule_raises(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            write_file(os.path.join(tmp, deployment.STEPS_FILE), json.dumps({"convert_data": {
+                "group": None, "time": "08:00:00", "mem": "16G", "G": {deployment.TIME_RULE_KEY: {"mb_per_s": 80}}}}))
+            template = write_file(os.path.join(tmp, "convert_data.template"))
+
+            self.assertIsNone(deployment.step_row(template, "M")[2])
+            with self.assertRaisesRegex(ValueError, "has no such rule"):
+                deployment.step_row(template, "G")
+
+    def test_time_from_size(self):
+        rule = {"mb_per_s": 100, "margin": 1.5, "round": "00:30:00", "min": "01:00:00", "max": "48:00:00"}
+
+        self.assertEqual(deployment.time_from_size(720 * 10 ** 9, rule), "03:00:00")
+        self.assertEqual(deployment.time_from_size(720 * 10 ** 9, {**rule, "round": "00:10:00"}), "03:00:00")
+        self.assertEqual(deployment.time_from_size(721 * 10 ** 9, {**rule, "round": "00:10:00"}), "03:10:00")
+        self.assertEqual(deployment.time_from_size(10 ** 9, {**rule, "min": "00:15:00"}), "00:30:00")
+        with self.assertRaisesRegex(ValueError, "HH:MM:SS"):
+            deployment.time_from_size(10 ** 9, {**rule, "max": "2-00:00:00"})
+        with self.assertRaisesRegex(ValueError, "positive"):
+            deployment.time_from_size(10 ** 9, {**rule, "mb_per_s": 0})
 
     def test_template_without_row_raises(self):
         with tempfile.TemporaryDirectory() as tmp:

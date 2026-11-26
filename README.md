@@ -51,6 +51,7 @@ Each command runs the same code as its script.
 | `slurm_wf.summary` | `scripts/summary.py` | Print the efficiency of the archived jobs, and write one row per job to a table |
 | `slurm_wf.add_s3_dataset` | `scripts/add_s3_dataset.py` | Only for `cochlea-net`: add a dataset and its sources to the MoBIE project in the S3 bucket, and check or repair the bucket |
 | `slurm_wf.add_processing_metadata` | `scripts/add_processing_metadata.py` | Only for `cochlea-net`: add the cochlea, the stains and the model keys of each job to the `metadata.json` of an older archive |
+| `slurm_wf.convert` | `scripts/convert_cochlea.py` | Only for `cochlea-net`: convert the raw data of a cochlea in one command, from the download from UKON to the upload of the result, see [Data conversion](doc/hpc_04_data_conversion.md) |
 
 Each command prints its options with `-h`.
 

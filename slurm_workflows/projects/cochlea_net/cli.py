@@ -2,12 +2,13 @@
 # -- coding: utf-8 --
 """author: Martin Schilling (martin.schilling@med.uni-goettingen.de), 2025
 
-Command line interface of `slurm_wf.add_s3_dataset` and `slurm_wf.add_processing_metadata`, which only the
-project cochlea-net uses.
+Command line interface of `slurm_wf.add_s3_dataset`, `slurm_wf.add_processing_metadata` and `slurm_wf.convert`,
+which only the project cochlea-net uses.
 """
 import argparse
 import sys
 
+from slurm_workflows.projects.cochlea_net.conversion import convert_cochlea
 from slurm_workflows.projects.cochlea_net.mobie import (add_s3_dataset, add_s3_sources, check_s3_datasets,
                                                         generate_local_project, generate_s3_project,
                                                         repair_s3_dataset)
@@ -112,5 +113,53 @@ def main_add_processing_metadata():
 
     try:
         add_processing_metadata(args.archive_dir, load_settings(args.settings), args.pattern, args.dry_run)
+    except (FileNotFoundError, ValueError) as exc:
+        sys.exit(str(exc))
+
+
+def main_convert():
+    parser = argparse.ArgumentParser(
+        description="Convert the raw data of one cochlea for the stitching in one command: download the raw data "
+        "from UKON, check it, convert it in a Slurm job, upload the n5 and the XML to UKON and, with --remove-raw, "
+        "remove the raw data on the cluster. Run it in a tmux session on a login node; outside tmux or screen it "
+        "stops. It asks for the GWDG password once, keeps it only in memory and checks it at once. The file "
+        "convert_pipeline.json in the cochlea folder records the finished stages, so the same command continues "
+        "after an interruption. Run it in the folder of the slurm output files, as the deploy step.")
+
+    parser.add_argument("-j", "--params", type=str, required=True,
+                        help="Parameter file of the template convert_data, with the key 'ukon_dir': the sample "
+                             "folder on UKON, which holds the raw folder, e.g. "
+                             "UKON100/archiv/imaging/Lightsheet/Huiskengroup_CTLSM/<year>/<experimenter>/<sample>.")
+    parser.add_argument("-s", "--settings", type=str, default=None,
+                        help="Settings file of cochlea-net. Default: project_settings/cochlea-net.json")
+    parser.add_argument("-u", "--username", type=str, default=None,
+                        help="GWDG username. Default: academic_id of the settings file.")
+    parser.add_argument("--remove-raw", dest="remove_raw", action="store_true",
+                        help="Remove the raw folder on the cluster after the upload of the n5 and the XML.")
+    parser.add_argument("--poll-interval", dest="poll_interval", type=float, default=300,
+                        help="Seconds between two queries of the job state. Default: %(default)s")
+    parser.add_argument("--max-resubmits", dest="max_resubmits", type=int, default=2,
+                        help="Number of resubmissions after a TIMEOUT, a node failure or a preemption. "
+                             "Default: %(default)s")
+    parser.add_argument("--force", action="store_true", help="Pass --force to the deploy step.")
+    parser.add_argument("--allow-dirty", dest="allow_dirty", action="store_true",
+                        help="Submit the conversion although a tracked repository has uncommitted changes. "
+                             "Without it, the command stops before the password prompt.")
+    parser.add_argument("--takeover", action="store_true",
+                        help="Continue although the state file names a driver on another login node, e.g. after a "
+                             "reboot of that node.")
+    parser.add_argument("--dry-run", dest="dry_run", action="store_true",
+                        help="Print the stages and run the deploy step without --submit. Nothing is transferred "
+                             "or submitted.")
+    parser.add_argument("--allow-no-tmux", dest="allow_no_tmux", action="store_true",
+                        help="Run although the command does not run in tmux, screen or another terminal "
+                             "multiplexer. It then stops when the connection to the cluster ends.")
+    args = parser.parse_args()
+
+    try:
+        convert_cochlea(args.params, settings_file=args.settings, username=args.username,
+                        remove_raw=args.remove_raw, poll_interval=args.poll_interval,
+                        max_resubmits=args.max_resubmits, force=args.force, allow_dirty=args.allow_dirty,
+                        takeover=args.takeover, dry_run=args.dry_run, allow_no_tmux=args.allow_no_tmux)
     except (FileNotFoundError, ValueError) as exc:
         sys.exit(str(exc))

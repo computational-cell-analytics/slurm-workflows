@@ -394,7 +394,7 @@ The cochlea-net deployment adds these placeholder values to the settings and the
 |---|---|---|
 | `job_name` | The name of the sbatch script without the date, with `-` instead of `_`, then `_` and `cochlea` with `-` instead of `_`, for `#SBATCH --job-name`, e.g. `download-image-IHC-v11b_G-EK-000233-L` | no |
 | `stain_SGN`, `stain_IHC`, `stain_synapses` | `PV`, `Vglut3`, `CTBP2` | yes |
-| `time`, `mem`, `instances` | The row of the template in `templates/cochlea-net/steps.json`, with the values of the species. `instances` is the number of tasks of an apply array | yes |
+| `time`, `mem`, `instances` | The row of the template in `templates/cochlea-net/steps.json`, with the values of the species. `instances` is the number of tasks of an apply array. A row with `time_from_size` gets its `time` from the size of its input, see [the steps file](new_template.md#cochlea-net-a-row-in-the-steps-file). `convert_data` measures the raw folder, see [Data conversion](hpc_04_data_conversion.md#2-convert-in-a-slurm-job) | yes |
 | `last_instance` | `instances` - 1, for `#SBATCH -a 0-<last_instance>` | no |
 | `stain` | The stain of the group of the template | no |
 | `cochlea_data`, `input_key` | The file of the cochlea folder which holds the stain, and the key of the stain in it | no |

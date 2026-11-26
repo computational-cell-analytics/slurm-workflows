@@ -21,7 +21,17 @@ from slurm_workflows.templates import project_of_template
 from slurm_workflows.update import update_archive
 
 
-def main_deploy():
+def deploy_from_argv(
+    argv: list = None,
+) -> list:
+    """Parse the options of `slurm_wf.deploy` and deploy the jobs.
+
+    Args:
+        argv: The command line options, or None for `sys.argv[1:]`.
+
+    Returns:
+        list: JobIDs of the submitted jobs. A dry run returns an empty list.
+    """
     parser = argparse.ArgumentParser(
         description="Fill in a template for an sbatch script with the values of a parameter file. "
         "With --submit, the sbatch script is submitted and archived. "
@@ -72,29 +82,30 @@ def main_deploy():
     pre_parser = argparse.ArgumentParser(add_help=False)
     pre_parser.add_argument("-i", "--input", type=str, default=None)
     pre_parser.add_argument("-p", "--pipeline", type=str, default=None)
-    known_args, _ = pre_parser.parse_known_args()
+    known_args, _ = pre_parser.parse_known_args(argv)
 
     project = None
-    try:
-        if known_args.pipeline is not None:
-            project, _ = resolve_pipeline(known_args.pipeline)
-        elif known_args.input is not None:
-            project = project_of_template(known_args.input)
-        if project is not None:
-            module = project_module(project)
-            module.add_arguments(parser)
-    except (FileNotFoundError, ValueError) as exc:
-        sys.exit(str(exc))
+    if known_args.pipeline is not None:
+        project, _ = resolve_pipeline(known_args.pipeline)
+    elif known_args.input is not None:
+        project = project_of_template(known_args.input)
+    if project is not None:
+        module = project_module(project)
+        module.add_arguments(parser)
 
-    args = parser.parse_args()
+    args = parser.parse_args(argv)
 
     if args.start_at is not None and args.pipeline is None:
         parser.error("--start-at needs a pipeline. Use it together with -p.")
     if args.allow_missing and args.submit:
         parser.error("--allow-missing keeps the text <name> in the sbatch script. Use it without --submit.")
 
+    return deploy_jobs(args, project, module)
+
+
+def main_deploy():
     try:
-        deploy_jobs(args, project, module)
+        deploy_from_argv()
     except (FileNotFoundError, ValueError) as exc:
         sys.exit(str(exc))
 

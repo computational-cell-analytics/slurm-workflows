@@ -14,6 +14,7 @@ setup(
             "slurm_wf.summary = slurm_workflows.cli:main_summary",
             "slurm_wf.add_s3_dataset = slurm_workflows.projects.cochlea_net.cli:main_add_s3_dataset",
             "slurm_wf.add_processing_metadata = slurm_workflows.projects.cochlea_net.cli:main_add_processing_metadata",
+            "slurm_wf.convert = slurm_workflows.projects.cochlea_net.cli:main_convert",
             "slurm_wf.submit = slurm_workflows.cli:main_submit",
             "slurm_wf.archive = slurm_workflows.cli:main_archive",
         ]

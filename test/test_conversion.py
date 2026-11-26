@@ -55,11 +55,11 @@ class ConvertCochleaTest(unittest.TestCase):
         self.tmp.cleanup()
 
     def convert(self, sacct_states=("COMPLETED",), transfer_exits=(), write_stubs=True, session="tmux",
-                check_exits=(), dirty=(), **options):
+                check_exits=(), dirty=(), sacct_times=(), **options):
         """Run the command with the stubs in the multiplexer `session`, with the dirty repositories `dirty`. Returns
         the getpass mock, and the exception or None."""
         if write_stubs:
-            add_conversion_stubs(self.env, sacct_states, transfer_exits, check_exits)
+            add_conversion_stubs(self.env, sacct_states, transfer_exits, check_exits, sacct_times)
         options = {"poll_interval": 0, **options}
         error = None
         with mock.patch.dict(os.environ, self.env), \
@@ -138,6 +138,30 @@ class ConvertCochleaTest(unittest.TestCase):
         self.assertEqual(len(self.deploy.calls), 2)
         self.assertEqual(self.state()["jobs"], ["1000", "1001"])
         self.assertEqual(len(self.transfers()), 3)
+
+    def test_summary_splits_the_convert_time(self):
+        _, error = self.convert(sacct_times=["2026-11-26T00:00:00|2026-11-26T01:30:00|2026-11-26T04:30:00"])
+
+        self.assertIsNone(error)
+        output = self.output.getvalue()
+        self.assertIn("    queue wait: 1.5 h\n    conversion job: 3.0 h\n", output)
+        self.assertEqual(stub_calls(self.env, "sacct_calls")[-1], "-j 1000 -X -n -P -o Submit,Start,End")
+
+    def test_summary_sums_the_resubmitted_jobs(self):
+        _, error = self.convert(["TIMEOUT", "COMPLETED"],
+                                sacct_times=["2026-11-26T00:00:00|2026-11-26T01:00:00|2026-11-26T03:00:00",
+                                             "2026-11-26T03:00:00|2026-11-26T03:30:00|2026-11-26T04:30:00"])
+
+        self.assertIsNone(error)
+        self.assertIn("    queue wait: 1.5 h\n    conversion job: 3.0 h (2 jobs)\n", self.output.getvalue())
+        self.assertEqual(stub_calls(self.env, "sacct_calls")[-1], "-j 1000,1001 -X -n -P -o Submit,Start,End")
+
+    def test_summary_without_job_times(self):
+        _, error = self.convert()
+
+        self.assertIsNone(error)
+        self.assertIn("  convert: ", self.output.getvalue())
+        self.assertNotIn("queue wait", self.output.getvalue())
 
     def test_resubmissions_are_limited(self):
         _, error = self.convert(["TIMEOUT"], max_resubmits=1)
@@ -431,6 +455,24 @@ class JobStateTest(unittest.TestCase):
         self.assertIsNone(self.state(""))
         self.assertIsNone(self.state("\\n  \\n"))
         self.assertIsNone(self.state("RUNNING\\n", exit_code=1))
+
+    def times(self, output, exit_code=0):
+        """Return the times which `job_times()` reads from this output of sacct."""
+        bin_dir = self.env["PATH"].split(os.pathsep)[0]
+        write_executable(os.path.join(bin_dir, "sacct"), f"#!/bin/bash\nprintf '{output}'\nexit {exit_code}\n")
+        with mock.patch.dict(os.environ, self.env):
+            return conversion.job_times(["1000", "1001"])
+
+    def test_job_without_start_is_skipped(self):
+        output = ("2026-11-26T00:00:00|2026-11-26T00:30:00|2026-11-26T02:30:00\\n"
+                  "2026-11-26T02:30:00|Unknown|Unknown\\n")
+        self.assertEqual(self.times(output), (1800.0, 7200.0, 1))
+
+    def test_no_times(self):
+        self.assertIsNone(self.times(""))
+        self.assertIsNone(self.times("2026-11-26T02:30:00|None|Unknown\\n"))
+        self.assertIsNone(self.times("2026-11-26T00:00:00|2026-11-26T00:30:00|2026-11-26T02:30:00\\n",
+                                     exit_code=1))
 
 
 if __name__ == "__main__":

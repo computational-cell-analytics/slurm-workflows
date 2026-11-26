@@ -88,9 +88,13 @@ fi
 
 
 # Prints the first line of 'sacct_states' of the state directory, and removes it unless it is the last line.
-# 'sacct_calls' gets one line with the arguments of each call.
+# A query of the times prints 'sacct_times' instead. 'sacct_calls' gets one line with the arguments of each call.
 SACCT_STUB = """#!/bin/bash
 echo "$@" >> "$STUB_STATE"/sacct_calls
+if [[ "$*" == *Submit* ]] ; then
+    cat "$STUB_STATE"/sacct_times
+    exit 0
+fi
 states="$STUB_STATE"/sacct_states
 head -n 1 "$states"
 if [ "$(wc -l < "$states")" -gt 1 ] ; then
@@ -209,6 +213,7 @@ def add_conversion_stubs(
     sacct_states: list = (),
     transfer_exits: list = (),
     check_exits: list = (),
+    sacct_times: list = (),
 ) -> None:
     """Add the stubs of `sacct`, `flamingo_tools.transfer_data` and `flamingo_tools.convert_data` to `stub_env()`.
 
@@ -217,13 +222,14 @@ def add_conversion_stubs(
         sacct_states: The states which `sacct` prints, one per call. The last state repeats.
         transfer_exits: The exit codes of the transfers, one per call. Further calls exit with 0.
         check_exits: The exit codes of the calls with --check, one per call. Further calls exit with 0.
+        sacct_times: The lines `<submit>|<start>|<end>` which `sacct` prints for a query of the times.
     """
     bin_dir = env["PATH"].split(os.pathsep)[0]
     write_executable(os.path.join(bin_dir, "sacct"), SACCT_STUB)
     write_executable(os.path.join(bin_dir, "flamingo_tools.transfer_data"), TRANSFER_STUB)
     write_executable(os.path.join(bin_dir, "flamingo_tools.convert_data"), CONVERT_STUB)
     for name, lines in (("sacct_states", sacct_states), ("transfer_exits", transfer_exits),
-                        ("check_exits", check_exits)):
+                        ("check_exits", check_exits), ("sacct_times", sacct_times)):
         with open(os.path.join(env["STUB_STATE"], name), "w") as myfile:
             myfile.write("".join(f"{line}\n" for line in lines))
 

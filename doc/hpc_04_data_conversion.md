@@ -95,6 +95,10 @@ multiplexer on the login node. `--allow-no-tmux` skips this check.
     (`--max-resubmits`). The conversion continues with the first tile that is not complete.
   - After any other failure of the job, the command stops. Fix the cause, then run the same command again. It
     submits the job again.
+- At the end, the command prints the duration of each stage of this run.
+  - For `convert`, it also prints the queue wait and the run time of the job from `sacct`. After a resubmission,
+    they are the sums over all jobs.
+  - The time of `convert` also includes the deploy step and up to one poll interval after the end of each job.
 - A failed transfer stops the command. A failed login stops it at once, without a retry.
 - The deploy step archives each job as usual. `--force` and `--allow-dirty` go to the deploy step.
 - A tracked repository with uncommitted changes stops the command before the password prompt, and not only

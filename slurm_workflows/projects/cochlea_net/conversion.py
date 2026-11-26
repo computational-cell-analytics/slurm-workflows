@@ -17,6 +17,7 @@ The stages, in order:
 2. check - the dry run of `flamingo_tools.convert_data`, which fails in seconds, before the queue wait.
 3. convert - submit the template `convert_data` with the deploy step and wait for the job. A TIMEOUT, a
    node failure or a preemption submits the job again. The conversion continues from its progress file.
+   The summary at the end splits the time of this stage into the queue wait and the run time of the job.
 4. upload_n5, upload_xml - copy the n5, then the XML, to `<ukon_dir>/2_converted_stitching`. A new
    run of an interrupted upload uploads only the incomplete chunk directories.
 5. remove_raw - only with `--remove-raw`: remove the copy of the raw data on the cluster.
@@ -67,6 +68,9 @@ FAILURE_STATES = ("FAILED", "OUT_OF_MEMORY", "CANCELLED", "DEADLINE", "REVOKED",
 
 # Number of queries in a row without a state of the job, e.g. while slurmdbd is down, before the command stops.
 UNKNOWN_STATE_LIMIT = 12
+
+# The times of sacct, e.g. 2026-11-26T09:10:03.
+SACCT_TIME_FORMAT = "%Y-%m-%dT%H:%M:%S"
 
 # Command names of the server processes of terminal multiplexers, e.g. 'tmux: server' or 'screen'. A process
 # below such a server keeps running when the SSH connection ends.
@@ -333,21 +337,59 @@ def submit_conversion(
     return jobids[0]
 
 
+def job_times(
+    jobids: list,
+):
+    """Return the queue wait and the run time of jobs from sacct.
+
+    Args:
+        jobids: JobIDs of the jobs.
+
+    Returns:
+        tuple of (queue seconds, run seconds, number of jobs), summed over the jobs with a start and an end
+        time, or None if sacct gives no such job.
+    """
+    try:
+        result = subprocess.run(["sacct", "-j", ",".join(jobids), "-X", "-n", "-P", "-o", "Submit,Start,End"],
+                                stdout=subprocess.PIPE, stderr=subprocess.PIPE, universal_newlines=True)
+    except OSError:
+        return None
+    if result.returncode != 0:
+        return None
+
+    queue = run = 0.0
+    jobs = 0
+    for line in result.stdout.splitlines():
+        try:
+            submit, start, end = (datetime.strptime(value.strip(), SACCT_TIME_FORMAT) for value in line.split("|"))
+        except ValueError:
+            # A job which did not start or end gives 'Unknown' or 'None'.
+            continue
+        queue += (start - submit).total_seconds()
+        run += (end - start).total_seconds()
+        jobs += 1
+    return (queue, run, jobs) if jobs else None
+
+
 def run_conversion(
     state: dict,
     save,
     deploy_argv: list,
     poll_interval: float,
     max_resubmits: int,
-) -> None:
+) -> list:
     """Submit the conversion, or wait for the job of an earlier run, until a job completes.
 
     A failed job of an earlier run is submitted again, because a new run of the command is the decision
     to try again. A failed job of this run stops the command.
+
+    Returns:
+        list: JobIDs of the jobs that the command waited for, oldest first.
     """
     jobid = state["jobs"][-1] if state["jobs"] else None
     earlier_job = jobid is not None
     resubmits = 0
+    jobids = []
     while True:
         if jobid is None:
             jobid = submit_conversion(deploy_argv)
@@ -356,9 +398,10 @@ def run_conversion(
         elif earlier_job:
             print(f"Job {jobid} of an earlier run.")
 
+        jobids.append(jobid)
         final_state = wait_for_job(jobid, poll_interval)
         if final_state == "COMPLETED":
-            return
+            return jobids
         if final_state in FAILURE_STATES and not earlier_job:
             raise ValueError(f"Job {jobid} ended with {final_state}. See slurm-{jobid}.out. Run the same command "
                              "again to submit the conversion again.")
@@ -507,7 +550,8 @@ def convert_cochlea(
                         raise ValueError(f"The dry run of the conversion failed with exit code {returncode}. Check "
                                          f"the raw data in {conversion.raw_dir}.")
             elif stage == CONVERT:
-                run_conversion(state, save, deploy_argv + ["--submit"], poll_interval, max_resubmits)
+                convert_jobids = run_conversion(state, save, deploy_argv + ["--submit"], poll_interval,
+                                                max_resubmits)
             elif stage == REMOVE_RAW:
                 if UPLOAD_N5 not in state["done"] or UPLOAD_XML not in state["done"]:
                     raise ValueError("The raw folder is removed only after the upload of the n5 and the XML.")
@@ -523,3 +567,11 @@ def convert_cochlea(
     print(f"\n[{now()}] All stages are done.")
     for stage, seconds in durations:
         print(f"  {stage}: {seconds / 3600:.1f} h")
+        if stage == CONVERT:
+            # The time of the stage also holds the deploy step and up to one poll interval per job.
+            times = job_times(convert_jobids)
+            if times is not None:
+                queue, run, jobs = times
+                count = f" ({jobs} jobs)" if jobs > 1 else ""
+                print(f"    queue wait: {queue / 3600:.1f} h")
+                print(f"    conversion job: {run / 3600:.1f} h{count}")

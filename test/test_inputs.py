@@ -251,15 +251,25 @@ class ResolveInputTest(unittest.TestCase):
 
     def test_s3_note(self):
         definition = {"name": "ihc", "steps": ["mask_IHC", "apply_IHC"]}
-        dataset = json.dumps({"sources": {"Vglut3": {}}})
+        # The OME-Zarr folder of a source can have another name than the source.
+        image = {"image": {"imageData": {"ome.zarr": {"relativePath": "images/ome-zarr/Vglut3_resized.ome.zarr"}}}}
+        dataset = json.dumps({"sources": {"Vglut3": image}})
         with mock.patch.object(self.module, "s3_datasets", return_value=[self.COCHLEA]), \
                 mock.patch.object(self.module, "rclone", return_value=dataset):
-            self.assertIn("--download", self.ihc_step(definition=definition)[1])
+            note = self.ihc_step(definition=definition)[1]
+            self.assertIn("--download", note)
+            self.assertIn(f"{self.COCHLEA}/images/ome-zarr/Vglut3_resized.ome.zarr", note)
             self.assertNotIn("S3 bucket", self.ihc_step(download=True, definition=definition)[1])
 
         # The transfer of a partial copy did not list the source.
         with mock.patch.object(self.module, "s3_datasets", return_value=[self.COCHLEA]), \
                 mock.patch.object(self.module, "rclone", return_value=json.dumps({"sources": {}})):
+            self.assertIn("either", self.ihc_step(definition=definition)[1])
+
+        # A source without image data, e.g. a table only, gives nothing to download.
+        table = {"segmentation": {"tableData": {"tsv": {"relativePath": "tables/Vglut3"}}}}
+        with mock.patch.object(self.module, "s3_datasets", return_value=[self.COCHLEA]), \
+                mock.patch.object(self.module, "rclone", return_value=json.dumps({"sources": {"Vglut3": table}})):
             self.assertIn("either", self.ihc_step(definition=definition)[1])
 
         with mock.patch.object(self.module, "s3_datasets", return_value=[]):

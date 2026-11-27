@@ -15,7 +15,7 @@ from typing import Optional
 
 from slurm_workflows.inputs import job_variables, path_exists
 from slurm_workflows.pipelines import missing_templates
-from slurm_workflows.projects.cochlea_net.mobie import DATASET_FILE, IMAGE_DIR, OME_ZARR, rclone, s3_datasets
+from slurm_workflows.projects.cochlea_net.mobie import DATASET_FILE, rclone, s3_datasets, source_image_path
 from slurm_workflows.templates import TEMPLATE_SUFFIX, fill_placeholders, placeholders_in
 
 # Written by the apply step. It is the input of the segmentation step.
@@ -692,8 +692,9 @@ def s3_image_note(
 ) -> str:
     """Return whether the S3 bucket holds the image data of a stain which is missing locally.
 
-    If the bucket holds it, the note gives the command with '--download'. The note never stops the
-    deployment, so a failed check becomes the note and is not raised.
+    The stain is the name of a source in the `dataset.json` of the bucket. If the source lists image
+    data, the note gives the command with '--download'. The note never stops the deployment, so a
+    failed check becomes the note and is not raised.
 
     Args:
         s3_remote: rclone remote and bucket, in the form 'remote:bucket', or None.
@@ -703,22 +704,24 @@ def s3_image_note(
     Returns:
         str: The note, without the 'Note: ' prefix.
     """
-    image = f"{IMAGE_DIR}/{stain}{OME_ZARR}"
     if s3_remote is None:
-        return f"the settings file names no 's3_remote', so the S3 bucket was not checked for {image}."
+        return f"the settings file names no 's3_remote', so the S3 bucket was not checked for the source {stain}."
 
     # rclone gives the same error for a missing dataset folder and for a failed listing, so the
     # dataset list comes first. The transfer lists a source only after its data is complete, so a
     # data folder alone can be a partial copy.
+    image = None
     try:
-        found = (cochlea in s3_datasets(s3_remote) and
-                 stain in json.loads(rclone(["cat", f"{s3_remote}/{cochlea}/{DATASET_FILE}"]))["sources"])
+        if cochlea in s3_datasets(s3_remote):
+            sources = json.loads(rclone(["cat", f"{s3_remote}/{cochlea}/{DATASET_FILE}"]))["sources"]
+            if stain in sources:
+                image = source_image_path(sources[stain], cochlea)
     except ValueError as exc:
         return f"the S3 bucket was not checked: {exc}"
 
-    if not found:
-        return (f"the {DATASET_FILE} of {cochlea} in the S3 bucket lists no source {stain}, so the bucket "
-                f"holds no complete {image} either.")
+    if image is None:
+        return (f"the {DATASET_FILE} of {cochlea} in the S3 bucket lists no image data of a source {stain}, so "
+                "the bucket holds no complete copy of the stain either.")
 
     command = " ".join(shlex.quote(arg) for arg in ["python"] + sys.argv + ["--download"])
     return (f"the S3 bucket holds {s3_remote}/{cochlea}/{image}. To download it in a first step "

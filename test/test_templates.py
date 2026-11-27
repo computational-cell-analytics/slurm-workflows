@@ -24,6 +24,24 @@ from stubs import (MOCKUP_DIR, MOCKUP_PARAMS, MOCKUP_PIPELINE, MOCKUP_SETTINGS, 
 MOCKUP_SBATCH = os.path.join(MOCKUP_DIR, "YYYY-MM-DD_sbatch_train.sbatch")
 DEPLOY_SCRIPT = os.path.join(REPOSITORY_DIR, "scripts", "deploy.py")
 
+# Every template which removes files has this block, see doc/new_template.md.
+REMOVE_TREE_BLOCK = (
+    "# The file system removes one file per round trip, so its latency limits a single 'rm -rf' to a few\n"
+    "# hundred files per second. Parallel processes remove the files, then 'rm -rf' removes the folders.\n"
+    "REMOVE_PROCESSES=8\n"
+    "\n"
+    "remove_tree() {\n"
+    "\tlocal start=$SECONDS\n"
+    "\tif [ ! -e \"$1\" ] ; then\n"
+    "\t\treturn 0\n"
+    "\tfi\n"
+    "\tfind \"$1\" -type f -print0 | xargs -0 -r -P \"$REMOVE_PROCESSES\" -n 1000 rm -f || return 1\n"
+    "\trm -rf \"$1\" || return 1\n"
+    "\techo \"Removed $1 in $((SECONDS - start)) s\"\n"
+    "}\n"
+)
+RM_COMMAND = re.compile(r"^[^#\n]*\brm\s", re.MULTILINE)
+
 SETTINGS = {
     "user_address": "me@example.org",
     "academic_id": "",
@@ -199,6 +217,20 @@ class ExitCodeTrapTest(unittest.TestCase):
                 content = read_file(template)
                 self.assertIn("trap 'exit 143' TERM\n", content)
                 self.assertIn("""trap 'echo "Exit code of the job: $?"' EXIT\n""", content)
+
+
+class RemoveTreeTest(unittest.TestCase):
+
+    def test_every_template_removes_files_in_parallel(self):
+        templates = glob.glob(os.path.join(REPOSITORY_DIR, "templates", "*", "*.template"))
+        templates += glob.glob(os.path.join(MOCKUP_DIR, "templates", "*", "*.template"))
+        removing = [template for template in templates if RM_COMMAND.search(read_file(template))]
+        self.assertGreater(len(removing), 2)
+        for template in removing:
+            with self.subTest(template=os.path.basename(template)):
+                content = read_file(template)
+                self.assertIn(REMOVE_TREE_BLOCK, content)
+                self.assertIsNone(RM_COMMAND.search(content.replace(REMOVE_TREE_BLOCK, "")))
 
 
 class MailTypeTest(unittest.TestCase):

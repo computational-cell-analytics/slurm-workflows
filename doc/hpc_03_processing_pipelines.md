@@ -346,6 +346,8 @@ The intermediate data takes up a lot of space and a lot of inodes.
 `segmentation.zarr` and the tables stay.
 A local MoBIE copy is removed only if `rclone check` finds every file of it in the S3 bucket.
 The cleanup runs after the MoBIE steps, so a failed step cancels it and the data stays for a rerun.
+A cleanup job removes the files with 8 parallel processes, and the slurm output gives the time of
+each removal.
 
 Use the option `--no-cleanup` to keep the intermediate data for a single run.
 A new watershed or a new detection threshold needs `predictions.zarr`, which only a new apply step

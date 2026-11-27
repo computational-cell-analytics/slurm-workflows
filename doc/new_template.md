@@ -148,6 +148,33 @@ A step starts only after the previous step completed successfully, i.e. with exi
 The exit code of a job is the status of its last command.
 So a command whose failure must stop the chain needs `|| exit 1` if other commands follow it.
 
+### Remove a folder with many files
+
+A zarr holds one file per chunk, often hundreds of thousands of files.
+The file system removes one file per round trip, so a single `rm -rf` removes only 170-430 files/s
+and can reach the time limit.
+Remove a folder with this function, which removes the files with 8 parallel processes:
+
+```bash
+# The file system removes one file per round trip, so its latency limits a single 'rm -rf' to a few
+# hundred files per second. Parallel processes remove the files, then 'rm -rf' removes the folders.
+REMOVE_PROCESSES=8
+
+remove_tree() {
+	local start=$SECONDS
+	if [ ! -e "$1" ] ; then
+		return 0
+	fi
+	find "$1" -type f -print0 | xargs -0 -r -P "$REMOVE_PROCESSES" -n 1000 rm -f || return 1
+	rm -rf "$1" || return 1
+	echo "Removed $1 in $((SECONDS - start)) s"
+}
+```
+
+Call it as `remove_tree "$path" || exit 1`.
+The output gives the time of each removal, which helps to set the time limit of the job.
+A test checks that every template which calls `rm` has this block and calls `rm` nowhere else.
+
 ## 7. Name the template
 
 The template name gives the names of the sbatch script and of the archive folder:

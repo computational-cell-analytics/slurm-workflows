@@ -210,6 +210,69 @@ The deploy step looks for the other two places only inside this repository:
 - The deployment module: only `slurm_workflows/projects/<package>/deployment.py`. A project outside
   the repository uses the default deployment.
 
+## Submit your own sbatch scripts as a chain
+
+The deploy step is the command which submits several jobs from JSON files: a pipeline file and a
+parameter file, see [Pipelines](#pipelines).
+It calls `submit_chain()` of `slurm_workflows/deploy.py`.
+Code which writes its own sbatch scripts can call `submit_chain()` directly.
+No command reads the arguments of `submit_chain()` from a JSON file.
+To import `slurm_workflows` from other code, install it in editable mode, see the README.
+
+`submit_chain()` submits the jobs one after the other. The jobs do not run in parallel:
+
+- Each job starts only after the previous job completed successfully (`--dependency=afterok`).
+- A failed job cancels the jobs after it (`--kill-on-invalid-dep=yes`).
+- With `archive_dir`, the first job is held until every job is archived.
+- One call gives one chain. Two calls give two independent chains, which can run at the same time.
+  To run a job after the last job of a chain, put it into the same call.
+
+This example submits the IHC steps of one cochlea from `apply_IHC` on:
+
+```python
+from slurm_workflows.deploy import submit_chain
+from slurm_workflows.repositories import job_repositories
+from slurm_workflows.settings import load_settings
+
+settings_file = "/path/to/slurm-workflows/project_settings/cochlea-net.json"
+settings = load_settings(settings_file)
+
+jobids = submit_chain(
+    # The sbatch scripts in the order of the chain, named <date>_sbatch_<suffix>.sbatch.
+    # The job files are moved into the archive.
+    ["2026-11-20_sbatch_apply_IHC.sbatch",
+     "2026-11-20_sbatch_segment_IHC.sbatch",
+     "2026-11-20_sbatch_mobie_add_segmentation.sbatch"],
+    # None submits the jobs without an archive.
+    archive_dir=settings["archive_dir"],
+    # The git repositories whose hashes metadata.json records.
+    repositories=job_repositories(settings),
+    settings_file=settings_file,
+    # The entries "project" and "pipeline" of each metadata.json.
+    project="cochlea-net",
+    pipeline={"name": "ihc", "start_at": "apply_IHC"},
+    # One name per sbatch script. A pipeline entry needs them.
+    step_names=["apply_IHC", "segment_IHC", "mobie_add_segmentation"],
+    # One dictionary per sbatch script, which is added to its metadata.json.
+    step_metadata=[
+        {"cochlea": "G_EK_000233_L", "stains": {"IHC": "Vglut3"}, "models": {"IHC": "IHC_v11b"}},
+        # "project" is ignored: submit_chain() writes "project" and "pipeline" itself.
+        {"cochlea": "G_EK_000233_L", "stains": {"IHC": "Vglut3"}, "models": {"IHC": "IHC_v11b"},
+         "project": "wrong"},
+        {"cochlea": "G_EK_000233_L"},
+    ],
+)
+```
+
+`submit_chain()` returns the JobIDs.
+The `pipeline` entry of each `metadata.json` also gets `run`, `step`, `of`, `step_name` and
+`depends_on`, see [the keys of metadata.json](archive.md#the-keys-of-metadatajson).
+
+- If a submission fails, the jobs before it run, and the later scripts are not submitted.
+- If the archiving or the release fails, all submitted jobs are cancelled.
+- `submit_chain()` does not check the git repositories. To stop for uncommitted changes, call
+  `check_dirty()` of `slurm_workflows/repositories.py` first, as the deploy step does.
+
 ## Test a project
 
 A test is optional, but it finds a broken template before a job fails on the cluster.

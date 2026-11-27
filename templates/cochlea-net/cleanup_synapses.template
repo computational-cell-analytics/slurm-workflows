@@ -31,9 +31,23 @@ for path in "$INPUT" ; do
 	fi
 done
 
+# The file system removes one file per round trip, so its latency limits a single 'rm -rf' to a few
+# hundred files per second. Parallel processes remove the files, then 'rm -rf' removes the folders.
+REMOVE_PROCESSES=8
+
+remove_tree() {
+	local start=$SECONDS
+	if [ ! -e "$1" ] ; then
+		return 0
+	fi
+	find "$1" -type f -print0 | xargs -0 -r -P "$REMOVE_PROCESSES" -n 1000 rm -f || return 1
+	rm -rf "$1" || return 1
+	echo "Removed $1 in $((SECONDS - start)) s"
+}
+
 # A new detection, for example with another threshold, needs predictions.zarr, which only a new
 # 'apply_synapses' rebuilds. Use --no-cleanup to keep it.
 for path in "$PREDICTION_FOLDER"/mask.zarr "$PREDICTION_FOLDER"/predictions.zarr ; do
 	echo "Removing $path"
-	rm -rf "$path" || exit 1
+	remove_tree "$path" || exit 1
 done

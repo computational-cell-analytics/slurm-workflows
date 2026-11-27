@@ -32,6 +32,20 @@ done
 
 module load rclone
 
+# The file system removes one file per round trip, so its latency limits a single 'rm -rf' to a few
+# hundred files per second. Parallel processes remove the files, then 'rm -rf' removes the folders.
+REMOVE_PROCESSES=8
+
+remove_tree() {
+	local start=$SECONDS
+	if [ ! -e "$1" ] ; then
+		return 0
+	fi
+	find "$1" -type f -print0 | xargs -0 -r -P "$REMOVE_PROCESSES" -n 1000 rm -f || return 1
+	rm -rf "$1" || return 1
+	echo "Removed $1 in $((SECONDS - start)) s"
+}
+
 # Every local file must be in the bucket with the same size. The transfer compared the hashes.
 if ! rclone check --one-way --size-only "$INPUT" "$REMOTE" ; then
 	echo "The S3 bucket holds no complete copy of $INPUT. The local copy is kept."
@@ -39,4 +53,4 @@ if ! rclone check --one-way --size-only "$INPUT" "$REMOTE" ; then
 fi
 
 echo "Removing $INPUT"
-rm -rf "$INPUT" || exit 1
+remove_tree "$INPUT" || exit 1

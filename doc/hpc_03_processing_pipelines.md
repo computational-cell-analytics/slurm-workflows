@@ -346,6 +346,8 @@ The intermediate data takes up a lot of space and a lot of inodes.
 `segmentation.zarr` and the tables stay.
 A local MoBIE copy is removed only if `rclone check` finds every file of it in the S3 bucket.
 The cleanup runs after the MoBIE steps, so a failed step cancels it and the data stays for a rerun.
+A cleanup job removes the files with 8 parallel processes, and the slurm output gives the time of
+each removal.
 
 Use the option `--no-cleanup` to keep the intermediate data for a single run.
 A new watershed or a new detection threshold needs `predictions.zarr`, which only a new apply step
@@ -387,6 +389,12 @@ restore it.
 - From an OME-Zarr, it removes the whole folder.
 - From an n5, it removes only the setup folder of the stain, e.g. `setup0`. It removes the n5
   together with its last setup.
+
+The step renames a folder to `removing_<name>` before it removes it, so no other step reads a
+partial input.
+A job which stops early, e.g. at its time limit, leaves `removing_<name>`.
+The next `cleanup_input` of the stain removes it first.
+If the input does not come back, remove `removing_<name>` manually.
 
 > [!CAUTION]
 > Do not run another chain on the same stain while a chain with `--cleanup-input` runs. The other chain can lose its input.

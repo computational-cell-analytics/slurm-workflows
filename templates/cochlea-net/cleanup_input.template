@@ -54,6 +54,20 @@ if [ -z "$IMAGE_PATH" ] ; then
 	exit 1
 fi
 
+# The file system removes one file per round trip, so its latency limits a single 'rm -rf' to a few
+# hundred files per second. Parallel processes remove the files, then 'rm -rf' removes the folders.
+REMOVE_PROCESSES=8
+
+remove_tree() {
+	local start=$SECONDS
+	if [ ! -e "$1" ] ; then
+		return 0
+	fi
+	find "$1" -type f -print0 | xargs -0 -r -P "$REMOVE_PROCESSES" -n 1000 rm -f || return 1
+	rm -rf "$1" || return 1
+	echo "Removed $1 in $((SECONDS - start)) s"
+}
+
 # A path is renamed before its removal, so that an interrupted job leaves no partial input, which a
 # later deployment would read.
 remove() {
@@ -61,9 +75,12 @@ remove() {
 	trash="$(dirname "$1")/removing_$(basename "$1")"
 	echo "Removing $1"
 	if [ -e "$1" ] ; then
+		# A job which stopped early, e.g. at its time limit, can leave the trash, and 'mv -T' cannot
+		# replace a folder which is not empty.
+		remove_tree "$trash" || exit 1
 		mv -T "$1" "$trash" || exit 1
 	fi
-	rm -rf "$trash" || exit 1
+	remove_tree "$trash" || exit 1
 }
 
 # The input key of an n5 starts with the setup folder of the stain, e.g. 'setup0/timepoint0/s0'.

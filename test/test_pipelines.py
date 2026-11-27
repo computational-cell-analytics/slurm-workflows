@@ -22,6 +22,21 @@ from test_mobie import RCLONE_STUB, REMOTE
 SETTINGS = {"mobie_project": "/path/to/mobie_project"}
 
 
+def write_chunks(
+    folder: str,
+) -> None:
+    """Write 2500 empty chunks in nested folders, more than one batch of 1000 files, so that several removal
+    processes run.
+
+    Args:
+        folder: Folder of the zarr.
+    """
+    for z in range(5):
+        for y in range(5):
+            for x in range(100):
+                write_file(os.path.join(folder, "s0", str(z), str(y), str(x)))
+
+
 class SelectStepsTest(unittest.TestCase):
 
     def setUp(self):
@@ -170,6 +185,16 @@ class S3TemplateTest(unittest.TestCase):
 
     def test_ome_zarr_is_removed(self):
         write_file(self.cochlea_path("PV.ome.zarr", "s0", ".zarray"))
+        write_chunks(self.cochlea_path("PV.ome.zarr"))
+        self.add_to_bucket("PV")
+
+        self.assertEqual(self.run_step("cleanup_input", "PV", "PV.ome.zarr", "s0"), 0)
+        self.assertEqual(os.listdir(self.cochlea_path()), [])
+
+    def test_leftover_of_an_interrupted_run_is_removed(self):
+        # A job at its time limit leaves the renamed input. 'mv -T' cannot replace it.
+        write_chunks(self.cochlea_path("removing_PV.ome.zarr"))
+        write_file(self.cochlea_path("PV.ome.zarr", "s0", ".zarray"))
         self.add_to_bucket("PV")
 
         self.assertEqual(self.run_step("cleanup_input", "PV", "PV.ome.zarr", "s0"), 0)
@@ -194,6 +219,28 @@ class S3TemplateTest(unittest.TestCase):
 
         self.assertEqual(self.run_step("cleanup_input", "PV", "PV.ome.zarr", "s0"), 0)
         self.assertEqual(os.listdir(self.cochlea_path()), [])
+
+
+class CleanupTemplateTest(unittest.TestCase):
+    """Run the rendered `cleanup_SGN` job. A test of `test_templates.py` keeps the removal the same in
+    every cleanup template."""
+
+    def test_intermediate_data_is_removed(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            folder = os.path.join(tmp, "predictions", "M_LR_000226_R", "SGN_v3")
+            for name in ("mask.zarr", "predictions.zarr", "seeds.zarr", "segmentation.zarr"):
+                write_chunks(os.path.join(folder, name))
+            values = {"job_name": "job", "user_address": "a", "account_name": "b", "data_dir": tmp,
+                      "cochlea": "M_LR_000226_R", "prediction_dir": "SGN_v3", "time": "00:10:00", "mem": "1G"}
+            sbatch_file = os.path.join(tmp, "cleanup_SGN.sbatch")
+            with contextlib.redirect_stdout(io.StringIO()):
+                render_template(step_template(TEMPLATE_DIR, "cleanup_SGN"), sbatch_file, values)
+
+            result = run(["bash", sbatch_file], env={"PATH": "/usr/bin:/bin"})
+
+            self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+            self.assertEqual(os.listdir(folder), ["segmentation.zarr"])
+            self.assertIn(f"Removed {folder}/predictions.zarr in ", result.stdout)
 
 
 class StepRowTest(unittest.TestCase):

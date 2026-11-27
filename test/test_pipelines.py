@@ -94,11 +94,20 @@ class S3TemplateTest(unittest.TestCase):
     def cochlea_path(self, *parts):
         return os.path.join(self.data_dir, self.COCHLEA, *parts)
 
-    def add_to_bucket(self, stain, listed=True):
-        """The transfer lists the source only after a complete copy, so an unlisted source is a partial copy."""
-        write_file(os.path.join(self.bucket, self.COCHLEA, "images", "ome-zarr", f"{stain}.ome.zarr", "s0", ".zarray"))
+    def add_to_bucket(self, stain, listed=True, folder=None):
+        """The transfer lists the source only after a complete copy, so an unlisted source is a partial copy.
+
+        The OME-Zarr folder is the stain, or `folder` for a source whose folder has another name.
+        """
+        image_path = f"images/ome-zarr/{folder or stain}.ome.zarr"
+        write_file(os.path.join(self.bucket, self.COCHLEA, image_path, "s0", ".zarray"))
         if listed:
-            self.sources[stain] = {}
+            self.sources[stain] = {"image": {"imageData": {
+                "ome.zarr": {"relativePath": image_path},
+                "ome.zarr.s3": {"s3Address": f"https://s3.example.org/bucket/{self.COCHLEA}/{image_path}"}}}}
+        self.write_dataset()
+
+    def write_dataset(self):
         write_file(os.path.join(self.bucket, self.COCHLEA, "dataset.json"), json.dumps({"sources": self.sources}))
 
     def run_step(self, step, stain, cochlea_data="", input_key=""):
@@ -123,6 +132,25 @@ class S3TemplateTest(unittest.TestCase):
 
     def test_download_of_a_partial_copy_fails(self):
         self.add_to_bucket("PV", listed=False)
+
+        self.assertNotEqual(self.run_step("download_image", "PV"), 0)
+        self.assertFalse(os.path.exists(self.cochlea_path()))
+
+    def test_download_reads_the_folder_of_the_source(self):
+        # The source PV of M_LR_000169_R lists 'PV_resized.ome.zarr'.
+        self.add_to_bucket("PV", folder="PV_resized")
+
+        self.assertEqual(self.run_step("download_image", "PV"), 0)
+        self.assertEqual(os.listdir(self.cochlea_path()), ["PV.ome.zarr"])
+        self.assertTrue(os.path.exists(self.cochlea_path("PV.ome.zarr", "s0", ".zarray")))
+
+        # The stain is the name of the source, not the name of the folder.
+        self.assertNotEqual(self.run_step("download_image", "PV_resized"), 0)
+
+    def test_download_of_a_source_without_image_data_fails(self):
+        self.add_to_bucket("PV")
+        self.sources["PV"] = {"segmentation": {"tableData": {"tsv": {"relativePath": "tables/PV"}}}}
+        self.write_dataset()
 
         self.assertNotEqual(self.run_step("download_image", "PV"), 0)
         self.assertFalse(os.path.exists(self.cochlea_path()))
@@ -153,7 +181,19 @@ class S3TemplateTest(unittest.TestCase):
 
         self.add_to_bucket("PV", listed=False)
         self.assertNotEqual(self.run_step("cleanup_input", "PV", "PV.ome.zarr", "s0"), 0)
+
+        # A source without image data gives nothing for 'download_image' to restore.
+        self.sources["PV"] = {"segmentation": {"tableData": {"tsv": {"relativePath": "tables/PV"}}}}
+        self.write_dataset()
+        self.assertNotEqual(self.run_step("cleanup_input", "PV", "PV.ome.zarr", "s0"), 0)
         self.assertTrue(os.path.exists(self.cochlea_path("PV.ome.zarr", "s0", ".zarray")))
+
+    def test_ome_zarr_of_a_source_with_another_folder_name_is_removed(self):
+        write_file(self.cochlea_path("PV.ome.zarr", "s0", ".zarray"))
+        self.add_to_bucket("PV", folder="PV_resized")
+
+        self.assertEqual(self.run_step("cleanup_input", "PV", "PV.ome.zarr", "s0"), 0)
+        self.assertEqual(os.listdir(self.cochlea_path()), [])
 
 
 class StepRowTest(unittest.TestCase):

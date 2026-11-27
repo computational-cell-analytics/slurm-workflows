@@ -37,11 +37,20 @@ done
 module load rclone
 
 # The transfer lists a source in the dataset.json of the bucket only after its data is complete, so
-# a data folder alone can be a partial copy. A failed 'rclone cat' gives no valid JSON, so the input
-# is kept.
-if ! rclone cat "$S3_REMOTE/<cochlea>/dataset.json" | \
-		python3 -c "import json, sys; sys.exit(sys.argv[1] not in json.load(sys.stdin)['sources'])" "$STAIN" ; then
-	echo "The dataset.json of $S3_REMOTE/<cochlea> lists no source $STAIN. The input is kept."
+# a data folder alone can be a partial copy. The source must list image data, which 'download_image'
+# can restore. Its OME-Zarr folder can have another name, see 'download_image'. A failed 'rclone cat'
+# gives no valid JSON, so the input is kept.
+IMAGE_PATH=$(rclone cat "$S3_REMOTE/<cochlea>/dataset.json" | python3 -c '
+import json, sys
+entry = json.load(sys.stdin)["sources"].get(sys.argv[1], {})
+image_data = next(iter(entry.values()), {}).get("imageData", {})
+if "ome.zarr.s3" in image_data:
+    print(image_data["ome.zarr.s3"]["s3Address"].split("/" + sys.argv[2] + "/", 1)[-1].rstrip("/"))
+elif "ome.zarr" in image_data:
+    print(image_data["ome.zarr"]["relativePath"].rstrip("/"))
+' "$STAIN" "<cochlea>")
+if [ -z "$IMAGE_PATH" ] ; then
+	echo "The dataset.json of $S3_REMOTE/<cochlea> lists no image data of a source $STAIN. The input is kept."
 	exit 1
 fi
 

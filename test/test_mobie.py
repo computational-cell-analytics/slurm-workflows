@@ -260,6 +260,19 @@ class DatasetTest(RcloneStubTest):
             "the default view shows no image",
         ])
 
+    def test_source_image_path(self):
+        relative = {"ome.zarr": {"relativePath": "images/ome-zarr/PV_resized.ome.zarr/"}}
+        address = {"ome.zarr.s3": {"s3Address": f"https://s3.example.org/bucket/{DATASET}/images/ome-zarr/PV.ome.zarr"}}
+
+        # The folder can have another name than the source, and the s3Address wins over the relativePath.
+        self.assertEqual(mobie.source_image_path({"image": {"imageData": relative}}, DATASET),
+                         "images/ome-zarr/PV_resized.ome.zarr")
+        self.assertEqual(mobie.source_image_path({"image": {"imageData": dict(relative, **address)}}, DATASET),
+                         "images/ome-zarr/PV.ome.zarr")
+        self.assertIsNone(mobie.source_image_path({"spots": {"tableData": {"tsv": {"relativePath": "tables/x"}}}},
+                                                  DATASET))
+        self.assertIsNone(mobie.source_image_path({}, DATASET))
+
     def test_check_dataset_reports_a_bad_synapse_name(self):
         names = ["synapse_v3_ihc_v11", "CTBP2_synapse_v3", "RibB_synapse", "synapses_v3_IHC_v11", "synapse_v3_IHC_v9"]
         metadata = {"sources": {name: {"spots": {"tableData": {"tsv": {"relativePath": f"tables/{name}"}}}}

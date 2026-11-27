@@ -15,6 +15,7 @@ import os
 import re
 import shutil
 import subprocess
+from typing import Optional
 
 PROJECT_FILE = "project.json"
 
@@ -289,6 +290,34 @@ def s3_data(
     return images | tables
 
 
+def source_image_path(
+    entry: dict,
+    dataset: str,
+) -> Optional[str]:
+    """Return the OME-Zarr folder of a source in the S3 bucket, relative to the dataset folder.
+
+    The folder name can differ from the source name, e.g. the source 'PV' of M_LR_000169_R lists
+    'images/ome-zarr/PV_resized.ome.zarr'. The templates 'download_image' and 'cleanup_input' use the
+    same rule.
+
+    Args:
+        entry: Entry of the source in the 'sources' of a `dataset.json`.
+        dataset: Name of the dataset.
+
+    Returns:
+        str: The OME-Zarr folder, or None if the source has no image data.
+    """
+    image_data = next(iter(entry.values()), {}).get("imageData", {})
+    if "ome.zarr.s3" in image_data:
+        # MoBIE reads the image data of the S3 project from this address, not from 'relativePath'.
+        path = image_data["ome.zarr.s3"]["s3Address"].split(f"/{dataset}/", 1)[-1]
+    elif "ome.zarr" in image_data:
+        path = image_data["ome.zarr"]["relativePath"]
+    else:
+        return None
+    return path.rstrip("/")
+
+
 def source_paths(
     entry: dict,
     dataset: str,
@@ -302,18 +331,12 @@ def source_paths(
     Returns:
         list: The OME-Zarr folder and the table folder, if the source has them.
     """
-    source = next(iter(entry.values()))
-    image_data = source.get("imageData", {})
-    paths = []
-    if "ome.zarr.s3" in image_data:
-        # MoBIE reads the image data of the S3 project from this address, not from 'relativePath'.
-        paths.append(image_data["ome.zarr.s3"]["s3Address"].split(f"/{dataset}/", 1)[-1])
-    elif "ome.zarr" in image_data:
-        paths.append(image_data["ome.zarr"]["relativePath"])
-    table = source.get("tableData", {}).get("tsv")
+    image = source_image_path(entry, dataset)
+    paths = [] if image is None else [image]
+    table = next(iter(entry.values())).get("tableData", {}).get("tsv")
     if table:
-        paths.append(table["relativePath"])
-    return [path.rstrip("/") for path in paths]
+        paths.append(table["relativePath"].rstrip("/"))
+    return paths
 
 
 def unlisted_data(

@@ -18,9 +18,9 @@ source ~/.bashrc
 
 # Image data of one stain, which 'mobie_transfer_dataset' copied to the S3 bucket. The n5 of the
 # initial processing is removed after a cochlea is processed, so the bucket can hold the only copy.
-# The steps after this one read the OME-Zarr from OUTPUT.
+# The stain is the name of the source in the dataset.json. The steps after this one read the
+# OME-Zarr from OUTPUT.
 S3_REMOTE=<s3_remote>
-INPUT=<cochlea>/images/ome-zarr/<stain>.ome.zarr
 OUTPUT=<data_dir>/<cochlea>/<stain>.ome.zarr
 STAIN=<stain>
 
@@ -29,18 +29,30 @@ STAIN=<stain>
 # line per minute with a time stamp.
 RCLONE_OPTIONS=(--transfers=16 --checkers=16 --stats=1m --stats-one-line --stats-log-level=NOTICE)
 
-echo "Download of $S3_REMOTE/$INPUT to $OUTPUT on node $(hostname)"
+echo "Download of the source $STAIN of $S3_REMOTE/<cochlea> to $OUTPUT on node $(hostname)"
 
 module load rclone
 
 # The transfer lists a source in the dataset.json of the bucket only after its data is complete, so
-# a data folder alone can be a partial copy. A failed 'rclone cat' gives no valid JSON. A failed
-# check stops the rest of the pipeline.
-if ! rclone cat "$S3_REMOTE/<cochlea>/dataset.json" | \
-		python3 -c "import json, sys; sys.exit(sys.argv[1] not in json.load(sys.stdin)['sources'])" "$STAIN" ; then
-	echo "The dataset.json of $S3_REMOTE/<cochlea> lists no source $STAIN."
+# a data folder alone can be a partial copy. The OME-Zarr folder of a source can have another name,
+# e.g. 'PV_resized.ome.zarr' for the source PV. The rule is `source_image_path()` of slurm_workflows:
+# the 's3Address' first, then the 'relativePath'. A failed 'rclone cat' gives no valid JSON. A
+# failed check stops the rest of the pipeline.
+IMAGE_PATH=$(rclone cat "$S3_REMOTE/<cochlea>/dataset.json" | python3 -c '
+import json, sys
+entry = json.load(sys.stdin)["sources"].get(sys.argv[1], {})
+image_data = next(iter(entry.values()), {}).get("imageData", {})
+if "ome.zarr.s3" in image_data:
+    print(image_data["ome.zarr.s3"]["s3Address"].split("/" + sys.argv[2] + "/", 1)[-1].rstrip("/"))
+elif "ome.zarr" in image_data:
+    print(image_data["ome.zarr"]["relativePath"].rstrip("/"))
+' "$STAIN" "<cochlea>")
+if [ -z "$IMAGE_PATH" ] ; then
+	echo "The dataset.json of $S3_REMOTE/<cochlea> lists no image data of a source $STAIN."
 	exit 1
 fi
+INPUT=<cochlea>/$IMAGE_PATH
+echo "Image data of the source $STAIN: $S3_REMOTE/$INPUT"
 
 # rclone copies only the files which are missing or differ, so a rerun completes a partial download.
 # A new download goes to a temporary folder first, so that an interrupted job leaves no partial

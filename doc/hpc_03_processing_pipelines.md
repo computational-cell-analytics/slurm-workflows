@@ -360,13 +360,17 @@ The n5 is deleted once the cochlea is processed.
 A later job then reads the OME-Zarr which the `mobie` pipeline transferred to the S3 bucket.
 
 If no file of the cochlea folder holds the stain, the dry run checks the S3 bucket.
-If the `dataset.json` of the cochlea in the bucket lists the stain as a source, the dry run prints
-the command with `--download`.
-The transfer lists a source only after its data `<cochlea>/images/ome-zarr/<stain>.ome.zarr` is
-complete.
+The stain is the name of a source in the `dataset.json` of the cochlea in the bucket.
+If this source lists image data, the dry run prints its folder and the command with `--download`.
+The transfer lists a source only after its data is complete.
 The check needs `rclone`, so run `module load rclone` first.
 
-`--download` adds a first step, which copies the OME-Zarr from the bucket to
+The OME-Zarr folder of a source is usually `<cochlea>/images/ome-zarr/<stain>.ome.zarr`, but it can
+have another name.
+For example, the source `PV` of `M_LR_000169_R` lists `images/ome-zarr/PV_resized.ome.zarr`.
+Keep the default stain `PV` in that case. Do not set `stain_SGN` to the name of the folder.
+
+`--download` adds a first step, which copies the OME-Zarr folder of the source from the bucket to
 `<data_dir>/<cochlea>/<stain>.ome.zarr`, and the other steps read it.
 An interrupted download stays in `<stain>.ome.zarr.part`, so no step reads a partial copy.
 A rerun completes it.
@@ -376,8 +380,9 @@ The slurm output gives the node and one line per minute with the transferred siz
 `--cleanup-input` adds the step `cleanup_input` at the end of the chain, which removes the image data
 of the stain, e.g. the OME-Zarr of `--download`.
 `--no-cleanup` does not drop this step.
-The step removes the image data only if the `dataset.json` of the cochlea in the S3 bucket lists the
-stain as a source, so a later `--download` can restore it.
+The step removes the image data only if the `dataset.json` of the cochlea in the S3 bucket has a
+source with the name of the stain, and the source lists image data. So a later `--download` can
+restore it.
 
 - From an OME-Zarr, it removes the whole folder.
 - From an n5, it removes only the setup folder of the stain, e.g. `setup0`. It removes the n5

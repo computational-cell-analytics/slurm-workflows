@@ -390,6 +390,12 @@ restore it.
 - From an n5, it removes only the setup folder of the stain, e.g. `setup0`. It removes the n5
   together with its last setup.
 
+The step renames a folder to `removing_<name>` before it removes it, so no other step reads a
+partial input.
+A job which stops early, e.g. at its time limit, leaves `removing_<name>`.
+The next `cleanup_input` of the stain removes it first.
+If the input does not come back, remove `removing_<name>` manually.
+
 > [!CAUTION]
 > Do not run another chain on the same stain while a chain with `--cleanup-input` runs. The other chain can lose its input.
 

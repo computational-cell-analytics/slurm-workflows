@@ -75,6 +75,9 @@ remove() {
 	trash="$(dirname "$1")/removing_$(basename "$1")"
 	echo "Removing $1"
 	if [ -e "$1" ] ; then
+		# A job which stopped early, e.g. at its time limit, can leave the trash, and 'mv -T' cannot
+		# replace a folder which is not empty.
+		remove_tree "$trash" || exit 1
 		mv -T "$1" "$trash" || exit 1
 	fi
 	remove_tree "$trash" || exit 1

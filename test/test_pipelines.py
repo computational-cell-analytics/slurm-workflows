@@ -191,6 +191,15 @@ class S3TemplateTest(unittest.TestCase):
         self.assertEqual(self.run_step("cleanup_input", "PV", "PV.ome.zarr", "s0"), 0)
         self.assertEqual(os.listdir(self.cochlea_path()), [])
 
+    def test_leftover_of_an_interrupted_run_is_removed(self):
+        # A job at its time limit leaves the renamed input. 'mv -T' cannot replace it.
+        write_chunks(self.cochlea_path("removing_PV.ome.zarr"))
+        write_file(self.cochlea_path("PV.ome.zarr", "s0", ".zarray"))
+        self.add_to_bucket("PV")
+
+        self.assertEqual(self.run_step("cleanup_input", "PV", "PV.ome.zarr", "s0"), 0)
+        self.assertEqual(os.listdir(self.cochlea_path()), [])
+
     def test_input_stays_without_a_complete_copy_in_the_bucket(self):
         write_file(self.cochlea_path("PV.ome.zarr", "s0", ".zarray"))
         self.assertNotEqual(self.run_step("cleanup_input", "PV", "PV.ome.zarr", "s0"), 0)
